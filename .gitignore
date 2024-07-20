@@ -1,0 +1,24 @@
+/node_modules
+/vendor
+/app/Console/Commands/vendor/
+/.idea
+/.vscode
+/.vagrant
+/tests/_output
+Homestead.json
+Homestead.yaml
+npm-debug.log
+yarn-error.log
+.env
+.env.inmanage
+.phpunit.result.cache
+_ide_helper.php
+*.log
+
+# Ignore local migrations
+storage/migrations
+nbproject
+
+.php_cs.cache
+/composer.phar
+.phpunit.cache
