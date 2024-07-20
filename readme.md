@@ -13,7 +13,7 @@ When you call the script, do it as a user who has the rights to read the `.env` 
 Go to your base directory where the `invoiceninja` folder resides. Then run:
 
 ```bash
-sudo -u web bash -c "git clone @dros/inmamage .inmanage && chmod +x .inmanage/inmanage.sh && bash .inmanage/inmanage.sh"
+sudo -u web bash -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && chmod +x .inmanage/inmanage.sh && bash .inmanage/inmanage.sh"
 ```
 
 Ensure that "web" is the correct user (substitute if necessary) who has all the permissions to your Invoice Ninja installation, including reading the .env file.
