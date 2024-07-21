@@ -108,6 +108,22 @@ Run the script with one of the following commands to perform the associated task
 
 Maybe I'll add some more functionality like initial installation and sync to external locations. We'll see.
 
+### Thoughts on push targets and sync functionality
+
+I have thought about adding a push/sync function so that backups can be sent to a destination, but the more I think about it, it makes more sense not to, at least at this moment in time. Because in most cases you probably want to transfer a copy to your local network and not synchronize it to a backup server that is available on the internet. 
+
+Therefore, it makes much more sense to me to select the backup target directory so that it is monitored by software such as [Nextcloud](https://nextcloud.com/) and, in the event of changes, transfers them to your local infrastructure. Have a look at [Nexctcloud GitHub](https://github.com/nextcloud) as well.
+
+Other solutions may be:
+
+- [rclone](https://rclone.org) (If you need to sync to OneDrive)
+- [Syncthing](https://syncthing.net) 
+- rsync (Available on any linux system)
+
+The other option, since we are on a web server, is to make the backup target directory available under a specific URL. Of course, you will not forget to do this in a secure environment, i.e. with the help of user data that not everyone knows.
+
+If you tell me, "No, no ... completely different" then I would think again about creating a cool solution.
+
 ## Contribs
 
 The beloved Invoice Ninja
