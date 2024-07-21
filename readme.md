@@ -18,6 +18,9 @@ sudo -u web bash -c "git clone https://github.com/DrDBanner/inmanage.git .inmana
 
 Ensure that "web" is the correct user (substitute if necessary) who has all the permissions to your Invoice Ninja installation, including reading the .env file.
 
+> [!NOTE]
+> If you do not install into the base directory which contains your `invoiceninja` folder, you'll most probably run into file permission problem. 
+
 ### Running the script
 
 If everything went well with your installation, you now have a symlink in your base directory from which you can call the script directly. For example:
@@ -46,12 +49,13 @@ If you want to run it as a cronjob add this line to your crontab. Mind the user 
 0 2 * * * web /path/to/your/inmanage.sh backup > /path/to/logfile 2>&1
 ```
 
-**Note:** I would not update via cronjob. However, if you choose to automate updates with cron, you can include the `--force` flag in the `update` command to force the update, even if you are already on the latest version.
-
-- **With `--force` Flag:** The update will proceed regardless of the current version.
-- **Without `--force` Flag:** 
-  - If no new version is available, the script will wait for user input for up to 60 seconds. If there is no response within this timeframe, the script will abort.
-  - If a new version is available, the update will be performed automatically without requiring user interaction.
+> [!NOTE]
+> I would not update via cronjob. However, if you choose to automate updates with cron, you can include the `--force` flag in the `update` command to force the update, even if you are already on the latest version.
+>
+> - **With `--force` Flag:** The update will proceed regardless of the current version.
+> - **Without `--force` Flag:** 
+>   - If no new version is available, the script will wait for user input for up to 60 seconds. If there is no response within this timeframe, the script will abort.
+>   - If a new version is available, the update will be performed automatically without requiring user interaction.
 
 
 ## Key Functions
