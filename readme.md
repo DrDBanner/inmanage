@@ -19,7 +19,7 @@ sudo -u web bash -c "git clone https://github.com/DrDBanner/inmanage.git .inmana
 Ensure that "web" is the correct user (substitute if necessary) who has all the permissions to your Invoice Ninja installation, including reading the .env file.
 
 > [!NOTE]
-> If you do not install into the base directory which contains your `invoiceninja` folder, you'll most probably run into file permission problem. 
+> If you do not install into the base directory which contains your `invoiceninja` folder, you'll most probably run into file permission problems. 
 
 ### Running the script
 
