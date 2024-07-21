@@ -27,6 +27,9 @@ if [ ! -f ".inmanage/.env.inmanage" ]; then
     # Temporarily create the file to check if it's possible
     if touch ".inmanage/.env.inmanage"; then
         echo "File creation successful. Proceeding with configuration..."
+        
+        # Remove the file again in case the installation prompt isn't successful. 
+        rm .inmanage/.env.inmanage
 
         # Query for configuration
         echo -e "\n\n Just press [ENTER] to accept defaults. \n\n"
