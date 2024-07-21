@@ -185,7 +185,10 @@ run_update() {
         echo "Failed to unpack"
         exit 1
     }
-
+    $INM_ARTISAN_STRING cache:clear || {
+        echo "Failed to clear artisan cache"
+        exit 1
+    }
     $INM_ARTISAN_STRING down || {
         echo "Failed to run artisan down"
         exit 1
@@ -209,11 +212,6 @@ run_update() {
     }
     $INM_ARTISAN_STRING optimize || {
         echo "Failed to artisan optimize"
-        exit 1
-    }
-    sleep 5;
-    $INM_ARTISAN_STRING cache:clear || {
-        echo "Failed to clear artisan cache"
         exit 1
     }
     $INM_ARTISAN_STRING ninja:post-update || {
