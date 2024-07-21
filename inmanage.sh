@@ -264,13 +264,13 @@ run_backup() {
     }
 
     if [ "$INM_FORCE_READ_DB_PW" == "Y" ]; then
-        mysqldump -f --no-create-db -h "$DB_HOST" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" >"${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
+        mysqldump -f --no-create-db -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" >"${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
             echo "Failed to dump database"
             exit 1
         }
     else
         echo "Using .my.cnf for database access"
-        mysqldump -f --no-create-db -h "$DB_HOST" -u "$DB_USERNAME" "$DB_DATABASE" >"${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
+        mysqldump -f --no-create-db -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_DATABASE" >"${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
             echo "Failed to dump database"
             exit 1
         }
