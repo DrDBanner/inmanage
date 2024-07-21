@@ -29,7 +29,12 @@ If everything went well with your installation, you now have a symlink in your b
 sudo -u web bash -c "bash ./inmanage.sh backup"
 ```
 
-This example shows how to run the script in a bash as user 'web'. This can be different on your machine. During the installation you have been asked which user shall execute this script. So, if you call it now and you are not that particular user, you'll get prompted to enter the password in order to switch to that user. So, you probably want to call it with the right user from the get go.
+This example shows how to run the script in a bash as user 'web'. This can be different on your machine. 
+
+> [!TIP]
+> During the installation you have been asked which user shall execute this script. So, if you call it now and you are not that particular user, you'll get prompted to enter the password in order to switch to that user. 
+>
+> So, you probably want to call it with the right user from the get go.
 
 ### Update the script
 
