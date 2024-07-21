@@ -210,11 +210,11 @@ run_update() {
         exit 1
     }
     $INM_ARTISAN_STRING migrate --force || {
-        echo "Failed to run post-update"
+        echo "Failed to run artisan migrate"
         exit 1
     }
     $INM_ARTISAN_STRING ninja:check-data || {
-        echo "Failed to run post-update"
+        echo "Failed to run check data"
         exit 1
     }
     $INM_ARTISAN_STRING ninja:translations || {
