@@ -108,7 +108,7 @@ Run the script with one of the following commands to perform the associated task
 ./inmanage.sh backup && ./inmanage.sh update
 ```
 
-Performing a backup prior to an update is a good cause. In case something goes wrong you can switch back to the last working version in no time by renaming the broken installation and putting the last working in place. Like this
+Performing a backup prior to an update is a good cause. In case something goes wrong you can switch back to the last working version in no time by renaming the broken installation and putting the last working in place. Like this:
 
 ### Rollback
 
@@ -130,7 +130,7 @@ mv invoiceninja_20240720_225551 invoiceninja
 
 ```
 
-Ensure to substitute the numbers with the correct timestamps/foldername. Now your insallation is in the last working state and you prevented downtime.
+Ensure to substitute the numbers with the correct timestamps/foldername. Now your installation is in the last working state and you prevented downtime. 
 
 ## Roadmap
 
