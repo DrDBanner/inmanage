@@ -46,6 +46,8 @@ If you want to run it as a cronjob add this line to your crontab. Mind the user 
 0 2 * * * web /path/to/your/inmanage.sh backup > /path/to/logfile 2>&1
 ```
 
+PS: I would not update via cronjob. But if you decide to do then ensure you added the `--force` flag to the `update` command.
+
 ## Key Functions
 
 A little overview what's happening under the hood.
