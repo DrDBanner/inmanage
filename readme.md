@@ -46,7 +46,13 @@ If you want to run it as a cronjob add this line to your crontab. Mind the user 
 0 2 * * * web /path/to/your/inmanage.sh backup > /path/to/logfile 2>&1
 ```
 
-PS: I would not update via cronjob. But if you decide to do then ensure you added the `--force` flag to the `update` command.
+**Note:** I would not update via cronjob. However, if you choose to automate updates with cron, you can include the `--force` flag in the `update` command to force the update, even if you are already on the latest version.
+
+- **With `--force` Flag:** The update will proceed regardless of the current version.
+- **Without `--force` Flag:** 
+  - If no new version is available, the script will wait for user input for up to 60 seconds. If there is no response within this timeframe, the script will abort.
+  - If a new version is available, the update will be performed automatically without requiring user interaction.
+
 
 ## Key Functions
 
