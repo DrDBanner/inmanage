@@ -22,26 +22,30 @@ prompt() {
 }
 
 if [ ! -f ".inmanage/.env.inmanage" ]; then
-    echo ".inmanage/.env.inmanage configuration file for this script not found. Creating and configuring..."
+    echo ".inmanage/.env.inmanage configuration file for this script not found. Attempting to create it..."
 
-    # Query for configuration
-    echo -e "\n\n Just press [ENTER] to accept defaults. \n\n"
-    INM_BASE_DIRECTORY=$(prompt "INM_BASE_DIRECTORY" "$PWD/" "Which directory contains your IN installation folder? Must have a trailing slash.")
-    INM_INSTALLATION_DIRECTORY=$(prompt "INM_INSTALLATION_DIRECTORY" "./invoiceninja" "What is the installation directory name? Must be relative from $INM_BASE_DIRECTORY and can start with a . dot.")
-    INM_ENV_FILE="$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/.env"
-    INM_TEMP_DOWNLOAD_DIRECTORY="./._in_tempDownload"
-    INM_BACKUP_DIRECTORY=$(prompt "INM_BACKUP_DIRECTORY" "./_in_backups" "Where shall backups go?")
-    INM_FORCE_READ_DB_PW=$(prompt "INM_FORCE_READ_DB_PW" "N" "Include database password in backup command? If Y we read it from Invoice Ninja installation, but it's a security concern and may be visible for other server users while the task is running. If N the script assumes you have a secure and working .my.cnf file with your DB credentials. (Y/N)")
-    INM_ENFORCED_USER=$(prompt "INM_ENFORCED_USER" "web" "The user running the script? Should be the webserver user in most cases. Check twice if this value is set correct according to your webserver setup.")
-    INM_ENFORCED_SHELL=$(prompt "INM_ENFORCED_SHELL" "$(command -v bash)" "Which shell should be used? In doubt, keep as is.")
-    INM_PHP_EXECUTABLE=$(prompt "INM_PHP_EXECUTABLE" "$(command -v php)" "Path to the PHP executable? In doubt, keep as is.")
-    INM_ARTISAN_STRING="$INM_PHP_EXECUTABLE $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/artisan"
-    INM_PROGRAM_NAME="InvoiceNinja"
-    INM_COMPATIBILITY_VERSION="5+"
-    INM_KEEP_BACKUPS=$(prompt "INM_KEEP_BACKUPS" "2" "How many backup files and update iterations to keep? If you keep 7 and backup on a daily basis you have 7 snapshots available.")
+    # Temporarily create the file to check if it's possible
+    if touch ".inmanage/.env.inmanage"; then
+        echo "File creation successful. Proceeding with configuration..."
 
-    # Save configuration to .env.inmanage
-    cat <<EOL >.inmanage/.env.inmanage
+        # Query for configuration
+        echo -e "\n\n Just press [ENTER] to accept defaults. \n\n"
+        INM_BASE_DIRECTORY=$(prompt "INM_BASE_DIRECTORY" "$PWD/" "Which directory contains your IN installation folder? Must have a trailing slash.")
+        INM_INSTALLATION_DIRECTORY=$(prompt "INM_INSTALLATION_DIRECTORY" "./invoiceninja" "What is the installation directory name? Must be relative from $INM_BASE_DIRECTORY and can start with a . dot.")
+        INM_ENV_FILE="$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/.env"
+        INM_TEMP_DOWNLOAD_DIRECTORY="./._in_tempDownload"
+        INM_BACKUP_DIRECTORY=$(prompt "INM_BACKUP_DIRECTORY" "./_in_backups" "Where shall backups go?")
+        INM_FORCE_READ_DB_PW=$(prompt "INM_FORCE_READ_DB_PW" "N" "Include database password in backup command? If Y we read it from Invoice Ninja installation, but it's a security concern and may be visible for other server users while the task is running. If N the script assumes you have a secure and working .my.cnf file with your DB credentials. (Y/N)")
+        INM_ENFORCED_USER=$(prompt "INM_ENFORCED_USER" "web" "The user running the script? Should be the webserver user in most cases. Check twice if this value is set correct according to your webserver setup.")
+        INM_ENFORCED_SHELL=$(prompt "INM_ENFORCED_SHELL" "$(command -v bash)" "Which shell should be used? In doubt, keep as is.")
+        INM_PHP_EXECUTABLE=$(prompt "INM_PHP_EXECUTABLE" "$(command -v php)" "Path to the PHP executable? In doubt, keep as is.")
+        INM_ARTISAN_STRING="$INM_PHP_EXECUTABLE $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/artisan"
+        INM_PROGRAM_NAME="InvoiceNinja"
+        INM_COMPATIBILITY_VERSION="5+"
+        INM_KEEP_BACKUPS=$(prompt "INM_KEEP_BACKUPS" "2" "How many backup files and update iterations to keep? If you keep 7 and backup on a daily basis you have 7 snapshots available.")
+
+        # Save configuration to .env.inmanage
+        cat <<EOL >.inmanage/.env.inmanage
 INM_BASE_DIRECTORY="$INM_BASE_DIRECTORY"
 INM_INSTALLATION_DIRECTORY="$INM_INSTALLATION_DIRECTORY"
 INM_ENV_FILE="$INM_ENV_FILE"
@@ -56,32 +60,38 @@ INM_KEEP_BACKUPS="$INM_KEEP_BACKUPS"
 INM_FORCE_READ_DB_PW="$INM_FORCE_READ_DB_PW"
 EOL
 
-    echo ".env.inmanage has been created and configured."
-    target="$INM_BASE_DIRECTORY.inmanage/inmanage.sh"
-    link="$INM_BASE_DIRECTORY/inmanage.sh"
+        echo ".env.inmanage has been created and configured."
 
-    # Check if the link exists
-    if [ -L "$link" ]; then
-        # Check if it points to the correct target
-        if [ "$(readlink "$link")" == "$target" ]; then
-            echo "The symlink is correct."
+        target="$INM_BASE_DIRECTORY.inmanage/inmanage.sh"
+        link="$INM_BASE_DIRECTORY/inmanage.sh"
+
+        # Check if the link exists
+        if [ -L "$link" ]; then
+            # Check if it points to the correct target
+            if [ "$(readlink "$link")" == "$target" ]; then
+                echo "The symlink is correct."
+            else
+                echo "The symlink is incorrect. Updating..."
+                ln -sf "$target" "$link"
+            fi
         else
-            echo "The symlink is incorrect. Updating..."
-            ln -sf "$target" "$link"
+            echo "The symlink does not exist. Creating..."
+            ln -s "$target" "$link"
         fi
-    else
-        echo "The symlink does not exist. Creating..."
-        ln -s "$target" "$link"
-    fi
 
-    echo "A symlink to this script has been created in the base directory."
+        echo "A symlink to this script has been created in the base directory."
+    else
+        echo "Error: Could not create .inmanage/.env.inmanage. Aborting configuration."
+        exit 1
+    fi
 fi
 
 source .inmanage/.env.inmanage
 
+
 # Check required commands
 check_commands() {
-    local commands=("curl" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "grep" "xargs" "php" "read" "source")
+    local commands=("curl" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "grep" "xargs" "php" "read" "source" "touch")
     for cmd in "${commands[@]}"; do
         if ! command -v "$cmd" &>/dev/null; then
             echo "Error: Command '$cmd' is not available. Please install it and try again."
