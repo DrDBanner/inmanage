@@ -154,6 +154,12 @@ The other option, since we are on a web server, is to make the backup target dir
 
 If you tell me, "No, no ... completely different" then I would think again about creating a cool solution.
 
+### Limitations
+
+Currently, the script is designed to manage a single installation. If you have multiple instances to manage, you'll most probably have them running in different base directories. So, you install this script for each instance. 
+
+If you have multiple instances running under the same base directory this script would need to get extended to handle multiple .env.inmange files and a kind of router to manage each instance individually and/or in one batch.
+
 ## Contribs
 
 The beloved Invoice Ninja
