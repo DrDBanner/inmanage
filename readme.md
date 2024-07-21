@@ -102,7 +102,35 @@ Run the script with one of the following commands to perform the associated task
 ./inmanage.sh backup
 ./inmanage.sh cleanup_versions
 ./inmanage.sh cleanup_backups
+
+## Of course you can perform a backup and an update as a one-liner like:
+
+./inmanage.sh backup && ./inmanage.sh update
 ```
+
+Performing a backup prior to an update is a good cause. In case something goes wrong you can switch back to the last working version in no time by renaming the broken installation and putting the last working in place. Like this
+
+### Rollback
+
+```bash
+## Let's assume your folder looks like this
+
+ls -la
+
+drwxr-xr-x  15 web      vuser   49 20 Juli 22:55 invoiceninja
+drwxr-xr-x  15 web      vuser   49 20 Juli 14:12 invoiceninja_20240720_141317
+drwxr-xr-x  15 web      vuser   49 20 Juli 14:13 invoiceninja_20240720_225551
+```
+
+Then rename it:
+```bash
+
+mv invoiceninja invoiceninja_broken
+mv invoiceninja_20240720_225551 invoiceninja
+
+```
+
+Ensure to substitute the numbers with the correct timestamps/foldername. Now your insallation is in the last working state and you prevented downtime.
 
 ## Roadmap
 
