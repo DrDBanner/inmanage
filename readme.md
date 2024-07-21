@@ -75,7 +75,7 @@ A little overview what's happening under the hood.
 - **`update`**:
 
   - Downloads and installs the latest version of Invoice Ninja from Github.
-  - Updates the installation, copies environment files, and updates storage settings. With a `--force` switch you can force to re-run the update task even if you are on the most recent version.
+  - Updates the installation, copies environment files, and updates storage settings, it puts the installation into maintenance mode and runs optimize, cache-clear, post-update scripts, migrates the db if neccessary, performs a data check, updates the translations, and finally brings the application back to production. With a `--force` switch you can force to re-run the update task even if you are on the most recent version.
   - Executes cleanups by default.
 
 - **`backup`**:

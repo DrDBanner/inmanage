@@ -74,7 +74,7 @@ EOL
         ln -s "$target" "$link"
     fi
 
-    echo "A symlink to this script has been created in the installation directory."
+    echo "A symlink to this script has been created in the base directory."
 fi
 
 source .inmanage/.env.inmanage
@@ -197,21 +197,32 @@ run_update() {
         echo "Failed to move new installation"
         exit 1
     }
-
-    $INM_ARTISAN_STRING up || {
-        echo "Failed to run artisan up"
+    $INM_ARTISAN_STRING optimize || {
+        echo "Failed to artisan optimize"
+        exit 1
+    }
+    $INM_ARTISAN_STRING cache:clear || {
+        echo "Failed to clear artisan cache"
         exit 1
     }
     $INM_ARTISAN_STRING ninja:post-update || {
         echo "Failed to run post-update"
         exit 1
     }
-    $INM_ARTISAN_STRING cache:clear || {
-        echo "Failed to clear cache"
+    $INM_ARTISAN_STRING migrate --force || {
+        echo "Failed to run post-update"
+        exit 1
+    }
+    $INM_ARTISAN_STRING ninja:check-data || {
+        echo "Failed to run post-update"
         exit 1
     }
     $INM_ARTISAN_STRING ninja:translations || {
         echo "Failed to run translations"
+        exit 1
+    }
+    $INM_ARTISAN_STRING up || {
+        echo "Failed to run artisan up"
         exit 1
     }
 
