@@ -280,6 +280,7 @@ run_backup() {
         echo "Failed to change to base directory"
         exit 1
     }
+    echo -e "Compressing Data. This may take a while. Hang on..."
     tar -czf "${INM_PROGRAM_NAME}_$(date +'%Y%m%d_%H%M%S').tar.gz" "$INM_BACKUP_DIRECTORY"/*.sql -C "$INM_INSTALLATION_DIRECTORY" . || {
         echo "Failed to create backup"
         exit 1
