@@ -162,13 +162,19 @@ run_update() {
     installed_version=$(get_installed_version)
     latest_version=$(get_latest_version)
 
-    if [ "$installed_version" == "$latest_version" ] && [ "$force_update" != true ]; then
-        read -p "Already up-to-date. Proceed with update? (yes/no): " response
+   if [ "$installed_version" == "$latest_version" ] && [ "$force_update" != true ]; then
+        echo -n "Already up-to-date. Proceed with update? (yes/no): "
+        # Set a timeout for 60 seconds
+        if ! read -t 60 response; then
+            echo "No response within 60 seconds. Update aborted."
+            exit 0
+        fi
         if [[ ! "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
             echo "Update aborted."
             exit 0
         fi
     fi
+
 
     echo "Update starts now."
     download_ninja
