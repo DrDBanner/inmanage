@@ -2,13 +2,11 @@
 
 Easily update and back up your self-hosted Invoice Ninja instance with a shell script.
 
-This script is designed to manage your Invoice Ninja installation starting from version 5 and above by performing updates, backups, and cleanup tasks. It uses a configuration file to set up necessary environment variables and ensure required commands are available. On the first start, it will help you set up the configuration.
+## Overview 
 
-When you call the script, do it as a user who has the rights to read the `.env` file of your Invoice Ninja installation. Most likely, it's the webserver's user, such as `web`, `apache`, or `nginx`. For example:
+This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, and cleanup tasks. It uses a configuration file to set up necessary environment variables and ensures required commands are available. On first run, it will help you set up the configuration.
 
-## Interactions
-
-### Installation
+## Installation
 
 Go to your base directory where the `invoiceninja` folder resides. Then run:
 
@@ -16,35 +14,41 @@ Go to your base directory where the `invoiceninja` folder resides. Then run:
 sudo -u web bash -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && chmod +x .inmanage/inmanage.sh && bash .inmanage/inmanage.sh"
 ```
 
-Ensure that "web" is the correct user (substitute if necessary) who has all the permissions to your Invoice Ninja installation, including reading the .env file.
+Ensure that "web" is the correct user (substitute if necessary) who has all the permissions to your Invoice Ninja installation, including reading the .env file. 
 
 > [!NOTE]
-> If you do not install into the base directory which contains your `invoiceninja` folder, you'll most probably run into file permission problems. 
+> - Ensure you install in the base directory containing the `invoiceninja` folder to avoid file permission issues.
+> - Run the script as a user who can read the .env file of your Invoice Ninja installation. Typically, this is the web server user, such as `web`, `apache`, or `nginx`.
 
-### Running the script
+## Running the script
 
-If everything went well with your installation, you now have a symlink in your base directory from which you can call the script directly. For example:
+Once installed, you can run the script using the symlink in your base directory. For example:
 
 ```bash
 sudo -u web bash -c "bash ./inmanage.sh backup"
 ```
 
-This example shows how to run the script in a bash as user 'web'. This can be different on your machine. 
+This example shows how to run the script in a bash as user 'web'. This can be different on your machine. Like:
+
+```bash
+./inmanage.sh backup
+```
+If you already are the user with the corresponding permissions. 
 
 > [!TIP]
 > During the installation you have been asked which user shall execute this script. So, if you call it now and you are not that particular user, you'll get prompted to enter the password in order to switch to that user. 
 >
 > So, you probably want to call it with the right user from the get go.
 
-### Update the script
+## Update the script
 
-You can update the script with
+To update the script, use:
 
 ```bash
 cd .inmanage && sudo -u web git pull
 ```
 
-Mind the user 'web' here as well.
+Note: Ensure you replace `"web"` with the appropriate user.
 
 ### Run as cronjob
 
@@ -64,8 +68,6 @@ If you want to run it as a cronjob add this line to your crontab. Mind the user 
 
 
 ## Key Functions
-
-A little overview what's happening under the hood.
 
 1. **Configuration File Setup**:
 
