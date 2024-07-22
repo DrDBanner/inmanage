@@ -164,7 +164,10 @@ Note: Ensure you replace `"web"` with the appropriate user.
 
 5. **Reads Invoice Ninja Configuration**
 
-   - The script reads data from the Invoice Ninja .env file to determine the database connection in order to execute the mysqldump. By default it assumes you have a working .my.cnf file which holds the database credentials. If you have set `INM_FORCE_READ_DB_PW="Y"` in your configuration, then it will grab the password and pass it to the mysqldump command. Which CAN be a security issue. So, handle with care.
+   - The script reads data from the Invoice Ninja .env file to determine the database connection in order to execute the mysqldump. By default it assumes you have a working .my.cnf file which holds the database credentials. 
+   
+    > [!CAUTION]
+    > If you have set `INM_FORCE_READ_DB_PW="Y"` in your configuration, then it will grab the password and pass it to the mysqldump command. Which CAN be a security issue. So, handle with care.
 
 6. **Updates Invoice Ninja**
 
