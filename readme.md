@@ -56,7 +56,7 @@ Run the script with one of the following commands to perform the associated task
 Performing a backup prior to an update is a good cause. In case something goes wrong you can switch back to the last working version in no time by renaming the broken installation and putting the last working in place. Like this:
 
 ### Rollback
-Let's assume you folder looks like this:
+Let's assume your folder looks like this:
 ```bash
 ls -la
 
@@ -175,7 +175,7 @@ Note: Ensure you replace `"web"` with the appropriate user.
 
    - **User Interaction**
 
-      - Up-to-date: If the installed version is up-to-date, it requires user interaction within 60 seconds to proceed with a re-update. A `--force-flag` enables you to perform the update no matter what.
+      - Up-to-date: If the installed version is up-to-date, it requires user interaction within 60 seconds to proceed with a re-update. A `--force` flag enables you to perform the update no matter what.
       - Outdated: If the installed version is outdated, it proceeds automatically without user interaction.
 
    - **Update Process**
@@ -210,7 +210,7 @@ Note: Ensure you replace `"web"` with the appropriate user.
       - Compress: Compresses the Dump and the Invoice Ninja installation directory into one *.tar.gz file and stores it in the backup directory of your choice.
       - Versioning: Creates time-stamped filenames
       - Clean Up: Automatically Cleans up old backups based on your settings.
-      
+
 ## Roadmap
 
 Maybe I'll add some more functionality like initial installation and sync to external locations. We'll see.
