@@ -1,4 +1,4 @@
-# Invoice Ninja Management Script
+# Backup & Update - Invoice Ninja - MGM Script 
 
 Easily update and back up your self-hosted Invoice Ninja instance with a shell script.
 
@@ -18,7 +18,7 @@ Ensure that "web" is the correct user (substitute if necessary) who has all the 
 
 > [!NOTE]
 > - Ensure you install in the base directory containing the `invoiceninja` folder to avoid file permission issues.
-> - Run the script as a user who can read the .env file of your Invoice Ninja installation. Typically, this is the web server user, such as `web`, `apache`, or `nginx`.
+> - Run the script as a user who can read the .env file of your Invoice Ninja installation. Typically, this is the web server user, such as `www-data`, `httpd`, `web`, `apache`, or `nginx`.
 
 ## Running the script
 
@@ -40,15 +40,40 @@ If you already are the user with the corresponding permissions.
 >
 > So, you probably want to call it with the right user from the get go.
 
-## Update the script
-
-To update the script, use:
+Run the script with one of the following commands to perform the associated tasks:
 
 ```bash
-cd .inmanage && sudo -u web git pull
+./inmanage.sh update
+./inmanage.sh backup
+./inmanage.sh cleanup_versions
+./inmanage.sh cleanup_backups
+
+## As a one-liner:
+
+./inmanage.sh backup && ./inmanage.sh update
 ```
 
-Note: Ensure you replace `"web"` with the appropriate user.
+Performing a backup prior to an update is a good cause. In case something goes wrong you can switch back to the last working version in no time by renaming the broken installation and putting the last working in place. Like this:
+
+### Rollback
+Let's assume you folder looks like this:
+```bash
+ls -la
+
+drwxr-xr-x  15 web      vuser   49 20 Juli 22:55 invoiceninja
+drwxr-xr-x  15 web      vuser   49 20 Juli 14:12 invoiceninja_20240720_141317
+drwxr-xr-x  15 web      vuser   49 20 Juli 14:13 invoiceninja_20240720_225551
+```
+
+Rename like this:
+```bash
+
+mv invoiceninja invoiceninja_broken
+mv invoiceninja_20240720_225551 invoiceninja
+
+```
+
+Ensure to substitute the numbers with the correct timestamps/foldername. Now your installation is in the last working state and you prevented downtime. 
 
 ### Run as cronjob
 
@@ -66,40 +91,28 @@ If you want to run it as a cronjob add this line to your crontab. Mind the user 
 >   - If no new version is available, the script will wait for user input for up to 60 seconds. If there is no response within this timeframe, the script will abort.
 >   - If a new version is available, the update will be performed automatically without requiring user interaction.
 
+## Update the script
 
-## Key Functions
+To update the script, use:
 
-1. **Configuration File Setup**:
+```bash
+cd .inmanage && sudo -u web git pull
+```
 
-   - If `.env.inmanage` is not found, the script creates it and prompts for settings like installation directory, backup locations, and other configurations.
-
-2. **Environment Variables**:
-
-   - Loads values from `.env.inmanage` to configure paths, user settings, PHP executable, and other details.
-
-3. **Command Check**:
-
-   - Verifies that required commands (`curl`, `tar`, `php`, etc.) are installed and available on your system.
-
-4. **User Check**:
-
-   - Ensures the script is run under the correct user account to avoid permission issues.
-
-5. **Reads Invoice Ninja Configuration**
-
-- The script reads data from the IN .env file to determine the database connection in order to execute the mysqldump. By default it assumes you have a working .my.cnf file which holds the database credentials. If you have set `INM_FORCE_READ_DB_PW="Y"` in your configuration, then it will grab the password and pass it to the mysqldump command. Which CAN be a security issue. So, handle with care.
+Note: Ensure you replace `"web"` with the appropriate user.
 
 ## Commands
 
 - **`update`**:
 
   - Downloads and installs the latest version of Invoice Ninja from Github.
-  - Updates the installation, copies environment files, and updates storage settings, it puts the installation into maintenance mode and runs optimize, cache-clear, post-update scripts, migrates the db if neccessary, performs a data check, updates the translations, and finally brings the application back to production. With a `--force` switch you can force to re-run the update task even if you are on the most recent version.
+  - Updates the installation.
+  - Has a `--force` flag option.
   - Executes cleanups by default.
 
 - **`backup`**:
 
-  - Creates backups of the database and files.
+  - Creates backups of the database and files, compresses them, and handles versioning.
   - Ensures the backup directory exists, performs the backup, and cleans up old backups.
   - Executes cleanups by default.
 
@@ -112,45 +125,92 @@ If you want to run it as a cronjob add this line to your crontab. Mind the user 
   - Removes old backup files.
   - Keeps only a specified number of recent backups defined in `INM_KEEP_BACKUPS` during installation.
 
-## Execution
+## What this script does
 
-Run the script with one of the following commands to perform the associated tasks:
+1. **Configuration File Setup**:
 
-```bash
-./inmanage.sh update
-./inmanage.sh backup
-./inmanage.sh cleanup_versions
-./inmanage.sh cleanup_backups
+   - If `.inmanage/.env.inmanage` file is not found, the script creates it and prompts for settings like installation directory, backup locations, and other configurations.
 
-## Of course you can perform a backup and an update as a one-liner like:
+   You can provision the file manually
 
-./inmanage.sh backup && ./inmanage.sh update
-```
+   ```bash
+   # .inmanage/.env.inmanage configuration file
 
-Performing a backup prior to an update is a good cause. In case something goes wrong you can switch back to the last working version in no time by renaming the broken installation and putting the last working in place. Like this:
+   INM_BASE_DIRECTORY="/your/base/directory/" # mind the trailing slash
+   INM_INSTALLATION_DIRECTORY="./invoiceninja"
+   INM_ENV_FILE="./invoiceninja/.env"
+   INM_TEMP_DOWNLOAD_DIRECTORY="./.in_temp_download"
+   INM_BACKUP_DIRECTORY="./_in_backups"
+   INM_ENFORCED_USER="web"
+   INM_ENFORCED_SHELL="/bin/bash"
+   INM_PHP_EXECUTABLE="/usr/bin/php"
+   INM_ARTISAN_STRING="/usr/bin/php /your/base/directory/./invoiceninja/artisan"
+   INM_PROGRAM_NAME="InvoiceNinja" # Backup file name
+   INM_KEEP_BACKUPS="2" # How many iterations to keep
+   INM_FORCE_READ_DB_PW="N" # Read DB Password from installation or assume existing .my.cnf
+   ````
 
-### Rollback
+2. **Environment Variables**:
 
-```bash
-## Let's assume your folder looks like this
+   - Loads values from `.env.inmanage` to configure paths, user settings, PHP executable, and other details.
 
-ls -la
+3. **Command Check**:
 
-drwxr-xr-x  15 web      vuser   49 20 Juli 22:55 invoiceninja
-drwxr-xr-x  15 web      vuser   49 20 Juli 14:12 invoiceninja_20240720_141317
-drwxr-xr-x  15 web      vuser   49 20 Juli 14:13 invoiceninja_20240720_225551
-```
+   - Verifies that required commands (`curl`, `tar`, `php`, etc.) are installed and available on your system.
 
-Then rename it:
-```bash
+4. **User Check**:
 
-mv invoiceninja invoiceninja_broken
-mv invoiceninja_20240720_225551 invoiceninja
+   - Ensures the script is run under the correct user account to avoid permission issues. If you are not the correct user the script asks for your password and switches to that account.
 
-```
+5. **Reads Invoice Ninja Configuration**
 
-Ensure to substitute the numbers with the correct timestamps/foldername. Now your installation is in the last working state and you prevented downtime. 
+   - The script reads data from the Invoice Ninja .env file to determine the database connection in order to execute the mysqldump. By default it assumes you have a working .my.cnf file which holds the database credentials. If you have set `INM_FORCE_READ_DB_PW="Y"` in your configuration, then it will grab the password and pass it to the mysqldump command. Which CAN be a security issue. So, handle with care.
 
+6. **Updates Invoice Ninja**
+
+   - **Version Check**
+
+      - Installed Version: Determines the currently installed version.
+      - Latest Version: Compares the installed version to the most recent version available.
+
+   - **User Interaction**
+
+      - Up-to-date: If the installed version is up-to-date, it requires user interaction within 60 seconds to proceed with a re-update. A `--force-flag` enables you to perform the update no matter what.
+      - Outdated: If the installed version is outdated, it proceeds automatically without user interaction.
+
+   - **Update Process**
+
+      - Download: Downloads the latest *.tar file.
+      - Unpack: Unpacks the downloaded file.
+      - Maintenance Mode: Puts Invoice Ninja into maintenance mode.
+      - Cache Management: Clears the caches.
+      - Data Migration: Moves your data and settings.
+      - Optimization: Runs artisan optimize.
+      - Post-Update Scripts: Executes the necessary post-update scripts.
+      - Database Migrations: Checks if database migrations are needed and performs them.
+      - Data Integrity: Checks data integrity.
+      - Translations: Grabs the latest translations.
+      - Production Mode: Puts Invoice Ninja back into production mode.
+      - Clean Up: Automatically cleans up old installation backups based on your settings.
+
+6. **Backup Invoice Ninja**
+
+   - **Checks**
+
+      - **Target Directory** If present, it will be used. If not present, it will be created.
+      - **Variables** Reads variables and credentials.
+
+   - **User Interaction**
+
+      - None
+
+   - **Backup Process**
+
+      - Dump: Dumps the database.
+      - Compress: Compresses the Dump and the Invoice Ninja installation directory into one *.tar.gz file and stores it in the backup directory of your choice.
+      - Versioning: Creates time-stamped filenames
+      - Clean Up: Automatically Cleans up old backups based on your settings.
+      
 ## Roadmap
 
 Maybe I'll add some more functionality like initial installation and sync to external locations. We'll see.
@@ -171,7 +231,7 @@ The other option, since we are on a web server, is to make the backup target dir
 
 If you tell me, "No, no ... completely different" then I would think again about creating a cool solution.
 
-### Limitations
+## Limitations
 
 Currently, the script is designed to manage a single installation. If you have multiple instances to manage, you'll most probably have them running in different base directories. So, you install this script for each instance. 
 
