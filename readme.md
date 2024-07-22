@@ -111,6 +111,12 @@ cd .inmanage && sudo -u web git pull
 
 Note: Ensure you replace `"web"` with the appropriate user.
 
+If you have installed the script as the user with the corresponding rights without sudo the command looks like this
+
+```bash
+cd .inmanage && git pull
+```
+
 ## Commands
 
 - **`update`**:
