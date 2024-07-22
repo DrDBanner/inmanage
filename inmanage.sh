@@ -388,14 +388,14 @@ while [[ $# -gt 0 ]]; do
         shift
         ;;
     *)
-        echo -e "\n\n Usage: ./inmanage.sh <update|backup|cleanup_versions|cleanup_backups> [--force] \n\n"
+        echo -e "\n\n Usage: ./inmanage.sh <update|backup|cleanup_versions|cleanup_backups> [--force] \n Full Documentation https://github.com/DrDBanner/inmanage/#readme \n\n"
         exit 1
         ;;
     esac
 done
 
 if [ -z "$command" ]; then
-    echo -e "\n\n Usage: ./inmanage.sh <update|backup|cleanup_versions|cleanup_backups> [--force] \n\n"
+    echo -e "\n\n Usage: ./inmanage.sh <update|backup|cleanup_versions|cleanup_backups> [--force] \n Full Documentation https://github.com/DrDBanner/inmanage/#readme \n\n"
     exit 1
 fi
 
