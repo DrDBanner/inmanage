@@ -23,10 +23,12 @@ Ensure that "web" is the correct user (substitute if necessary) who has all the 
 If you are in a shared hosting environment with SSH access you'll most likely have to stick with the user you are logged in and this should/could be fine. Then you install it with your current credentials like this:
 
 ```bash
-git clone https://github.com/DrDBanner/inmanage.git .inmanage && chmod +x .inmanage/inmanage.sh && .inmanage/inmanage.sh"
+git clone https://github.com/DrDBanner/inmanage.git .inmanage && chmod +x .inmanage/inmanage.sh && .inmanage/inmanage.sh
 ```
 
-Ensure this user has access rights to the Invoice Ninja .env file and you put its name into the script's .env.inmanage configuration file during installation or manually afterwards.
+> [!NOTE]
+> - Ensure you install in the base directory containing the `invoiceninja` folder to avoid file permission issues.
+> - Ensure this user has access rights to the Invoice Ninja .env file and you put its name into the script's .env.inmanage configuration file during installation or manually afterwards.
 
 ## Running the script
 
