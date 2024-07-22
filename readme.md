@@ -215,6 +215,15 @@ Note: Ensure you replace `"web"` with the appropriate user.
 
 Maybe I'll add some more functionality like initial installation and sync to external locations. We'll see.
 
+Things I could imagine:
+
+- [🍒] Invoice Ninja installation from scratch with distribution based templates 
+- [🍒] Sync and push
+- [🍒] Pre- and Post- Hooks with callbacks for external management software or notifications
+- [🍒] Multi instance support within one base directory
+- [🍒] Multi instance support with multiple base directories 
+- [🍒] Management console for managing X instances (provision, monitor, updates, license status)
+
 ### Thoughts on push targets and sync functionality
 
 I have thought about adding a push/sync function so that backups can be sent to a destination, but the more I think about it, it makes more sense not to, at least at this moment in time. Because in most cases you probably want to transfer a copy to your local network and not synchronize it to a backup server that is available on the internet. 
