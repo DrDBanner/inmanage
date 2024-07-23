@@ -190,7 +190,7 @@ run_update() {
         exit 1
     }
     echo -e "Unpacking Data."
-    tar -xf invoiceninja.tar -C "$INM_INSTALLATION_DIRECTORY" || {
+    tar -xzf invoiceninja.tar -C "$INM_INSTALLATION_DIRECTORY" || {
         echo "Failed to unpack"
         exit 1
     }
