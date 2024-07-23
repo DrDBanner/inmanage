@@ -249,6 +249,15 @@ EOL
         echo "Error: Could not create $INM_SELF_ENV_FILE. Aborting configuration."
         exit 1
     fi
+    env_example_file="$INM_BASE_DIRECTORY.inmanage/.env.example"
+    echo "Downloading .env.example for provisioning"
+    curl -sL "https://raw.githubusercontent.com/invoiceninja/invoiceninja/v5-stable/.env.example" -o "$env_example_file" || {
+        echo "Failed to download .env.example for seeding"
+        exit 1
+    }
+    if [ -f "$env_example_file" ]; then
+    sed -i '/^DB_PORT=/a DB_ELEVATED_USERNAME=\nDB_ELEVATED_PASSWORD=' "$env_example_file"
+    fi
     source $INM_SELF_ENV_FILE
     check_provision_file
 }
@@ -383,9 +392,9 @@ install_tar() {
     }
 
      if [ "$mode" == "Provisioned" ]; then
-        echo -e "\n\n Open your browser at $APP_URL now. The application should be there, database and database user are configured. \n Don't forget to set the cronjob like: * * * * * $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1 \n\n"
+        echo -e '\n\n Open your browser at $APP_URL now. The application should be there, database and database user are configured. GOOD TIME TO MAKE YOUR FIRST BACKUP NOW! \n Don't forget to set the cronjob like: * * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1 \n If you want to do a scheduled backup copy this cronjob to your crontab:  * 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c "$INM_BASE_DIRECTORYinmanage.sh backup" >> /dev/null 2>&1 \n\n'
     else
-        echo -e "\n\n Open your browser at your configured address https://your.url/setup now to carry on with database setup. \n Don't forget to set the cronjob like: * * * * * $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1 \n\n"
+        echo -e '\n\n Open your browser at your configured address https://your.url/setup now to carry on with database setup. GOOD TIME TO MAKE YOUR FIRST BACKUP NOW! \n Don't forget to set the cronjob like: * * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1 \n If you want to do a scheduled backup copy this cronjob to your crontab:  * 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c "$INM_BASE_DIRECTORYinmanage.sh backup" >> /dev/null 2>&1 \n\n'
     fi
 
     
