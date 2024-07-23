@@ -4,7 +4,7 @@ Easily update, backup, and install your self-hosted Invoice Ninja instance with 
 
 ## Overview 
 
-This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, and cleanup tasks, and one more thing: Installations (Read: [What this script does section](#what-this-script-does)). It uses a configuration file to set up necessary environment variables and ensures required commands are available. On first run, it will help you set up the configuration.
+This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, and cleanup tasks, and one more thing: Installations (Especially: [Installation Provisioning](#installation-provisioning)). It uses a configuration file to set up necessary environment variables and ensures required commands are available. On first run, it will help you set up the configuration.
 
 ## MGM Script Installation
 
