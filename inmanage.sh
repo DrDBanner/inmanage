@@ -338,7 +338,7 @@ install_tar() {
             echo "Installation aborted."
             exit 0
         fi
-        mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY_last_$(date +'%Y%m%d_%H%M%S')"
+        mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY"_last_$(date +'%Y%m%d_%H%M%S')
     fi
 
     echo "Installation starts now"
