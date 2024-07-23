@@ -210,7 +210,14 @@ run_update() {
         echo "Failed to copy storage"
         exit 1
     }
-
+    if [ -f "$INM_INSTALLATION_DIRECTORY/public/storage/down" ]; then
+    rm "$INM_INSTALLATION_DIRECTORY/public/storage/down" || {
+        echo "Failed to remove 'Maintenance' file in storage destination."
+    }
+    echo "'Maintenance' file in storage destination removed."
+    else
+        echo "'Maintenance' file in storage destination not found."
+    fi
     mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')" || {
         echo "Failed to rename old installation"
         exit 1
