@@ -1,6 +1,6 @@
-# Backup & Update - Invoice Ninja - MGM Script 
+# Backup | Update | Install - Invoice Ninja - MGM Script 
 
-Easily update and back up your self-hosted Invoice Ninja instance with a shell script.
+Easily update, backup and install your self-hosted Invoice Ninja instance with a shell script. Management has never been faster.
 
 ## Overview 
 
