@@ -1,14 +1,6 @@
 #!/bin/bash
 set -e
 
-# Ensure script runs as INM_ENFORCED_USER
-if [ "$(whoami)" != "$INM_ENFORCED_USER" ]; then
-    INM_SCRIPT_PATH=$(realpath "$0")
-    echo "Switching to user '$INM_ENFORCED_USER'."
-    exec sudo -u "$INM_ENFORCED_USER" "$INM_ENFORCED_SHELL" -c "cd '$(pwd)' && \"$INM_SCRIPT_PATH\" \"$@\""
-    exit 0
-fi
-
 ## Self configuration
 INM_SELF_ENV_FILE=".inmanage/.env.inmanage"
 INM_PROVISION_ENV_FILE=".inmanage/.env.provision"
@@ -183,6 +175,13 @@ check_env() {
     create_own_config
   else
     source "$INM_SELF_ENV_FILE"
+        # Ensure script runs as INM_ENFORCED_USER
+        if [ "$(whoami)" != "$INM_ENFORCED_USER" ]; then
+            INM_SCRIPT_PATH=$(realpath "$0")
+            echo "Switching to user '$INM_ENFORCED_USER'."
+            exec sudo -u "$INM_ENFORCED_USER" "$INM_ENFORCED_SHELL" -c "cd '$(pwd)' && \"$INM_SCRIPT_PATH\" \"$@\""
+            exit 0
+        fi
     check_provision_file
   fi
 }
