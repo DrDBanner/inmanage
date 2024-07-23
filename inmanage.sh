@@ -313,7 +313,6 @@ download_ninja() {
 
 # Install tar
 install_tar() {
-    
     local mode="$1"
     local env_file
 
@@ -382,7 +381,9 @@ install_tar() {
         echo "Failed to run artisan up"
         exit 1
     }
-    echo -e "\n\n open your browser now. Should be there."
+    echo -e "\n\n Open your browser at now. The application should be there. Meanwhile I create an initial backup."
+    rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
+    run_backup
 }
 
 # Run update
