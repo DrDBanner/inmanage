@@ -548,7 +548,7 @@ cleanup_old_versions() {
             exit 1
         }
     fi
-
+    rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
     ls -la "$INM_BASE_DIRECTORY"
 }
 
@@ -566,7 +566,7 @@ cleanup_old_backups() {
             exit 1
         }
     fi
-
+    rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
     # List remaining files in the backup directory
     ls -la "$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY"
 }
