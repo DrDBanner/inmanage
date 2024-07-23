@@ -168,6 +168,7 @@ check_provision_file() {
         exit 1
       fi
     fi
+    install_tar "Provisioned"
   else
     if [ -z "$command" ]; then
     echo "No provision."
@@ -257,7 +258,7 @@ EOL
 
 # Check required commands
 check_commands() {
-    local commands=("curl" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "grep" "xargs" "php" "read" "source" "touch" "sed")
+    local commands=("curl" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "read" "source" "touch" "sed")
     for cmd in "${commands[@]}"; do
         if ! command -v "$cmd" &>/dev/null; then
             echo "Error: Command '$cmd' is not available. Please install it and try again."
@@ -315,12 +316,22 @@ download_ninja() {
 
 # Install tar
 install_tar() {
+    
+    local mode="$1"
+    local env_file
+
+    if [ "$mode" == "Provisioned" ]; then
+        env_file="$INM_PROVISION_ENV_FILE"
+    else
+        env_file="$INM_ENV_FILE.example"
+    fi
+
     local latest_version
 
     latest_version=$(get_latest_version)
 
     if [ -d "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" ]; then
-        echo -n "Caution: Installation directory already exists! Proceed with installation? (yes/no): "
+        echo -n "Caution: Installation directory already exists! Current installation directory will get renamed. Proceed with installation? (yes/no): "
         # Set a timeout for 60 seconds
         if ! read -t 60 response; then
             echo "No response within 60 seconds. Installation aborted."
@@ -330,6 +341,7 @@ install_tar() {
             echo "Installation aborted."
             exit 0
         fi
+        mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY_last_$(date +'%Y%m%d_%H%M%S')"
     fi
 
     echo "Installation starts now"
@@ -349,28 +361,35 @@ install_tar() {
         echo "Failed to unpack"
         exit 1
     }
-    cp "$INM_ENV_FILE.example" "$INM_INSTALLATION_DIRECTORY/.env" || {
-        echo "Failed to copy .env.example"
+    mv "$env_file" "$INM_INSTALLATION_DIRECTORY/.env" || {
+        echo "Failed to move .env file"
         exit 1
     }
 
-    $INM_ARTISAN_STRING migrate --force || {
-        echo "Failed to run artisan migrate"
+    chmod 600 "$INM_INSTALLATION_DIRECTORY/.env" || {
+        echo "Failed to chmod 600 .env file"
         exit 1
     }
-    $INM_ARTISAN_STRING ninja:check-data || {
-        echo "Failed to run check data"
+
+    mv "$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
+        echo "Failed move installation to target directory $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY"
+        exit 1
+    } 
+
+    $INM_ARTISAN_STRING key:generate || {
+        echo "Failed to generate key"
         exit 1
     }
-    $INM_ARTISAN_STRING ninja:translations || {
-        echo "Failed to run translations"
+
+    $INM_ARTISAN_STRING artisan:optimize || {
+        echo "Failed to run optimize"
         exit 1
     }
     $INM_ARTISAN_STRING up || {
         echo "Failed to run artisan up"
         exit 1
     }
-
+    echo -p "\n\n open your browser now. Should be there."
 }
 
 # Run update
@@ -575,6 +594,9 @@ cleanup_old_backups() {
 # Function caller
 function_caller() {
     case "$1" in
+    clean_install)
+        install_tar
+        ;;
     update)
         run_update
         ;;
@@ -605,19 +627,19 @@ while [[ $# -gt 0 ]]; do
         force_update=true
         shift
         ;;
-    update | backup | cleanup_versions | cleanup_backups)
+    clean_install | update | backup | cleanup_versions | cleanup_backups)
         command=$1
         shift
         ;;
     *)
-        echo -e "\n\n Usage: ./inmanage.sh <update|backup|cleanup_versions|cleanup_backups> [--force] \n Full Documentation https://github.com/DrDBanner/inmanage/#readme \n\n"
+        echo -e "\n\n Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] \n Full Documentation https://github.com/DrDBanner/inmanage/#readme \n\n"
         exit 1
         ;;
     esac
 done
 
 if [ -z "$command" ]; then
-    echo -e "\n\n Usage: ./inmanage.sh <update|backup|cleanup_versions|cleanup_backups> [--force] \n Full Documentation https://github.com/DrDBanner/inmanage/#readme \n\n"
+    echo -e "\n\n Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] \n Full Documentation https://github.com/DrDBanner/inmanage/#readme \n\n"
     exit 1
 fi
 
