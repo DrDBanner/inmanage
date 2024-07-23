@@ -381,7 +381,14 @@ install_tar() {
         echo "Failed to run artisan up"
         exit 1
     }
-    echo -e "\n\n Open your browser at now. The application should be there. \n Don't forget to set the cronjob like: * * * * * $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1"
+
+     if [ "$mode" == "Provisioned" ]; then
+        echo -e "\n\n Open your browser at $APP_URL now. The application should be there. \n Don't forget to set the cronjob like: * * * * * $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1"
+    else
+        echo -e "\n\n Open your browser at your configured address http://your.url/setup now to carry on. \n Don't forget to set the cronjob like: * * * * * $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1"
+    fi
+
+    
     rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
 }
 
