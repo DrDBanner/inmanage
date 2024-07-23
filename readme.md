@@ -4,17 +4,17 @@ Easily update and back up your self-hosted Invoice Ninja instance with a shell s
 
 ## Overview 
 
-This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, and cleanup tasks. It uses a configuration file to set up necessary environment variables and ensures required commands are available. On first run, it will help you set up the configuration.
+This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, and cleanup tasks, and one more thing: Installations (Read: [What this script does section](#what-this-script-does)). It uses a configuration file to set up necessary environment variables and ensures required commands are available. On first run, it will help you set up the configuration.
 
-## Installation
+## MGM Script Installation
 
 Go to your base directory where the `invoiceninja` folder resides. Then run:
 
 ```bash
-sudo -u web bash -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && chmod +x .inmanage/inmanage.sh && bash .inmanage/inmanage.sh"
+sudo -u www-data bash -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh"
 ```
 
-Ensure that "web" is the correct user (substitute if necessary) who has all the permissions to your Invoice Ninja installation, including reading the .env file. 
+Ensure that `www-data` is the correct user (substitute if necessary) who has all the permissions to your Invoice Ninja installation, including reading the .env file. 
 
 > [!NOTE]
 > - Ensure you install in the base directory containing the `invoiceninja` folder to avoid file permission issues.
@@ -23,7 +23,7 @@ Ensure that "web" is the correct user (substitute if necessary) who has all the 
 If you are in a shared hosting environment with SSH access you'll most likely have to stick with the user you are logged in and this should/could be fine. Then you install it with your current credentials like this:
 
 ```bash
-git clone https://github.com/DrDBanner/inmanage.git .inmanage && chmod +x .inmanage/inmanage.sh && .inmanage/inmanage.sh
+git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh
 ```
 
 > [!NOTE]
@@ -35,10 +35,10 @@ git clone https://github.com/DrDBanner/inmanage.git .inmanage && chmod +x .inman
 Once installed, you can run the script using the symlink in your base directory. For example:
 
 ```bash
-sudo -u web bash -c "bash ./inmanage.sh backup"
+sudo -u www-data bash -c "./inmanage.sh backup"
 ```
 
-This example shows how to run the script in a bash as user 'web'. This can be different on your machine. Like:
+This example shows how to run the script in a bash as user `www-data`. This can be different on your machine. Like:
 
 ```bash
 ./inmanage.sh backup
@@ -55,8 +55,6 @@ Run the script with one of the following commands to perform the associated task
 ```bash
 ./inmanage.sh update
 ./inmanage.sh backup
-./inmanage.sh cleanup_versions
-./inmanage.sh cleanup_backups
 
 ## As a one-liner:
 
@@ -90,7 +88,7 @@ Ensure to substitute the numbers with the correct timestamps/foldername. Now you
 If you want to run it as a cronjob add this line to your crontab. Mind the user 'web' here as well.
 
 ```bash
-0 2 * * * web /path/to/your/inmanage.sh backup > /path/to/logfile 2>&1
+0 2 * * * www-data /path/to/your/inmanage.sh backup > /path/to/logfile 2>&1
 ```
 
 > [!NOTE]
@@ -106,18 +104,27 @@ If you want to run it as a cronjob add this line to your crontab. Mind the user 
 To update the script, use:
 
 ```bash
-cd .inmanage && sudo -u web git pull
+cd .inmanage && sudo -u www-data git pull
 ```
 
-Note: Ensure you replace `"web"` with the appropriate user.
+Note: Ensure you replace `www-data` with the appropriate user.
 
-If you have installed the script as the user with the corresponding rights without sudo the command looks like this
+If you have installed the script as the user with the corresponding rights the command looks like this
 
 ```bash
 cd .inmanage && git pull
 ```
 
 ## Commands
+
+- **`clean_install`**:
+
+  - Downloads and installs the latest version of Invoice Ninja from Github.
+  - Target is the $INSTALLATION_DIRECTORY which must be set during installation in `.env.inmanage`
+  - If the target folder already exists, it gets renamed and you start from scratch.
+  - Creates a clean .env file
+  - Generates the key into the .env file
+  - Generates the cronjob string for you (must be installed manually) 
 
 - **`update`**:
 
@@ -147,24 +154,42 @@ cd .inmanage && git pull
 
    - If `.inmanage/.env.inmanage` file is not found, the script creates it and prompts for settings like installation directory, backup locations, and other configurations.
 
-   You can provision the file manually
+      You can provision the file manually
 
-   ```bash
-   # .inmanage/.env.inmanage configuration file
+      ```bash
+      # .inmanage/.env.inmanage configuration file
 
-   INM_BASE_DIRECTORY="/your/base/directory/" # mind the trailing slash
-   INM_INSTALLATION_DIRECTORY="./invoiceninja"
-   INM_ENV_FILE="./invoiceninja/.env"
-   INM_TEMP_DOWNLOAD_DIRECTORY="./.in_temp_download"
-   INM_BACKUP_DIRECTORY="./_in_backups"
-   INM_ENFORCED_USER="web"
-   INM_ENFORCED_SHELL="/bin/bash"
-   INM_PHP_EXECUTABLE="/usr/bin/php"
-   INM_ARTISAN_STRING="/usr/bin/php /your/base/directory/./invoiceninja/artisan"
-   INM_PROGRAM_NAME="InvoiceNinja" # Backup file name
-   INM_KEEP_BACKUPS="2" # How many iterations to keep
-   INM_FORCE_READ_DB_PW="N" # Read DB Password from installation or assume existing .my.cnf
-   ````
+      INM_BASE_DIRECTORY="/your/base/directory/" # mind the trailing slash
+      INM_INSTALLATION_DIRECTORY="./invoiceninja"
+      INM_ENV_FILE="./invoiceninja/.env"
+      INM_TEMP_DOWNLOAD_DIRECTORY="./.in_temp_download"
+      INM_BACKUP_DIRECTORY="./_in_backups"
+      INM_ENFORCED_USER="web"
+      INM_ENFORCED_SHELL="/bin/bash"
+      INM_PHP_EXECUTABLE="/usr/bin/php"
+      INM_ARTISAN_STRING="/usr/bin/php /your/base/directory/./invoiceninja/artisan"
+      INM_PROGRAM_NAME="InvoiceNinja" # Backup file name
+      INM_KEEP_BACKUPS="2" # How many iterations to keep
+      INM_FORCE_READ_DB_PW="N" # Read DB Password from installation or assume existing .my.cnf
+      ````
+   - ### Installation Provisioning
+
+      During setup, the `.inmanage/.env.example` file is created, mirroring the standard `.env` file of Invoice Ninja. By pre-populating it with `APP_URL` and relevant `DB_` data, and renaming it to `.env.provision`, it becomes a trigger for automated provisioning.
+
+      Next time you run the script, it performs the following tasks in one batch:
+
+      - Creates the database and database user
+      - Downloads and installs the tar file
+      - Embeds the `.env` file
+      - Generates the application key
+      - Migrates the database
+      - Creates an admin user
+      - Reminds you to set up cron jobs
+      - Prompts you to create an initial backup
+
+
+      > [!IMPORTANT]
+      > Within the file `.inmanage/.env.example` are two crucial fields. DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD. Fill these fields with credentials of a user that has the rights to create databases and the rights to give grants. In most cases this user is the database root user. Once the creation of the database and user were successful, these credentials do get removed from that file automatically. 
 
 2. **Environment Variables**:
 
