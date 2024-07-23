@@ -5,7 +5,7 @@ set -e
 if [ "$(whoami)" != "$INM_ENFORCED_USER" ]; then
     INM_SCRIPT_PATH=$(realpath "$0")
     echo "Switching to user '$INM_ENFORCED_USER'."
-    exec sudo -u "$INM_ENFORCED_USER" "$INM_ENFORCED_SHELL" -c "cd '$(pwd)' && \"$INM_ENFORCED_SHELL\" \"$INM_SCRIPT_PATH\" \"$@\""
+    exec sudo -u "$INM_ENFORCED_USER" "$INM_ENFORCED_SHELL" -c "cd '$(pwd)' && \"$INM_SCRIPT_PATH\" \"$@\""
     exit 0
 fi
 
