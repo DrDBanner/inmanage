@@ -320,7 +320,7 @@ install_tar() {
     if [ "$mode" == "Provisioned" ]; then
         env_file="$INM_PROVISION_ENV_FILE"
     else
-        env_file="$INM_ENV_FILE.example"
+        env_file="$INM_INSTALLATION_DIRECTORY/env.example"
     fi
 
     local latest_version
