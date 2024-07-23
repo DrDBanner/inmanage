@@ -170,10 +170,12 @@ check_provision_file() {
 
 # Check and load the self environment file
 check_env() {
+    echo -p "Environment check starts."
   if [ ! -f "$INM_SELF_ENV_FILE" ]; then
     echo "$INM_SELF_ENV_FILE configuration file for this script not found. Attempting to create it..."
     create_own_config
   else
+    echo -p "Self configuration found"
     source "$INM_SELF_ENV_FILE"
         # Ensure script runs as INM_ENFORCED_USER
         if [ "$(whoami)" != "$INM_ENFORCED_USER" ]; then
@@ -617,7 +619,11 @@ function_caller() {
 }
 
 # Parse command-line options
+command=""
 force_update=false
+
+parse_options() {
+
 while [[ $# -gt 0 ]]; do
     case $1 in
     --force)
@@ -629,12 +635,15 @@ while [[ $# -gt 0 ]]; do
         shift
         ;;
     *)
+        echo "Unknown option: $1"
         echo -e "\n\n Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] \n Full Documentation https://github.com/DrDBanner/inmanage/#readme \n\n"
         exit 1
         ;;
     esac
 done
+}
 
+parse_options "$@"
 check_commands
 check_env
 
