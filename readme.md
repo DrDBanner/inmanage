@@ -176,12 +176,14 @@ cd .inmanage && git pull
 
       - Creates the database and database user
       - Downloads and installs the tar file
-      - Embeds the `.env` file
+      - Publishes the `.env.provision` template to `.env` for production use
       - Generates the application key
       - Migrates the database
       - Creates an admin user
       - Reminds you to set up cron jobs
       - Prompts you to create an initial backup
+
+      **Basically, you save a huge amount of time.**
 
 > [!IMPORTANT]
 > Within the file `.inmanage/.env.example` are two crucial fields. DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD. Fill these fields with credentials of a user that has the rights to create databases and the rights to give grants. In most cases this user is the database root user. Once the creation of the database and user were successful, these credentials do get removed from that file automatically. 
