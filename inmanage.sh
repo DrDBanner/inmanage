@@ -377,7 +377,8 @@ install_tar() {
     mv "$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
         echo "Failed move installation to target directory $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY"
         exit 1
-    } 
+    }
+    echo -e "Generating Key" 
     $INM_ARTISAN_STRING key:generate --force || {
         echo "Failed to generate key"
         exit 1
@@ -390,13 +391,20 @@ install_tar() {
         echo "Failed to run artisan up"
         exit 1
     }
-
     if [ "$mode" == "Provisioned" ]; then
+    $INM_ARTISAN_STRING migrate --force || {
+        echo "Failed to run artisan up"
+        exit 1
+    }
+    $INM_ARTISAN_STRING ninja:create-account --email=admin@admin.com --password=admin && echo -e "Login: $APP_URL Username: admin@admin.com Password: admin" || {
+        echo "Standard user creation failed"
+        exit 1
+    }
     echo -e "\n\n Open your browser at $APP_URL now. The application should be there, database and database user are configured. GOOD TIME TO MAKE YOUR FIRST BACKUP NOW! \n Don't forget to set the cronjob like: * * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1 \n If you want to do a scheduled backup copy this cronjob to your crontab:  * 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORYinmanage.sh backup\" >> /dev/null 2>&1 \n\n"
     else
         echo -e "\n\n Open your browser at your configured address https://your.url/setup now to carry on with database setup. GOOD TIME TO MAKE YOUR FIRST BACKUP NOW! \n Don't forget to set the cronjob like: * * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1 \n If you want to do a scheduled backup copy this cronjob to your crontab:  * 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORYinmanage.sh backup\" >> /dev/null 2>&1 \n\n"
     fi
-    
+
     rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
 }
 
