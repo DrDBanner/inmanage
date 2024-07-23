@@ -162,20 +162,18 @@ check_provision_file() {
     fi
     install_tar "Provisioned"
   else
-    if [ -z "$command" ]; then
     echo "No provision."
-    fi
   fi
 }
 
 # Check and load the self environment file
 check_env() {
-    echo -p "Environment check starts."
+    echo -e "Environment check starts."
   if [ ! -f "$INM_SELF_ENV_FILE" ]; then
     echo "$INM_SELF_ENV_FILE configuration file for this script not found. Attempting to create it..."
     create_own_config
   else
-    echo -p "Self configuration found"
+    echo -e "Self configuration found"
     source "$INM_SELF_ENV_FILE"
         # Ensure script runs as INM_ENFORCED_USER
         if [ "$(whoami)" != "$INM_ENFORCED_USER" ]; then
@@ -388,7 +386,7 @@ install_tar() {
         echo "Failed to run artisan up"
         exit 1
     }
-    echo -p "\n\n open your browser now. Should be there."
+    echo -e "\n\n open your browser now. Should be there."
 }
 
 # Run update
@@ -643,9 +641,9 @@ while [[ $# -gt 0 ]]; do
 done
 }
 
-parse_options "$@"
 check_commands
 check_env
+parse_options "$@"
 
 if [ -z "$command" ]; then
     echo -e "\n\n Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] \n Full Documentation https://github.com/DrDBanner/inmanage/#readme \n\n"
