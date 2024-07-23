@@ -424,18 +424,19 @@ run_update() {
         echo "Failed to copy storage"
         exit 1
     }
-    if [ -f "$INM_INSTALLATION_DIRECTORY/public/storage/framework/down" ]; then
-    rm "$INM_INSTALLATION_DIRECTORY/public/storage/framework/down" || {
-        echo "Failed to remove 'Maintenance' file in storage destination."
-    }
-    echo "'Maintenance' file in storage destination removed."
-    else
-        echo "'Maintenance' file in storage destination not found."
-    fi
     mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')" || {
         echo "Failed to rename old installation"
         exit 1
     }
+      # Remove the 'down' file if it exists in the versioned old directory
+    old_version_dir="$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')"
+    if [ -f "$old_version_dir/public/storage/framework/down" ]; then
+        rm "$old_version_dir/public/storage/framework/down" || {
+            echo "Failed to remove 'Maintenance' file from $old_version_dir/public/storage/framework/"
+            exit 1
+        }
+        echo "'Maintenanace' file removed from $old_version_dir/public/storage/framework/."
+    fi
     mv "$INM_BASE_DIRECTORY$INM_TEMP_DOWNLOAD_DIRECTORY/$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
         echo "Failed to move new installation"
         exit 1
