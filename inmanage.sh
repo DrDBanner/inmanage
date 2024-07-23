@@ -370,11 +370,11 @@ install_tar() {
         echo "Failed move installation to target directory $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY"
         exit 1
     } 
-    $INM_ARTISAN_STRING key:generate || {
+    $INM_ARTISAN_STRING key:generate --force || {
         echo "Failed to generate key"
         exit 1
     }
-    $INM_ARTISAN_STRING artisan:optimize || {
+    $INM_ARTISAN_STRING optimize || {
         echo "Failed to run optimize"
         exit 1
     }
