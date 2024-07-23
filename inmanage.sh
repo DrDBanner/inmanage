@@ -43,7 +43,7 @@ create_database() {
   if [ -z "$password" ]; then
     echo -e "No password given: Assuming .my.cnf credentials connection."
     mysql -h "$DB_HOST" -P "$DB_PORT" -u "$username" <<EOF
-CREATE DATABASE IF NOT EXISTS $DB_DATABASE;
+CREATE DATABASE IF NOT EXISTS $DB_DATABASE DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
 CREATE USER IF NOT EXISTS '$DB_USERNAME'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
 GRANT ALL PRIVILEGES ON $DB_DATABASE.* TO '$DB_USERNAME'@'localhost' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
@@ -54,7 +54,7 @@ FLUSH PRIVILEGES;
 EOF
   else
     mysql -h "$DB_HOST" -P "$DB_PORT" -u "$username" -p"$password" <<EOF
-CREATE DATABASE IF NOT EXISTS $DB_DATABASE;
+CREATE DATABASE IF NOT EXISTS $DB_DATABASE DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
 CREATE USER IF NOT EXISTS '$DB_USERNAME'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
 GRANT ALL PRIVILEGES ON $DB_DATABASE.* TO '$DB_USERNAME'@'localhost' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
@@ -338,7 +338,7 @@ install_tar() {
             echo "Installation aborted."
             exit 0
         fi
-        mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY"_last_$(date +'%Y%m%d_%H%M%S')
+        mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "_last_IN_$(date +'%Y%m%d_%H%M%S')"
     fi
 
     echo "Installation starts now"
