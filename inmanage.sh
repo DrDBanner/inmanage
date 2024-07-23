@@ -216,12 +216,12 @@ run_update() {
     }
     # Remove the 'down' file if it exists in the versioned old directory
     old_version_dir="$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')"
-    if [ -f "$old_version_dir/public/storage/down" ]; then
-        rm "$old_version_dir/public/storage/down" || {
-            echo "Failed to remove 'Maintenance' file from $old_version_dir/public/storage"
+    if [ -f "$old_version_dir/public/storage/framework/down" ]; then
+        rm "$old_version_dir/public/storage/framework/down" || {
+            echo "Failed to remove 'Maintenance' file from $old_version_dir/public/storage/framework/"
             exit 1
         }
-        echo "'Maintenanace' file removed from $old_version_dir/public/storage."
+        echo "'Maintenanace' file removed from $old_version_dir/public/storage/framework/."
     fi
     mv "$INM_BASE_DIRECTORY$INM_TEMP_DOWNLOAD_DIRECTORY/$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
         echo "Failed to move new installation"
