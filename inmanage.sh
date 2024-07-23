@@ -255,7 +255,7 @@ EOL
 
 # Check required commands
 check_commands() {
-    local commands=("curl" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "grep" "xargs" "php" "read" "source" "touch")
+    local commands=("curl" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "grep" "xargs" "php" "read" "source" "touch" "sed")
     for cmd in "${commands[@]}"; do
         if ! command -v "$cmd" &>/dev/null; then
             echo "Error: Command '$cmd' is not available. Please install it and try again."
@@ -343,7 +343,7 @@ install_tar() {
         exit 1
     }
 
-    tar -xf invoiceninja.tar -C "$INM_INSTALLATION_DIRECTORY" || {
+    tar -xzf invoiceninja.tar -C "$INM_INSTALLATION_DIRECTORY" || {
         echo "Failed to unpack"
         exit 1
     }
@@ -402,7 +402,7 @@ run_update() {
         exit 1
     }
     echo -e "Unpacking Data."
-    tar -xf invoiceninja.tar -C "$INM_INSTALLATION_DIRECTORY" || {
+    tar -xzf invoiceninja.tar -C "$INM_INSTALLATION_DIRECTORY" || {
         echo "Failed to unpack"
         exit 1
     }
