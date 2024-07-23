@@ -381,7 +381,7 @@ install_tar() {
         echo "Failed to run artisan up"
         exit 1
     }
-    echo -e "\n\n Open your browser at now. The application should be there. Meanwhile I create an initial backup."
+    echo -e "\n\n Open your browser at now. The application should be there. \n Don't forget to set the cronjob like: * * * * * $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1"
     rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
 }
 
