@@ -210,8 +210,8 @@ run_update() {
         echo "Failed to copy storage"
         exit 1
     }
-    if [ -f "$INM_INSTALLATION_DIRECTORY/public/storage/down" ]; then
-    rm "$INM_INSTALLATION_DIRECTORY/public/storage/down" || {
+    if [ -f "$INM_INSTALLATION_DIRECTORY/public/storage/framework/down" ]; then
+    rm "$INM_INSTALLATION_DIRECTORY/public/storage/framework/down" || {
         echo "Failed to remove 'Maintenance' file in storage destination."
     }
     echo "'Maintenance' file in storage destination removed."
