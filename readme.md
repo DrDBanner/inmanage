@@ -1,6 +1,6 @@
 # Backup | Update | Install - Invoice Ninja - MGM Script 
 
-Easily update, backup and install your self-hosted Invoice Ninja instance with a shell script. Management has never been faster.
+Easily update, backup, and install your self-hosted Invoice Ninja instance with a shell script. Management has never been faster.
 
 ## Overview 
 
@@ -16,10 +16,6 @@ sudo -u www-data bash -c "git clone https://github.com/DrDBanner/inmanage.git .i
 
 Ensure that `www-data` is the correct user (substitute if necessary) who has all the permissions to your Invoice Ninja installation, including reading the .env file. 
 
-> [!NOTE]
-> - Ensure you install in the base directory containing the `invoiceninja` folder to avoid file permission issues.
-> - Run the script as a user who can read the .env file of your Invoice Ninja installation. Typically, this is the web server user, such as `www-data`, `httpd`, `web`, `apache`, or `nginx`.
-
 If you are in a shared hosting environment with SSH access you'll most likely have to stick with the user you are logged in and this should/could be fine. Then you install it with your current credentials like this:
 
 ```bash
@@ -28,6 +24,7 @@ git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inman
 
 > [!NOTE]
 > - Ensure you install in the base directory containing the `invoiceninja` folder to avoid file permission issues.
+> - Run the script as a user who can read the .env file of your Invoice Ninja installation. Typically, this is the web server user, such as `www-data`, `httpd`, `web`, `apache`, or `nginx`.
 > - Ensure this user has access rights to the Invoice Ninja .env file and you put its name into the script's .env.inmanage configuration file during installation or manually afterwards.
 
 ## Running the script
@@ -187,9 +184,8 @@ cd .inmanage && git pull
       - Reminds you to set up cron jobs
       - Prompts you to create an initial backup
 
-
-      > [!IMPORTANT]
-      > Within the file `.inmanage/.env.example` are two crucial fields. DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD. Fill these fields with credentials of a user that has the rights to create databases and the rights to give grants. In most cases this user is the database root user. Once the creation of the database and user were successful, these credentials do get removed from that file automatically. 
+> [!IMPORTANT]
+> Within the file `.inmanage/.env.example` are two crucial fields. DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD. Fill these fields with credentials of a user that has the rights to create databases and the rights to give grants. In most cases this user is the database root user. Once the creation of the database and user were successful, these credentials do get removed from that file automatically. 
 
 2. **Environment Variables**:
 
