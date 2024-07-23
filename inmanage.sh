@@ -320,7 +320,7 @@ install_tar() {
     if [ "$mode" == "Provisioned" ]; then
         env_file="$INM_PROVISION_ENV_FILE"
     else
-        env_file="$INM_INSTALLATION_DIRECTORY/env.example"
+        env_file="$INM_INSTALLATION_DIRECTORY/.env.example"
     fi
 
     local latest_version
@@ -353,7 +353,7 @@ install_tar() {
         echo "Failed to change owner"
         exit 1
     }
-
+    echo -e "Unpacking tar"
     tar -xzf invoiceninja.tar -C "$INM_INSTALLATION_DIRECTORY" || {
         echo "Failed to unpack"
         exit 1
@@ -362,22 +362,18 @@ install_tar() {
         echo "Failed to move .env file"
         exit 1
     }
-
     chmod 600 "$INM_INSTALLATION_DIRECTORY/.env" || {
         echo "Failed to chmod 600 .env file"
         exit 1
     }
-
     mv "$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
         echo "Failed move installation to target directory $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY"
         exit 1
     } 
-
     $INM_ARTISAN_STRING key:generate || {
         echo "Failed to generate key"
         exit 1
     }
-
     $INM_ARTISAN_STRING artisan:optimize || {
         echo "Failed to run optimize"
         exit 1
