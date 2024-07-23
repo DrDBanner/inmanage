@@ -637,12 +637,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+check_commands
+check_env
+
 if [ -z "$command" ]; then
     echo -e "\n\n Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] \n Full Documentation https://github.com/DrDBanner/inmanage/#readme \n\n"
     exit 1
 fi
-
-check_commands
-check_env
 
 cd "$INM_BASE_DIRECTORY" && function_caller "$command"
