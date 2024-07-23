@@ -245,8 +245,6 @@ EOL
             echo "The symlink does not exist. Creating..."
             ln -s "$target" "$link"
         fi
-
-        echo "A symlink to this script has been created in the base directory."
     else
         echo "Error: Could not create $INM_SELF_ENV_FILE. Aborting configuration."
         exit 1
