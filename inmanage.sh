@@ -1,6 +1,18 @@
 #!/bin/bash
 set -e
 
+# Ensure script runs as INM_ENFORCED_USER
+if [ "$(whoami)" != "$INM_ENFORCED_USER" ]; then
+    INM_SCRIPT_PATH=$(realpath "$0")
+    echo "Switching to user '$INM_ENFORCED_USER'."
+    exec sudo -u "$INM_ENFORCED_USER" "$INM_ENFORCED_SHELL" -c "cd '$(pwd)' && \"$INM_ENFORCED_SHELL\" \"$INM_SCRIPT_PATH\" \"$@\""
+    exit 0
+fi
+
+## Self configuration
+INM_SELF_ENV_FILE=".inmanage/.env.inmanage"
+INM_PROVISION_ENV_FILE=".inmanage/.env.provision"
+
 # Function to prompt for user input
 prompt() {
     local var_name="$1"
@@ -21,15 +33,165 @@ prompt() {
     done
 }
 
-if [ ! -f ".inmanage/.env.inmanage" ]; then
-    echo ".inmanage/.env.inmanage configuration file for this script not found. Attempting to create it..."
+## Create Database
+## Consumes parameters for the connection like: create_database "$DB_ELEVATED_USERNAME" "$DB_ELEVATED_PASSWORD"
+## If username is missing, it prompts for user input. If password is missing it tries to connect with elevated user only.
 
+create_database() {
+  local username="$1"
+  local password="$2"
+
+  if [ -z "$username" ]; then
+    username=$(prompt "DB_ELEVATED_USERNAME" "" "Enter a DB username with create database permissions.")
+    echo "Enter the password (input will be hidden):"
+    read -s password
+  fi
+
+  # Create database and user
+  if [ -z "$password" ]; then
+    echo -e "No password given: Assuming .my.cnf credentials connection."
+    mysql -h "$DB_HOST" -P "$DB_PORT" -u "$username" <<EOF
+CREATE DATABASE IF NOT EXISTS $DB_DATABASE;
+CREATE USER IF NOT EXISTS '$DB_USERNAME'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
+GRANT ALL PRIVILEGES ON $DB_DATABASE.* TO '$DB_USERNAME'@'localhost' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+
+CREATE USER IF NOT EXISTS '$DB_USERNAME'@'$DB_HOST' IDENTIFIED BY '$DB_PASSWORD';
+GRANT ALL PRIVILEGES ON $DB_DATABASE.* TO '$DB_USERNAME'@'$DB_HOST' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+EOF
+  else
+    mysql -h "$DB_HOST" -P "$DB_PORT" -u "$username" -p"$password" <<EOF
+CREATE DATABASE IF NOT EXISTS $DB_DATABASE;
+CREATE USER IF NOT EXISTS '$DB_USERNAME'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
+GRANT ALL PRIVILEGES ON $DB_DATABASE.* TO '$DB_USERNAME'@'localhost' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+
+CREATE USER IF NOT EXISTS '$DB_USERNAME'@'$DB_HOST' IDENTIFIED BY '$DB_PASSWORD';
+GRANT ALL PRIVILEGES ON $DB_DATABASE.* TO '$DB_USERNAME'@'$DB_HOST' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+EOF
+  fi
+
+  if [ $? -eq 0 ]; then
+    echo "Database and user created successfully. If they already existed, they were untouched. Privileges were granted."
+
+    # Remove DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD from INM_PROVISION_ENV_FILE
+    if [ -f "$INM_PROVISION_ENV_FILE" ]; then
+      sed -i '/^DB_ELEVATED_USERNAME/d' "$INM_PROVISION_ENV_FILE"
+      sed -i '/^DB_ELEVATED_PASSWORD/d' "$INM_PROVISION_ENV_FILE"
+      echo "Removed DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD from $INM_PROVISION_ENV_FILE if they were there."
+    else
+      echo "$INM_PROVISION_ENV_FILE not found, cannot remove elevated credentials."
+    fi
+  else
+    echo "Failed to create database and user."
+    exit 1
+  fi
+}
+
+
+## Check for .env for installation provisioning, create db, move IN config to target
+check_provision_file() {
+  if [ -f "$INM_PROVISION_ENV_FILE" ]; then
+    source "$INM_PROVISION_ENV_FILE"
+
+    if [ -z "$DB_HOST" ] || [ -z "$DB_DATABASE" ] || [ -z "$DB_USERNAME" ] || [ -z "$DB_PORT" ]; then
+      echo "Some DB variables are missing in provision file."
+      exit 1
+    fi
+
+    # Check for elevated credentials
+    if [ -n "$DB_ELEVATED_USERNAME" ]; then
+      echo "Elevated SQL user $DB_ELEVATED_USERNAME found in $INM_PROVISION_ENV_FILE."
+      elevated_username="$DB_ELEVATED_USERNAME"
+      elevated_password="$DB_ELEVATED_PASSWORD"
+    else
+      echo "No elevated SQL username found. Continuing with standard credentials."
+      elevated_username=""
+      elevated_password=""
+    fi
+
+    echo "Provision file loaded. Checking database connection and database existence now."
+
+    # Attempt connection using elevated credentials if available
+    if [ -n "$elevated_username" ]; then
+      if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e 'quit'; then
+        echo "Elevated credentials: Connection successful."
+        # Check if database exists
+        if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e "use $DB_DATABASE"; then
+          echo "Connection Possible. Database already exists."
+        else
+          echo "Connection Possible. Database does not exist."
+          echo "Trying to create database now."
+          create_database "$elevated_username" "$elevated_password"
+        fi
+      else
+        echo "Failed to connect using elevated credentials. Check your elevated DB credentials and connection settings."
+
+        # Prompt for elevated password if not provided
+        if [ -z "$elevated_password" ]; then
+          elevated_password=$(prompt "DB_ELEVATED_PASSWORD" "" "Enter the password for elevated user")
+        fi
+
+        # Retry connection with the provided password
+        if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e 'quit'; then
+          echo "Connection successful with provided elevated credentials."
+          # Check if database exists
+          if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e "use $DB_DATABASE"; then
+            echo "Connection Possible. Database already exists."
+          else
+            echo "Connection Possible. Database does not exist."
+            echo "Trying to create database now."
+            create_database "$elevated_username" "$elevated_password"
+          fi
+        else
+          echo "Failed to connect with provided elevated credentials. Unable to proceed."
+          exit 1
+        fi
+      fi
+    else
+      echo "No elevated credentials available. Trying to connect with standard user."
+
+      # Check database connection using standard user credentials
+      if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e 'quit'; then
+        # Check if database exists
+        if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "use $DB_DATABASE"; then
+          echo "Connection Possible. Database already exists."
+        else
+          echo "Connection Possible. Database does not exist."
+          echo "Trying to create database now."
+          create_database "$DB_USERNAME" "$DB_PASSWORD"
+        fi
+      else
+        echo "Failed to connect to the database with standard credentials. Check your DB credentials and connection settings."
+        exit 1
+      fi
+    fi
+  else
+    echo "Skipping provision"
+  fi
+}
+
+# Check and load the self environment file
+check_env() {
+  if [ ! -f "$INM_SELF_ENV_FILE" ]; then
+    echo "$INM_SELF_ENV_FILE configuration file for this script not found. Attempting to create it..."
+    create_own_config
+  else
+    source "$INM_SELF_ENV_FILE"
+    check_provision_file
+  fi
+}
+
+# Create config file and symlink in base directory
+create_own_config() {
     # Temporarily create the file to check if it's possible
-    if touch ".inmanage/.env.inmanage"; then
-        echo "File creation successful. Proceeding with configuration..."
-        
-        # Remove the file again in case the installation prompt isn't successful. 
-        rm .inmanage/.env.inmanage
+    if touch "$INM_SELF_ENV_FILE"; then
+        echo "Write Permissions OK. Proceeding with configuration..."
+
+        # Remove the file again in case the installation prompt isn't successful.
+        rm $INM_SELF_ENV_FILE
 
         # Query for configuration
         echo -e "\n\n Just press [ENTER] to accept defaults. \n\n"
@@ -48,7 +210,7 @@ if [ ! -f ".inmanage/.env.inmanage" ]; then
         INM_KEEP_BACKUPS=$(prompt "INM_KEEP_BACKUPS" "2" "How many backup files and update iterations to keep? If you keep 7 and backup on a daily basis you have 7 snapshots available.")
 
         # Save configuration to .env.inmanage
-        cat <<EOL >.inmanage/.env.inmanage
+        cat <<EOL >$INM_SELF_ENV_FILE
 INM_BASE_DIRECTORY="$INM_BASE_DIRECTORY"
 INM_INSTALLATION_DIRECTORY="$INM_INSTALLATION_DIRECTORY"
 INM_ENV_FILE="$INM_ENV_FILE"
@@ -63,7 +225,7 @@ INM_KEEP_BACKUPS="$INM_KEEP_BACKUPS"
 INM_FORCE_READ_DB_PW="$INM_FORCE_READ_DB_PW"
 EOL
 
-        echo ".env.inmanage has been created and configured."
+        echo "$INM_SELF_ENV_FILE has been created and configured."
 
         target="$INM_BASE_DIRECTORY.inmanage/inmanage.sh"
         link="$INM_BASE_DIRECTORY/inmanage.sh"
@@ -84,13 +246,12 @@ EOL
 
         echo "A symlink to this script has been created in the base directory."
     else
-        echo "Error: Could not create .inmanage/.env.inmanage. Aborting configuration."
+        echo "Error: Could not create $INM_SELF_ENV_FILE. Aborting configuration."
         exit 1
     fi
-fi
-
-source .inmanage/.env.inmanage
-
+    source $INM_SELF_ENV_FILE
+    check_provision_file
+}
 
 # Check required commands
 check_commands() {
@@ -102,14 +263,6 @@ check_commands() {
         fi
     done
 }
-
-# Ensure script runs as INM_ENFORCED_USER
-if [ "$(whoami)" != "$INM_ENFORCED_USER" ]; then
-    INM_SCRIPT_PATH=$(realpath "$0")
-    echo "Switching to user '$INM_ENFORCED_USER'."
-    exec sudo -u "$INM_ENFORCED_USER" "$INM_ENFORCED_SHELL" -c "cd '$(pwd)' && \"$INM_ENFORCED_SHELL\" \"$INM_SCRIPT_PATH\" \"$@\""
-    exit 0
-fi
 
 # Get installed version
 get_installed_version() {
@@ -158,6 +311,66 @@ download_ninja() {
     }
 }
 
+# Install tar
+install_tar() {
+    local latest_version
+
+    latest_version=$(get_latest_version)
+
+    if [ -d "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" ]; then
+        echo -n "Caution: Installation directory already exists! Proceed with installation? (yes/no): "
+        # Set a timeout for 60 seconds
+        if ! read -t 60 response; then
+            echo "No response within 60 seconds. Installation aborted."
+            exit 0
+        fi
+        if [[ ! "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+            echo "Installation aborted."
+            exit 0
+        fi
+    fi
+
+    echo "Installation starts now"
+
+    download_ninja
+
+    mkdir "$INM_INSTALLATION_DIRECTORY" || {
+        echo "Failed to create installation directory"
+        exit 1
+    }
+    chown "$INM_ENFORCED_USER" "$INM_INSTALLATION_DIRECTORY" || {
+        echo "Failed to change owner"
+        exit 1
+    }
+
+    tar -xf invoiceninja.tar -C "$INM_INSTALLATION_DIRECTORY" || {
+        echo "Failed to unpack"
+        exit 1
+    }
+    cp "$INM_ENV_FILE.example" "$INM_INSTALLATION_DIRECTORY/.env" || {
+        echo "Failed to copy .env.example"
+        exit 1
+    }
+
+    $INM_ARTISAN_STRING migrate --force || {
+        echo "Failed to run artisan migrate"
+        exit 1
+    }
+    $INM_ARTISAN_STRING ninja:check-data || {
+        echo "Failed to run check data"
+        exit 1
+    }
+    $INM_ARTISAN_STRING ninja:translations || {
+        echo "Failed to run translations"
+        exit 1
+    }
+    $INM_ARTISAN_STRING up || {
+        echo "Failed to run artisan up"
+        exit 1
+    }
+
+}
+
 # Run update
 run_update() {
     local installed_version latest_version
@@ -165,7 +378,7 @@ run_update() {
     installed_version=$(get_installed_version)
     latest_version=$(get_latest_version)
 
-   if [ "$installed_version" == "$latest_version" ] && [ "$force_update" != true ]; then
+    if [ "$installed_version" == "$latest_version" ] && [ "$force_update" != true ]; then
         echo -n "Already up-to-date. Proceed with update? (yes/no): "
         # Set a timeout for 60 seconds
         if ! read -t 60 response; then
@@ -177,7 +390,6 @@ run_update() {
             exit 0
         fi
     fi
-
 
     echo "Update starts now."
     download_ninja
@@ -331,11 +543,10 @@ cleanup_old_versions() {
     ls -la "$INM_BASE_DIRECTORY"
 }
 
-
 # Cleanup old backups
 cleanup_old_backups() {
     echo "Cleaning up old backups."
-    
+
     # Find backup files and list them
     local backup_files
     backup_files=$(find "$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY" -maxdepth 1 -type f -name "*.tar.gz" | sort -r | tail -n +$((INM_KEEP_BACKUPS + 1)))
@@ -351,8 +562,6 @@ cleanup_old_backups() {
     ls -la "$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY"
 }
 
-
-
 # Function caller
 function_caller() {
     case "$1" in
@@ -361,6 +570,9 @@ function_caller() {
         ;;
     backup)
         run_backup
+        ;;
+    create-db)
+        create_database
         ;;
     cleanup_versions)
         cleanup_old_versions
@@ -400,5 +612,6 @@ if [ -z "$command" ]; then
 fi
 
 check_commands
+check_env
 
 cd "$INM_BASE_DIRECTORY" && function_caller "$command"
