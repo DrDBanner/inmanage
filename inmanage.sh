@@ -383,7 +383,6 @@ install_tar() {
     }
     echo -e "\n\n Open your browser at now. The application should be there. Meanwhile I create an initial backup."
     rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
-    run_backup
 }
 
 # Run update
