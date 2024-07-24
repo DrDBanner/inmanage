@@ -254,11 +254,11 @@ cd .inmanage && git pull
 
 ## Roadmap
 
-Maybe I'll add some more functionality like initial installation and sync to external locations. We'll see.
+Maybe I'll add some more functionality like ~~initial installation~~ and sync to external locations. We'll see.
 
 Things I could imagine:
 
-- [🍒] Invoice Ninja installation from scratch with distribution based templates 
+- [🍒] ~~Invoice Ninja installation from scratch with distribution based templates~~ 
 - [🍒] Sync and push
 - [🍒] Pre- and Post- Hooks with callbacks for external management software or notifications
 - [🍒] Multi instance support within one base directory

@@ -203,7 +203,7 @@ create_own_config() {
         INM_TEMP_DOWNLOAD_DIRECTORY="./._in_tempDownload"
         INM_BACKUP_DIRECTORY=$(prompt "INM_BACKUP_DIRECTORY" "./_in_backups" "Where shall backups go?")
         INM_FORCE_READ_DB_PW=$(prompt "INM_FORCE_READ_DB_PW" "N" "Include database password in backup command? If Y we read it from Invoice Ninja installation, but it's a security concern and may be visible for other server users while the task is running. If N the script assumes you have a secure and working .my.cnf file with your DB credentials. (Y/N)")
-        INM_ENFORCED_USER=$(prompt "INM_ENFORCED_USER" "web" "The user running the script? Should be the webserver user in most cases. Check twice if this value is set correct according to your webserver setup.")
+        INM_ENFORCED_USER=$(prompt "INM_ENFORCED_USER" "www-data" "The user running the script? Should be the webserver user in most cases. Check twice if this value is set correct according to your webserver's setup.")
         INM_ENFORCED_SHELL=$(prompt "INM_ENFORCED_SHELL" "$(command -v bash)" "Which shell should be used? In doubt, keep as is.")
         INM_PHP_EXECUTABLE=$(prompt "INM_PHP_EXECUTABLE" "$(command -v php)" "Path to the PHP executable? In doubt, keep as is.")
         INM_ARTISAN_STRING="$INM_PHP_EXECUTABLE $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/artisan"
