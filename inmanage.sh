@@ -402,7 +402,7 @@ install_tar() {
         echo -e "\n\nSetup Complete!\n\n\
 Open your browser at $APP_URL to access the application.\n\
 The database and user are configured.\n\
-It's a good time to make your first backup!\n\n\
+IT'S A GOOD TIME TO MAKE YOUR FIRST BACKUP NOW!!\n\n\
 Cronjob Setup:\n\
 Add this for scheduled tasks:\n\
 * * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1\n\n\
@@ -411,7 +411,16 @@ To schedule a backup, add this:\n\
 * 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY/inmanage.sh backup\" >> /dev/null 2>&1\n\n"
 
     else
-        echo -e "\n\n Open your browser at your configured address https://your.url/setup now to carry on with database setup. GOOD TIME TO MAKE YOUR FIRST BACKUP NOW! \n Don't forget to set the cronjob like: * * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1 \n If you want to do a scheduled backup copy this cronjob to your crontab:  * 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY inmanage.sh backup\" >> /dev/null 2>&1 \n\n"
+        echo -e "\n\nSetup Complete!\n\n\
+Open your browser at your configured address https://your.url/setup now to carry on with database setup.\n\
+The database and user are configured.\n\
+IT'S A GOOD TIME TO MAKE YOUR FIRST BACKUP NOW!!\n\n\
+Cronjob Setup:\n\
+Add this for scheduled tasks:\n\
+* * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1\n\n\
+Scheduled Backup:\n\
+To schedule a backup, add this:\n\
+* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY/inmanage.sh backup\" >> /dev/null 2>&1\n\n"
     fi
 
     cd "$INM_BASE_DIRECTORY" && rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
