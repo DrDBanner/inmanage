@@ -120,7 +120,8 @@ cd .inmanage && git pull
   - If the target folder already exists, it gets renamed and you start from scratch.
   - Creates a clean .env file
   - Generates the key into the .env file
-  - Generates the cronjob string for you (must be installed manually) 
+  - Generates the cronjob string for you (must be installed manually)
+  - Another powerful option is the [Provisioned Installation](#installation-provisioning) option. 
 
 - **`update`**:
 
