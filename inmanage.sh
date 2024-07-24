@@ -416,7 +416,7 @@ run_update() {
     latest_version=$(get_latest_version)
 
     if [ "$installed_version" == "$latest_version" ] && [ "$force_update" != true ]; then
-        echo -e "Already up-to-date. Proceed with update? (yes/no): "
+        echo -e "Already up-to-date. Proceed with update? \(yes/no\): "
         # Set a timeout for 60 seconds
         if ! read -t 60 response; then
             echo "No response within 60 seconds. Update aborted."
