@@ -2,6 +2,8 @@
 
 Easily update, backup, and install your self-hosted Invoice Ninja instance with a shell script. Maintenance and management has never been faster.
 
+[![Install Invoice Ninja in 5 minutes](https://github.com/user-attachments/assets/adcecf2e-1cb7-471e-92cd-93e31443e7b6)](https://www.youtube.com/watch?v=SdOmEkSL9os)
+
 ## Overview
 
 This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, cleanup tasks, and installations, including [Installation Provisioning](#installation-provisioning). It uses a configuration file to set up necessary environment variables and ensures required commands are available. On the first run, it helps you set up the configuration.
