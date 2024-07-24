@@ -11,6 +11,7 @@ This script manages your Invoice Ninja installation (version 5 and above) by per
 * A running and configured webserver
 * BASH Shell
 * Credentials for the webserver and database
+* A peek into the basics of Invoice Ninja mechanics ([Official Installation Documentation](https://invoiceninja.github.io/en/self-host-installation/))
 
 
 ## MGM Script Installation
