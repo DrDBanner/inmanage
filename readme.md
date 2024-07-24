@@ -147,7 +147,7 @@ cd .inmanage && git pull
 
 ## What this script does
 
-1. **Configuration File Setup**:
+1.  #### Configuration File Setup:
 
    - If `.inmanage/.env.inmanage` file is not found, the script creates it and prompts for settings like installation directory, backup locations, and other configurations.
 
@@ -169,7 +169,7 @@ cd .inmanage && git pull
       INM_KEEP_BACKUPS="2" # How many iterations to keep
       INM_FORCE_READ_DB_PW="N" # Read DB Password from installation or assume existing .my.cnf
       ````
-   - ### Installation Provisioning
+   - #### Installation Provisioning
 
       During setup, the `.inmanage/.env.example` file is created, mirroring the standard `.env` file of Invoice Ninja. By pre-populating it with `APP_URL` and relevant `DB_` data, and renaming it to `.env.provision`, it becomes a trigger for automated provisioning.
 
@@ -208,7 +208,7 @@ cd .inmanage && git pull
   > [!CAUTION]
   > If you have set `INM_FORCE_READ_DB_PW="Y"` in your configuration, then it will grab the password and pass it to the mysqldump command. Which CAN be a security issue. So, handle with care.
 
-6. **Updates Invoice Ninja**
+6. #### Updates Invoice Ninja
 
    - **Version Check**
 
@@ -235,7 +235,7 @@ cd .inmanage && git pull
       - Production Mode: Puts Invoice Ninja back into production mode.
       - Clean Up: Automatically cleans up old installation backups based on your settings.
 
-6. **Backup Invoice Ninja**
+6. #### Backup Invoice Ninja
 
    - **Checks**
 
