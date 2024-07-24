@@ -408,7 +408,7 @@ Add this for scheduled tasks:\n\
 * * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1\n\n\
 Scheduled Backup:\n\
 To schedule a backup, add this:\n\
-* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY/inmanage.sh backup\" >> /dev/null 2>&1\n\n"
+* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY./inmanage.sh backup\" >> /dev/null 2>&1\n\n"
 
     else
         echo -e "\n\nSetup Complete!\n\n\
@@ -420,7 +420,7 @@ Add this for scheduled tasks:\n\
 * * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1\n\n\
 Scheduled Backup:\n\
 To schedule a backup, add this:\n\
-* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY/inmanage.sh backup\" >> /dev/null 2>&1\n\n"
+* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY./inmanage.sh backup\" >> /dev/null 2>&1\n\n"
     fi
 
     cd "$INM_BASE_DIRECTORY" && rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
