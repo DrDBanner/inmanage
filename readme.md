@@ -2,9 +2,9 @@
 
 Easily update, backup, and install your self-hosted Invoice Ninja instance with a shell script. Maintenance and management has never been faster.
 
-## Overview 
+## Overview
 
-This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, and cleanup tasks, and one more thing: Installations (Especially: [Installation Provisioning](#installation-provisioning)). It uses a configuration file to set up necessary environment variables and ensures required commands are available. On first run, it will help you set up the configuration.
+This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, cleanup tasks, and installations, including [Installation Provisioning](#installation-provisioning). It uses a configuration file to set up necessary environment variables and ensures required commands are available. On the first run, it helps you set up the configuration.
 
 ## Prerequisites
 
