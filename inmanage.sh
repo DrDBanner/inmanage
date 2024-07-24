@@ -226,7 +226,6 @@ INM_PROGRAM_NAME="$INM_PROGRAM_NAME"
 INM_KEEP_BACKUPS="$INM_KEEP_BACKUPS"
 INM_FORCE_READ_DB_PW="$INM_FORCE_READ_DB_PW"
 EOL
-
         echo "$INM_SELF_ENV_FILE has been created and configured."
 
         target="$INM_BASE_DIRECTORY.inmanage/inmanage.sh"
@@ -396,7 +395,7 @@ install_tar() {
         echo "Failed to run artisan up"
         exit 1
     }
-    $INM_ARTISAN_STRING ninja:create-account --email=admin@admin.com --password=admin && echo -e "\n\n\ Login: $APP_URL Username: admin@admin.com Password: admin \n\n\" || {
+    $INM_ARTISAN_STRING ninja:create-account --email=admin@admin.com --password=admin && echo -e "\n\nLogin: $APP_URL Username: admin@admin.com Password: admin \n\n" || {
         echo "Standard user creation failed"
         exit 1
     }
