@@ -6,9 +6,16 @@ Easily update, backup, and install your self-hosted Invoice Ninja instance with 
 
 This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, and cleanup tasks, and one more thing: Installations (Especially: [Installation Provisioning](#installation-provisioning)). It uses a configuration file to set up necessary environment variables and ensures required commands are available. On first run, it will help you set up the configuration.
 
+## Prerequisites
+
+* A running and configured webserver
+* BASH Shell
+* Credentials for the webserver and database
+
+
 ## MGM Script Installation
 
-Go to your base directory where the `invoiceninja` folder resides. Then run:
+Go to your **base directory** where the `invoiceninja` folder resides or shall reside. Then run:
 
 ```bash
 sudo -u www-data bash -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh"
