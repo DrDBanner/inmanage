@@ -24,8 +24,8 @@ git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inman
 
 > [!NOTE]
 > - Ensure you install in the base directory containing the `invoiceninja` folder to avoid file permission issues.
-> - Run the script as a user who can read the .env file of your Invoice Ninja installation. Typically, this is the web server user, such as `www-data`, `httpd`, `web`, `apache`, or `nginx`.
-> - Ensure this user has access rights to the Invoice Ninja .env file and you put its name into the script's .env.inmanage configuration file during installation or manually afterwards.
+> - Run the script as a user who can read the `.env` file of your Invoice Ninja installation. Typically, this is the web server user, such as `www-data`, `httpd`, `web`, `apache`, or `nginx`.
+> - Ensure you put its name into the script's `.env.inmanage` configuration file during installation or manually afterwards under $INM_ENFORCED_USER.
 
 ## Running the script
 
