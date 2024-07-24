@@ -21,9 +21,9 @@ Go to your **base directory** where the `invoiceninja` folder resides or shall r
 sudo -u www-data bash -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh"
 ```
 
-Ensure that `www-data` is the correct user (substitute if necessary) who has all the permissions to your Invoice Ninja installation, including reading the .env file. 
+Ensure that `www-data` is the correct user (substitute if necessary) who has all the permissions to your Invoice Ninja installation, including reading its `.env` configuration file. 
 
-If you are in a shared hosting environment with SSH access you'll most likely have to stick with the user you are logged in and this should/could be fine. Then you install it with your current credentials like this:
+If you are in a shared hosting environment with SSH access, you'll most likely have to stick with the user you are logged in and this should/could be fine. Then you install this script with your current user/credentials like this:
 
 ```bash
 git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh
