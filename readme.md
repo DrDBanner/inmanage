@@ -304,7 +304,7 @@ If you have multiple instances running under the same base directory this script
 
 ### So, how does your script work on an existing installation? Does it start everything from scratch, does it delete something?
 
-Installation is the same; But you just do not install any new Invoice Ninja instance. You use the command-line switches for “backup” and “update” → [Commands](#commands) 
+Installation process of the MGM script is the same; But you just do not install any new Invoice Ninja instance. You use the command-line switches for “backup” and “update” → [Commands](#commands) 
       
 If you accidentially run the `clean_installation` or the `provisioned installation` process within an existing installation you get prompted, if you really really want to continue, since there’s already a folder. If you insist with YES here, the old folder gets renamed. So nothing gets deleted.
 
