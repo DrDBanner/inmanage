@@ -82,7 +82,7 @@ Ensure to substitute the numbers with the correct timestamps/foldername. Now you
 
 ### Run as cronjob
 
-If you want to run it as a cronjob add this line to your crontab. Mind the user 'web' here as well.
+If you want to run it as a cronjob add this line to your crontab. Mind the user `www-data` here as well.
 
 ```bash
 0 2 * * * www-data /path/to/your/inmanage.sh backup > /path/to/logfile 2>&1
@@ -160,7 +160,7 @@ cd .inmanage && git pull
       INM_ENV_FILE="./invoiceninja/.env"
       INM_TEMP_DOWNLOAD_DIRECTORY="./.in_temp_download"
       INM_BACKUP_DIRECTORY="./_in_backups"
-      INM_ENFORCED_USER="web"
+      INM_ENFORCED_USER="www-data"
       INM_ENFORCED_SHELL="/bin/bash"
       INM_PHP_EXECUTABLE="/usr/bin/php"
       INM_ARTISAN_STRING="/usr/bin/php /your/base/directory/./invoiceninja/artisan"
