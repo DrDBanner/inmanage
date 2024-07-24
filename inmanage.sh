@@ -395,7 +395,7 @@ install_tar() {
         echo "Failed to run artisan up"
         exit 1
     }
-    $INM_ARTISAN_STRING ninja:create-account --email=admin@admin.com --password=admin && echo -e "\n\nLogin: $APP_URL Username: admin@admin.com Password: admin \n\n" || {
+    $INM_ARTISAN_STRING ninja:create-account --email=admin@admin.com --password=admin && echo -e "\n\nLogin: $APP_URL Username: admin@admin.com Password: admin" || {
         echo "Standard user creation failed"
         exit 1
     }
