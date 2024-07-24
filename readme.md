@@ -300,6 +300,22 @@ Currently, the script is designed to manage a single installation. If you have m
 
 If you have multiple instances running under the same base directory this script would need to get extended to handle multiple .env.inmange files and a kind of router to manage each instance individually and/or in one batch.
 
+## FAQ - Frequently asked questions
+
+### So, how does your script work on an existing installation? Does it start everything from scratch, does it delete something?
+
+Installation is the same; But you just do not install any new Invoice Ninja instance. You use the command-line switches for “backup” and “update” → [Commands](#commands) 
+      
+If you accidentially run the `clean_installation` or the `provisioned installation` process within an existing installation you get prompted, if you really really want to continue, since there’s already a folder. If you insist with YES here, the old folder gets renamed. So nothing gets deleted.
+
+### What about non-standard .env files or at least less common ones? Are the details copied over into the new .env? 
+
+The `.env.provision` file is a template generated from a standard `.env`, but it has 2 extra added fields for creating databases. Once it has been processed this `.env.provision` file becomes a normal `.env` file and gets moved over into a new installation. It’s its only purpose -create new installations. So, in an existing environment it’s just nothing you need to take care of. But if you use it as a kickstarter for a new installation everything you put in there gets copied over -except the DB_ELEVATED_* fields.
+
+### I already have multiple cronjobs setup, does it still generate those?
+ 
+This script does not backup any cronjobs nor does it register new ones. It just gives you the exact minimum cronjob line you need after an initial install.
+
 ## Contribs
 
 The beloved Invoice Ninja
