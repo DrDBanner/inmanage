@@ -199,7 +199,7 @@ cd .inmanage && git pull
 > [!IMPORTANT]
 > Within the file `.inmanage/.env.example` are two crucial fields. DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD. Fill these fields with credentials of a user that has the rights to create databases and the rights to give grants. In most cases this user is the database root user. Once the creation of the database and user were successful, these credentials do get removed from that file automatically.
 
- <img width="941" alt="img_provisioned_installation_Invoice_Ninja" src="https://github.com/user-attachments/assets/e13e747d-2df2-4f3a-940c-76112f4edcf4">
+[IN_CLI_PROVISIONED_INSTALL_vp9.webm](https://github.com/user-attachments/assets/889c0cb8-0362-4eb2-8939-97274c7ff4cc)
 
 2. **Environment Variables**:
 
