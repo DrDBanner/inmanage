@@ -1,12 +1,21 @@
-# Backup | Update | Install - Invoice Ninja - MGM Script 
+# Backup | Update | Install - Invoice Ninja - MGM CLI Script 
 
-Easily update, backup, and install your self-hosted Invoice Ninja instance with a shell script. Maintenance and management has never been faster.
+Easily update, backup, and install your self-hosted Invoice Ninja instance with a CLI shell script. Maintenance and management has never been faster.
 
 [![Install Invoice Ninja in 5 minutes](https://github.com/user-attachments/assets/adcecf2e-1cb7-471e-92cd-93e31443e7b6)](https://www.youtube.com/watch?v=SdOmEkSL9os)
 
 ## Overview
 
-This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, cleanup tasks, and installations, including [Installation Provisioning](#installation-provisioning). It uses a configuration file to set up necessary environment variables and ensures required commands are available. On the first run, it helps you set up the configuration.
+This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, cleanup tasks, and installations, including [Installation Provisioning](#installation-provisioning). On the first run, it helps you set up its `.env.inmanage` configuration file.
+
+#### Key Features
+
+* **Automated Updates**: Downloads and installs the latest version.
+* **Installations**: Provisioned and clean options. 
+* **Efficient Backups**: Manages backups with custom settings.
+* **Docker Friendly**: Can be integrated in docker setups to deploy updates decoupled from webserver.
+* **Maintenance Management**: Handles maintenance mode, cache clearing, and more.
+* **Post-Update Tasks**: Includes data migration, optimization, and integrity checks.
 
 ## Prerequisites
 
