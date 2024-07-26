@@ -401,7 +401,7 @@ install_tar() {
     }
         echo -e "\n\nSetup Complete!\n\n\
 Open your browser at $APP_URL to access the application.\n\
-The database and user are configured.\n\
+The database and user are configured.\n\n\
 IT'S A GOOD TIME TO MAKE YOUR FIRST BACKUP NOW!!\n\n\
 Cronjob Setup:\n\
 Add this for scheduled tasks:\n\
@@ -412,8 +412,7 @@ To schedule a backup, add this:\n\
 
     else
         echo -e "\n\nSetup Complete!\n\n\
-Open your browser at your configured address https://your.url/setup now to carry on with database setup.\n\
-The database and user are configured.\n\
+Open your browser at your configured address https://your.url/setup now to carry on with database setup.\n\n\
 IT'S A GOOD TIME TO MAKE YOUR FIRST BACKUP NOW!!\n\n\
 Cronjob Setup:\n\
 Add this for scheduled tasks:\n\
@@ -637,7 +636,7 @@ function_caller() {
     backup)
         run_backup
         ;;
-    create-db)
+    create_db)
         create_database
         ;;
     cleanup_versions)
