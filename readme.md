@@ -14,7 +14,7 @@ Easily update, backup, and install your self-hosted Invoice Ninja instance with 
 - [FAQ](#faq---frequently-asked-questions)
 
 > [!TIP]
-> f you seek a very convenient way to install Invoice Ninja from scratch: Go with the [Provisioned Installation](#installation-provisioning) option.
+> If you seek a very convenient way to install Invoice Ninja from scratch: Go with the [Provisioned Installation](#installation-provisioning) option.
 
 ## Overview
 
@@ -148,7 +148,7 @@ cd .inmanage && git pull
 ## Commands
 
 > [!TIP]
-> f you seek a very convenient way to install Invoice Ninja from scratch: Go with the [Provisioned Installation](#installation-provisioning) option.
+> If you seek a very convenient way to install Invoice Ninja from scratch: Go with the [Provisioned Installation](#installation-provisioning) option.
 
 - **`clean_install`**:
 
