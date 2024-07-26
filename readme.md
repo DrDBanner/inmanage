@@ -207,7 +207,9 @@ cd .inmanage && git pull
       INM_FORCE_READ_DB_PW="N" # Read DB Password from installation or assume existing .my.cnf
       ````
    - #### Installation Provisioning
-
+   
+      > Tl:dr; Use this option if you want an "up and running" experience in 2 minutes. Install the script, populate the configuration file with at least database credentials and app url, rename the file, and run the script again. ✨
+     
       During [setup](#mgm-script-installation), the `.inmanage/.env.example` file is created, mirroring the standard `.env` file (holds the configuration data) of Invoice Ninja. By pre-populating the `.inmanage/.env.example` file with `APP_URL` and relevant `DB_` data, and **renaming or copying** it to `.env.provision`, it becomes a trigger for automated installation provisioning at the next startup of the script. It's a good idea to populate the file with as much as configurations as possible from the get go. You can find valuable hints and options in the [Official Documentation for .env](https://invoiceninja.github.io/en/env-variables/) and [Mail](https://invoiceninja.github.io/en/self-host-installation/#mail-configuration).
 
       Next time you run the script, it performs the following tasks in one batch:
@@ -221,8 +223,6 @@ cd .inmanage && git pull
       - Creates an admin user
       - Reminds you to set up cron jobs
       - Prompts you to create an initial backup
-
-      > Tl:dr; Use this option if you want an "up and running" experience in 2 minutes. Install the script, populate the configuration file with at least database credentials and app url, rename the file, and run the script again. ✨ 
 
       **Basically, you save a huge amount of time.**
 
