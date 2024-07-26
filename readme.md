@@ -13,6 +13,9 @@ Easily update, backup, and install your self-hosted Invoice Ninja instance with 
 - [What this script does](#what-this-script-does)
 - [FAQ](#faq---frequently-asked-questions)
 
+> [!TIP]
+> f you seek a very convenient way to install Invoice Ninja from scratch: Go with the [Provisioned Installation](#installation-provisioning) option.
+
 ## Overview
 
 This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, cleanup tasks, and installations, including [Installation Provisioning](#installation-provisioning). On the first run, it helps you set up its `.env.inmanage` configuration file.
@@ -144,6 +147,9 @@ cd .inmanage && git pull
 
 ## Commands
 
+> [!TIP]
+> f you seek a very convenient way to install Invoice Ninja from scratch: Go with the [Provisioned Installation](#installation-provisioning) option.
+
 - **`clean_install`**:
 
   - Downloads and installs the latest version of Invoice Ninja from Github.
@@ -202,18 +208,21 @@ cd .inmanage && git pull
       ````
    - #### Installation Provisioning
 
-      During setup, the `.inmanage/.env.example` file is created, mirroring the standard `.env` file of Invoice Ninja. By pre-populating it with `APP_URL` and relevant `DB_` data, and renaming it to `.env.provision`, it becomes a trigger for automated provisioning. It's a good idea to populate the file with as much as configurations as possible from the get go. You can find valuable hints and options in the [Official Documentation for .env](https://invoiceninja.github.io/en/env-variables/) and [Mail](https://invoiceninja.github.io/en/self-host-installation/#mail-configuration).
+      During setup, the `.inmanage/.env.example` file is created, mirroring the standard `.env` file (holds the configuration data) of Invoice Ninja. By pre-populating the `.inmanage/.env.example` file with `APP_URL` and relevant `DB_` data, and **renaming or copying** it to `.env.provision`, it becomes a trigger for automated installation provisioning at the next startup of the script. It's a good idea to populate the file with as much as configurations as possible from the get go. You can find valuable hints and options in the [Official Documentation for .env](https://invoiceninja.github.io/en/env-variables/) and [Mail](https://invoiceninja.github.io/en/self-host-installation/#mail-configuration).
 
       Next time you run the script, it performs the following tasks in one batch:
 
-      - Creates the database and database user
-      - Downloads and installs the tar file
-      - Publishes the `.env.provision` template to `.env` for production use
+      - Creates the database and database user from data you put in the .env.example file
+      - Downloads and installs the latest tar release file of Invoice Ninja
+      - Publishes the `.env.provision` template file to `.env` for production use
       - Generates the application key
-      - Migrates the database
+      - Migrates and populates the database
+      - Warms up the caches
       - Creates an admin user
       - Reminds you to set up cron jobs
       - Prompts you to create an initial backup
+
+      > Tl:dr; Use this option if you want an "up and running" experience in 2 minutes. Install the script, populate the configuration file with at least database credentials and app url, rename the file, and run the script again. ✨ 
 
       **Basically, you save a huge amount of time.**
 
