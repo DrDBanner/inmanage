@@ -391,8 +391,8 @@ install_tar() {
         exit 1
     }
     if [ "$mode" == "Provisioned" ]; then
-    $INM_ARTISAN_STRING migrate --force || {
-        echo "Failed to run artisan up"
+    $INM_ARTISAN_STRING migrate:fresh --seed --force || {
+        echo "Failed to run artisan migrate"
         exit 1
     }
     $INM_ARTISAN_STRING ninja:create-account --email=admin@admin.com --password=admin && echo -e "\n\nLogin: $APP_URL Username: admin@admin.com Password: admin" || {
