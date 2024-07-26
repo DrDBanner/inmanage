@@ -4,6 +4,15 @@ Easily update, backup, and install your self-hosted Invoice Ninja instance with 
 
 [![Install Invoice Ninja in 5 minutes](https://github.com/user-attachments/assets/adcecf2e-1cb7-471e-92cd-93e31443e7b6)](https://www.youtube.com/watch?v=SdOmEkSL9os)
 
+### TOC -  Table of Content
+
+- [Overview](#overview)
+- [Installation](#mgm-script-installation)
+- [Running the script](#running-the-script)
+- [Commands](#commands)
+- [What this script does](#what-this-script-does)
+- [FAQ](#faq---frequently-asked-questions)
+
 ## Overview
 
 This script manages your Invoice Ninja installation (version 5 and above) by performing updates, backups, cleanup tasks, and installations, including [Installation Provisioning](#installation-provisioning). On the first run, it helps you set up its `.env.inmanage` configuration file.
@@ -33,18 +42,21 @@ Go to your **base directory** where the `invoiceninja` folder resides or shall r
 sudo -u www-data bash -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh"
 ```
 
-Ensure that `www-data` is the correct user (substitute if necessary) who has all the permissions to your Invoice Ninja installation, including reading its `.env` configuration file. 
+   Ensure that `www-data` is the correct user (substitute if necessary) who has all the permissions to your Invoice Ninja installation, including reading its `.env` configuration file. 
 
-If you are in a shared hosting environment with SSH access, you'll most likely have to stick with the user you are logged in and this should/could be fine. Then you install this script with your current user/credentials like this:
+   If you are in a shared hosting environment with SSH access, you'll most likely have to stick with the user you are logged in and this should/could be fine. Then you install this script with your current user/credentials like this:
 
 ```bash
 git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh
 ```
 
+And follow the installation wizard. You can accept defaults by pressing `[Enter]`. This will take no more than 30 seconds. After that you are ready to go. 
+
 > [!NOTE]
 > - Ensure you install in the base directory containing the `invoiceninja` folder to avoid file permission issues.
 > - Run the script as a user who can read the `.env` file of your Invoice Ninja installation. Typically, this is the web server user, such as `www-data`, `httpd`, `web`, `apache`, or `nginx`.
 > - Ensure you put its name into the script's `.env.inmanage` configuration file during installation or manually afterwards under $INM_ENFORCED_USER.
+> - The script tries to ensure all needed CLI tools are available and will prompt you if something is missing.  
 
 ## Running the script
 
