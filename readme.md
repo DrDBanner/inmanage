@@ -31,10 +31,10 @@ This script manages your Invoice Ninja installation (version 5 and above) by per
 
 ## Prerequisites
 
-* A running and configured webserver
+* A running and configured webserver ([*Installation Guide*](https://invoiceninja.github.io/en/self-host-installation/))
 * BASH Shell
 * Credentials for the webserver and database
-* A peek into the basics of Invoice Ninja mechanics ([Official Installation Documentation](https://invoiceninja.github.io/en/self-host-installation/))
+* A peek into the basics of Invoice Ninja mechanics 
 
 
 ## MGM Script Installation
