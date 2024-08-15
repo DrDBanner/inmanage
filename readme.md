@@ -161,7 +161,7 @@ cd .inmanage && git pull
   - Another powerful option is the [Provisioned Installation](#installation-provisioning) option.
 > [!Important]
 > "When performing a clean install, please ensure that the installation URL matches the format specified in the Invoice Ninja .env file. The URL should be https://127.0.0.1, not
-> https://127.0.0.1/invoiceninja or https://127.0.0.1/invoiceninja/setup to carry on with the GUI db configuration. Make sure your web server is configured accordingly.
+> https://127.0.0.1/invoiceninja or https://127.0.0.1/invoiceninja/setup to carry on with the GUI db configuration -Invoice Ninja expects to be accessible via base url and not within a path. Make sure your web server is configured accordingly.
 > Note that this is different from the web server’s root path, which should point to `your_path/invoiceninja/public`. For more details, please refer to the [Invoice Ninja web server configuration guide](https://invoiceninja.github.io/en/self-host-installation/#web-server-configuration)."
 
 - **`update`**:
