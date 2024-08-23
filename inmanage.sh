@@ -5,6 +5,37 @@ set -e
 INM_SELF_ENV_FILE=".inmanage/.env.inmanage"
 INM_PROVISION_ENV_FILE=".inmanage/.env.provision"
 
+# Declare an associative array for default settings and their corresponding prompt texts. Will be used to create .
+declare -A default_settings=(
+    ["INM_BASE_DIRECTORY"]="$PWD/"
+    ["INM_INSTALLATION_DIRECTORY"]="./invoiceninja"
+    ["INM_ENV_FILE"]="$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/.env"
+    ["INM_TEMP_DOWNLOAD_DIRECTORY"]="./._in_tempDownload"
+    ["INM_KEEP_DBTABLESPACE"]="N"
+    ["INM_BACKUP_DIRECTORY"]="./_in_backups"
+    ["INM_FORCE_READ_DB_PW"]="N"
+    ["INM_ENFORCED_USER"]="www-data"
+    ["INM_ENFORCED_SHELL"]="$(command -v bash)"
+    ["INM_PHP_EXECUTABLE"]="$(command -v php)"
+    ["INM_ARTISAN_STRING"]="$INM_PHP_EXECUTABLE $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/artisan"
+    ["INM_PROGRAM_NAME"]="InvoiceNinja"
+    ["INM_COMPATIBILITY_VERSION"]="5+"
+    ["INM_KEEP_BACKUPS"]="2"
+)
+
+# Declare an associative array for the corresponding prompt texts
+declare -A prompt_texts=(
+    ["INM_BASE_DIRECTORY"]="Which directory contains your IN installation folder? Must have a trailing slash."
+    ["INM_INSTALLATION_DIRECTORY"]="What is the installation directory name?"
+    ["INM_KEEP_DBTABLESPACE"]="In shared hosting you may need to exclude tablespaces from your mysqldump."
+    ["INM_BACKUP_DIRECTORY"]="Where shall backups go?"
+    ["INM_FORCE_READ_DB_PW"]="Include database password in backup command? (Y/N)"
+    ["INM_ENFORCED_USER"]="The user running the script? Should be the webserver user in most cases."
+    ["INM_ENFORCED_SHELL"]="Which shell should be used? In doubt, keep as is."
+    ["INM_PHP_EXECUTABLE"]="Path to the PHP executable? In doubt, keep as is."
+    ["INM_KEEP_BACKUPS"]="How many backup files and update iterations to keep?"
+)
+
 # Function to prompt for user input
 prompt() {
     local var_name="$1"
@@ -182,52 +213,34 @@ check_env() {
             exec sudo -u "$INM_ENFORCED_USER" "$INM_ENFORCED_SHELL" -c "cd '$(pwd)' && \"$INM_SCRIPT_PATH\" \"$@\""
             exit 0
         fi
+    check_missing_settings
     check_provision_file
   fi
 }
 
 # Create config file and symlink in base directory
 create_own_config() {
-    # Temporarily create the file to check if it's possible
     if touch "$INM_SELF_ENV_FILE"; then
         echo "Write Permissions OK. Proceeding with configuration..."
-
-        # Remove the file again in case the installation prompt isn't successful.
         rm $INM_SELF_ENV_FILE
 
-        # Query for configuration
         echo -e "\n\n Just press [ENTER] to accept defaults. \n\n"
-        INM_BASE_DIRECTORY=$(prompt "INM_BASE_DIRECTORY" "$PWD/" "Which directory contains your IN installation folder? Must have a trailing slash.")
-        INM_INSTALLATION_DIRECTORY=$(prompt "INM_INSTALLATION_DIRECTORY" "./invoiceninja" "What is the installation directory name? Must be relative from $INM_BASE_DIRECTORY and can start with a . dot.")
-        INM_ENV_FILE="$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/.env"
-        INM_TEMP_DOWNLOAD_DIRECTORY="./._in_tempDownload"
-        INM_BACKUP_DIRECTORY=$(prompt "INM_BACKUP_DIRECTORY" "./_in_backups" "Where shall backups go?")
-        INM_FORCE_READ_DB_PW=$(prompt "INM_FORCE_READ_DB_PW" "N" "Include database password in backup command? If Y we read it from Invoice Ninja installation, but it's a security concern and may be visible for other server users while the task is running. If N the script assumes you have a secure and working .my.cnf file with your DB credentials. (Y/N)")
-        INM_ENFORCED_USER=$(prompt "INM_ENFORCED_USER" "www-data" "The user running the script? Should be the webserver user in most cases. Check twice if this value is set correct according to your webserver's setup.")
-        INM_ENFORCED_SHELL=$(prompt "INM_ENFORCED_SHELL" "$(command -v bash)" "Which shell should be used? In doubt, keep as is.")
-        INM_PHP_EXECUTABLE=$(prompt "INM_PHP_EXECUTABLE" "$(command -v php)" "Path to the PHP executable? In doubt, keep as is.")
-        INM_ARTISAN_STRING="$INM_PHP_EXECUTABLE $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/artisan"
-        INM_PROGRAM_NAME="InvoiceNinja"
-        INM_COMPATIBILITY_VERSION="5+"
-        INM_KEEP_BACKUPS=$(prompt "INM_KEEP_BACKUPS" "2" "How many backup files and update iterations to keep? If you keep 7 and backup on a daily basis you have 7 snapshots available.")
+
+        # Loop through default settings and prompt user for input, allowing them to override
+        for key in "${!default_settings[@]}"; do
+            value=${default_settings[$key]}
+            prompt_text=${prompt_texts[$key]:-"Provide value for $key:"}
+            default_settings[$key]=$(prompt "$key" "$value" "$prompt_text")
+        done
 
         # Save configuration to .env.inmanage
-        cat <<EOL >$INM_SELF_ENV_FILE
-INM_BASE_DIRECTORY="$INM_BASE_DIRECTORY"
-INM_INSTALLATION_DIRECTORY="$INM_INSTALLATION_DIRECTORY"
-INM_ENV_FILE="$INM_ENV_FILE"
-INM_TEMP_DOWNLOAD_DIRECTORY="$INM_TEMP_DOWNLOAD_DIRECTORY"
-INM_BACKUP_DIRECTORY="$INM_BACKUP_DIRECTORY"
-INM_ENFORCED_USER="$INM_ENFORCED_USER"
-INM_ENFORCED_SHELL="$INM_ENFORCED_SHELL"
-INM_PHP_EXECUTABLE="$INM_PHP_EXECUTABLE"
-INM_ARTISAN_STRING="$INM_ARTISAN_STRING"
-INM_PROGRAM_NAME="$INM_PROGRAM_NAME"
-INM_KEEP_BACKUPS="$INM_KEEP_BACKUPS"
-INM_FORCE_READ_DB_PW="$INM_FORCE_READ_DB_PW"
-EOL
+        for key in "${!default_settings[@]}"; do
+            echo "$key=\"${default_settings[$key]}\"" >> "$INM_SELF_ENV_FILE"
+        done
+
         echo "$INM_SELF_ENV_FILE has been created and configured."
 
+        # Handle symlink
         target="$INM_BASE_DIRECTORY.inmanage/inmanage.sh"
         link="$INM_BASE_DIRECTORY/inmanage.sh"
 
@@ -244,21 +257,49 @@ EOL
             echo "The symlink does not exist. Creating..."
             ln -s "$target" "$link"
         fi
+
+        # Download .env.example for provisioning
+        env_example_file="$INM_BASE_DIRECTORY.inmanage/.env.example"
+        echo "Downloading .env.example for provisioning"
+        curl -sL "https://raw.githubusercontent.com/invoiceninja/invoiceninja/v5-stable/.env.example" -o "$env_example_file" || {
+            echo "Failed to download .env.example for seeding"
+            exit 1
+        }
+
+        # Modify the downloaded file
+        if [ -f "$env_example_file" ]; then
+            sed -i '/^DB_PORT=/a DB_ELEVATED_USERNAME=\nDB_ELEVATED_PASSWORD=' "$env_example_file"
+        fi
+
+        # Source the configuration file and check for provisioning
+        source "$INM_SELF_ENV_FILE"
+        check_provision_file
     else
         echo "Error: Could not create $INM_SELF_ENV_FILE. Aborting configuration."
         exit 1
     fi
-    env_example_file="$INM_BASE_DIRECTORY.inmanage/.env.example"
-    echo "Downloading .env.example for provisioning"
-    curl -sL "https://raw.githubusercontent.com/invoiceninja/invoiceninja/v5-stable/.env.example" -o "$env_example_file" || {
-        echo "Failed to download .env.example for seeding"
-        exit 1
-    }
-    if [ -f "$env_example_file" ]; then
-    sed -i '/^DB_PORT=/a DB_ELEVATED_USERNAME=\nDB_ELEVATED_PASSWORD=' "$env_example_file"
+}
+
+# Check if any new settings are missing from the environment file
+check_missing_settings() {
+    updated=0
+
+    # Loop through default settings and check if they exist in the env file
+    for key in "${!default_settings[@]}"; do
+        if ! grep -q "^$key=" "$INM_SELF_ENV_FILE"; then
+            echo "$key not found in $INM_SELF_ENV_FILE. Adding with default value '${default_settings[$key]}'."
+            echo "$key=\"${default_settings[$key]}\"" >> "$INM_SELF_ENV_FILE"
+            updated=1
+        fi
+    done
+
+    # Reload the environment file if any settings were updated
+    if [ "$updated" -eq 1 ]; then
+        echo "Updated $INM_SELF_ENV_FILE with missing settings. Reloading..."
+        source "$INM_SELF_ENV_FILE"
+    else
+        echo "All settings are present in $INM_SELF_ENV_FILE."
     fi
-    source $INM_SELF_ENV_FILE
-    check_provision_file
 }
 
 # Check required commands
