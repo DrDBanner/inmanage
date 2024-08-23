@@ -202,6 +202,7 @@ cd .inmanage && git pull
       INM_ENV_FILE="./invoiceninja/.env"
       INM_TEMP_DOWNLOAD_DIRECTORY="./.in_temp_download"
       INM_BACKUP_DIRECTORY="./_in_backups"
+      INM_KEEP_DBTABLESPACE="N" # Removes tablespaces from mysqldump which is needed for 'lower' privileged DB Users.
       INM_ENFORCED_USER="www-data"
       INM_ENFORCED_SHELL="/bin/bash"
       INM_PHP_EXECUTABLE="/usr/bin/php"
