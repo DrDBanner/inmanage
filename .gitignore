@@ -23,3 +23,4 @@ nbproject
 .php_cs.cache
 /composer.phar
 .phpunit.cache
+.DS_Store
