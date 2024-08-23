@@ -26,14 +26,14 @@ declare -A default_settings=(
 # Declare an associative array for the corresponding prompt texts
 declare -A prompt_texts=(
     ["INM_BASE_DIRECTORY"]="Which directory contains your IN installation folder? Must have a trailing slash."
-    ["INM_INSTALLATION_DIRECTORY"]="What is the installation directory name?"
-    ["INM_KEEP_DBTABLESPACE"]="In shared hosting you may need to exclude tablespaces from your mysqldump. You need to keep it if your DB is very optimized for memory usage. Keep (Y) or Drop (N)"
+    ["INM_INSTALLATION_DIRECTORY"]="What is the installation directory name? Must be relative from \$INM_BASE_DIRECTORY and can start with a . dot."
+    ["INM_KEEP_DBTABLESPACE"]="In shared hosting you may need to exclude tablespaces from mysqldump command. You need to keep it if your DB is very optimized for memory usage. Keep (Y) or Drop (N)"
     ["INM_BACKUP_DIRECTORY"]="Where shall backups go?"
-    ["INM_FORCE_READ_DB_PW"]="Include database password in backup command? (Y/N)"
-    ["INM_ENFORCED_USER"]="The user running the script? Should be the webserver user in most cases."
+    ["INM_FORCE_READ_DB_PW"]="Include database password in backup command? May be a security concern and may be visible for other server users while the task is running. If (N) the script assumes you have a secure and working .my.cnf file with your DB credentials and no password may get exposed to a task list. (Y/N)"
+    ["INM_ENFORCED_USER"]="The user running the script? Should be the webserver user in most cases. Check twice if this value is set correct according to your webserver's setup."
     ["INM_ENFORCED_SHELL"]="Which shell should be used? In doubt, keep as is."
     ["INM_PHP_EXECUTABLE"]="Path to the PHP executable? In doubt, keep as is."
-    ["INM_KEEP_BACKUPS"]="How many backup files and update iterations to keep?"
+    ["INM_KEEP_BACKUPS"]="How many backup files and update iterations to keep?  If set to 7 and backups occour on a daily basis you have 7 snapshots available. Make sure you have enough disk space."
 )
 
 # Function to prompt for user input
