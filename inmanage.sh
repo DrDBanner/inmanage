@@ -565,9 +565,9 @@ run_update() {
     # Do if Snappdf set in .env file
     source "$INM_ENV_FILE"
     if [ "$PDF_GENERATOR" = "snappdf" ]; then
-    echo "Snappdf configuration detected. Updating binaries."
-    cd "\${INM_BASE_DIRECTORY}\${INM_INSTALLATION_DIRECTORY}\"
-    composer require beganovich/snappdf
+        echo "Snappdf configuration detected. Updating binaries."
+        cd "${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}"
+        composer require beganovich/snappdf
     ./vendor/bin/snappdf download
     else
     echo "Skipping snappdf config."
