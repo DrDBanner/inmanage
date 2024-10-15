@@ -513,10 +513,14 @@ run_update() {
         echo "Failed to copy .env"
         exit 1
     }
-    cp -R "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/storage/." "$INM_INSTALLATION_DIRECTORY/public/storage/" || {
-        echo "Failed to copy storage"
-        exit 1
-    }
+    if [ -d "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/storage/" ]; then
+        cp -R "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/storage/." "$INM_INSTALLATION_DIRECTORY/public/storage/" || {
+            echo "Failed to copy storage from $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/storage/."
+        }
+        else
+            echo "Directory does not exist: $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/storage/"
+            echo "This may be normal if this is an initial installation, or if your storage is located somewhere different."
+    fi
     mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')" || {
         echo "Failed to rename old installation"
         exit 1
