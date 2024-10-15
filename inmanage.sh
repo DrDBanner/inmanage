@@ -563,6 +563,7 @@ run_update() {
         exit 1
     }
     # Do if Snappdf set in .env file
+    source "$INM_SELF_ENV_FILE"
     if [ "$PDF_GENERATOR" = "snappdf" ]; then
     echo "Snappdf configuration detected. Updating binaries."
     cd \${INM_BASE_DIRECTORY}\${INM_INSTALLATION_DIRECTORY}\
