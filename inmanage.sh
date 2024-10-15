@@ -565,7 +565,7 @@ run_update() {
     # Do if Snappdf set in .env file
     source "$INM_ENV_FILE"
     if [ "$PDF_GENERATOR" = "snappdf" ]; then
-        echo "Snappdf configuration detected. Updating binaries."
+        echo "Snappdf configuration detected. Updating binaries. Downloading ungoogled chrome."
         cd "${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}"
         ## composer require beganovich/snappdf
     ./vendor/bin/snappdf download
