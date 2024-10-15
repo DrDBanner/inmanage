@@ -558,6 +558,15 @@ run_update() {
         echo "Failed to run artisan up"
         exit 1
     }
+    # Do if Snappdf set in .env file
+    if [ "$PDF_GENERATOR" = "snappdf" ]; then
+    echo "Snappdf configuration detected. Updating binaries."
+    cd \${INM_BASE_DIRECTORY}\${INM_INSTALLATION_DIRECTORY}\
+    composer require beganovich/snappdf
+    ./vendor/bin/snappdf download
+    else
+    echo "Skipping snappdf config."
+    fi
 
     cleanup_old_versions
 }
