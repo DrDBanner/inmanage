@@ -305,12 +305,23 @@ check_missing_settings() {
 # Check required commands
 check_commands() {
     local commands=("curl" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "read" "source" "touch" "sed")
+    local missing_commands=()
+
     for cmd in "${commands[@]}"; do
         if ! command -v "$cmd" &>/dev/null; then
-            echo "Error: Command '$cmd' is not available. Please install it and try again."
-            exit 1
+            missing_commands+=("$cmd")
         fi
     done
+
+    if [ ${#missing_commands[@]} -ne 0 ]; then
+        echo "Error: The following commands are not available:"
+        for missing in "${missing_commands[@]}"; do
+            echo "  - $missing"
+        done
+        exit 1
+    else
+        echo "All required commands are available."
+    fi
 }
 
 # Get installed version
