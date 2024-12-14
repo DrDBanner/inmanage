@@ -243,7 +243,7 @@ create_own_config() {
         
         # Defined?
         if [ -z "$INM_BASE_DIRECTORY" ]; then
-            echo "Error: 'INM_BASE_DIRECTORY' variable is empty. Let's redefine it. Shall it go into this path?"
+            echo "Error: 'INM_BASE_DIRECTORY' variable is empty. Stopping script. File an issue on github."
             exit 1
         fi
         
@@ -252,7 +252,7 @@ create_own_config() {
         link="$INM_BASE_DIRECTORY/inmanage.sh"
 
         # Debug
-        echo "DEBUG: link='$link', target='$target'"
+        # echo "DEBUG: link='$link', target='$target'"
 
         # Check if the link exists
         if [ -L "$link" ]; then
