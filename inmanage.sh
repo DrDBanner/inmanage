@@ -244,10 +244,20 @@ create_own_config() {
         target="$INM_BASE_DIRECTORY.inmanage/inmanage.sh"
         link="$INM_BASE_DIRECTORY/inmanage.sh"
 
+        # Debug
+        echo "DEBUG: link='$link', target='$target'"
+
+        # Defined?
+        if [ -z "$link" ] || [ -z "$target" ]; then
+            echo "Error: 'link' or 'target' is not defined. This may occour if there's an issue with your shell. Please file an issue on github."
+            exit 1
+        fi
+
         # Check if the link exists
         if [ -L "$link" ]; then
             # Check if it points to the correct target
-            if [ "$(readlink "$link")" == "$target" ]; then
+            current_target=$(readlink "$link")
+            if [ "$current_target" == "$target" ]; then
                 echo "The symlink is correct."
             else
                 echo "The symlink is incorrect. Updating..."
@@ -257,6 +267,7 @@ create_own_config() {
             echo "The symlink does not exist. Creating..."
             ln -s "$target" "$link"
         fi
+
 
         # Download .env.example for provisioning
         env_example_file="$INM_BASE_DIRECTORY.inmanage/.env.example"
