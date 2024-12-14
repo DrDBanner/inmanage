@@ -239,15 +239,26 @@ create_own_config() {
         done
 
         echo "$INM_SELF_ENV_FILE has been created and configured."
-
+        source "$INM_SELF_ENV_FILE"
+        
+        # Defined?
+        if [ -z "$INM_BASE_DIRECTORY" ]; then
+            echo "Error: 'INM_BASE_DIRECTORY' variable is empty. Stopping script. File an issue on github."
+            exit 1
+        fi
+        
         # Handle symlink
         target="$INM_BASE_DIRECTORY.inmanage/inmanage.sh"
         link="$INM_BASE_DIRECTORY/inmanage.sh"
 
+        # Debug
+        # echo "DEBUG: link='$link', target='$target'"
+
         # Check if the link exists
         if [ -L "$link" ]; then
             # Check if it points to the correct target
-            if [ "$(readlink "$link")" == "$target" ]; then
+            current_target=$(readlink "$link")
+            if [ "$current_target" == "$target" ]; then
                 echo "The symlink is correct."
             else
                 echo "The symlink is incorrect. Updating..."
@@ -257,6 +268,7 @@ create_own_config() {
             echo "The symlink does not exist. Creating..."
             ln -s "$target" "$link"
         fi
+
 
         # Download .env.example for provisioning
         env_example_file="$INM_BASE_DIRECTORY.inmanage/.env.example"
@@ -305,12 +317,23 @@ check_missing_settings() {
 # Check required commands
 check_commands() {
     local commands=("curl" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "read" "source" "touch" "sed")
+    local missing_commands=()
+
     for cmd in "${commands[@]}"; do
         if ! command -v "$cmd" &>/dev/null; then
-            echo "Error: Command '$cmd' is not available. Please install it and try again."
-            exit 1
+            missing_commands+=("$cmd")
         fi
     done
+
+    if [ ${#missing_commands[@]} -ne 0 ]; then
+        echo "Error: The following commands are not available:"
+        for missing in "${missing_commands[@]}"; do
+            echo "  - $missing"
+        done
+        exit 1
+    else
+        echo "All required commands are available."
+    fi
 }
 
 # Get installed version
