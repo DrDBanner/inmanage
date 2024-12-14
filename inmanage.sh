@@ -248,8 +248,8 @@ create_own_config() {
         echo "DEBUG: link='$link', target='$target'"
 
         # Defined?
-        if [ -z "$link" ] || [ -z "$target" ]; then
-            echo "Error: 'link' or 'target' is not defined. This may occour if there's an issue with your shell. Please file an issue on github."
+        if [ -z "$INM_BASE_DIRECTORY" ]; then
+            echo "Error: 'INM_BASE_DIRECTORY' variable is empty. This may occour if there's an issue with your shell. Please file an issue on github."
             exit 1
         fi
 
