@@ -239,19 +239,20 @@ create_own_config() {
         done
 
         echo "$INM_SELF_ENV_FILE has been created and configured."
-
+        source "$INM_SELF_ENV_FILE"
+        
+        # Defined?
+        if [ -z "$INM_BASE_DIRECTORY" ]; then
+            echo "Error: 'INM_BASE_DIRECTORY' variable is empty. Let's redefine it. Shall it go into this path?"
+            exit 1
+        fi
+        
         # Handle symlink
         target="$INM_BASE_DIRECTORY.inmanage/inmanage.sh"
         link="$INM_BASE_DIRECTORY/inmanage.sh"
 
         # Debug
         echo "DEBUG: link='$link', target='$target'"
-
-        # Defined?
-        if [ -z "$INM_BASE_DIRECTORY" ]; then
-            echo "Error: 'INM_BASE_DIRECTORY' variable is empty. This may occour if there's an issue with your shell. Please file an issue on github."
-            exit 1
-        fi
 
         # Check if the link exists
         if [ -L "$link" ]; then
