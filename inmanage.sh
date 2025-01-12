@@ -377,11 +377,26 @@ download_ninja() {
     app_version=$(get_latest_version)
     sleep 2
     echo "Downloading Invoice Ninja version $app_version..."
-    curl -sL "https://github.com/invoiceninja/invoiceninja/releases/download/v$app_version/invoiceninja.tar" -o invoiceninja.tar || {
-        echo "Failed to download"
+
+    # Temp File
+    temp_file="invoiceninja_temp.tar"
+
+    if curl -sL -w "%{http_code}" "https://github.com/invoiceninja/invoiceninja/releases/download/v$app_version/invoiceninja.tar" -o "$temp_file" | grep -q "200"; then
+        # Check size
+        if [ $(stat -c%s "$temp_file") -gt 1048576 ]; then  # < 1MB in size should be good
+            mv "$temp_file" "invoiceninja.tar"
+            echo "Download successful."
+        else
+            echo "Download failed: File is too small. Please check network."
+            rm "$temp_file"
         exit 1
+    fi
+    else
+        echo "Download failed: HTTP-Statuscode not 200. Please check network."
+        rm "$temp_file"
+    exit 1
+    fi
     }
-}
 
 # Install tar
 install_tar() {
