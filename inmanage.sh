@@ -316,7 +316,7 @@ check_missing_settings() {
 
 # Check required commands
 check_commands() {
-    local commands=("curl" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "read" "source" "touch" "sed")
+    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "read" "source" "touch" "sed")
     local missing_commands=()
 
     for cmd in "${commands[@]}"; do
@@ -383,7 +383,7 @@ download_ninja() {
 
     if curl -sL -w "%{http_code}" "https://github.com/invoiceninja/invoiceninja/releases/download/v$app_version/invoiceninja.tar" -o "$temp_file" | grep -q "200"; then
         # Check size
-        if [ $(stat -c%s "$temp_file") -gt 1048576 ]; then  # < 1MB in size should be good
+        if [ $(wc -c < "$temp_file") -gt 1048576 ]; then  # < 1MB in size should be good
             mv "$temp_file" "invoiceninja.tar"
             echo "Download successful."
         else
