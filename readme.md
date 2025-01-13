@@ -269,7 +269,7 @@ cd .inmanage && git pull
 
    - **Update Process**
 
-      - Download: Downloads the latest *.tar file.
+      - Download: Downloads the latest *.tar file. Verifies the download was successful.
       - Unpack: Unpacks the downloaded file.
       - Maintenance Mode: Puts Invoice Ninja into maintenance mode.
       - Cache Management: Clears the caches.
