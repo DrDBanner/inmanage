@@ -5,6 +5,9 @@ set -e
 INM_SELF_ENV_FILE=".inmanage/.env.inmanage"
 INM_PROVISION_ENV_FILE=".inmanage/.env.provision"
 
+## Globals
+CURL_AUTH_FLAG="" 
+
 # Declare an associative array for default settings and their corresponding prompt texts. Will be used to create .
 declare -A default_settings=(
     ["INM_BASE_DIRECTORY"]="$PWD/"
@@ -21,6 +24,7 @@ declare -A default_settings=(
     ["INM_PROGRAM_NAME"]="InvoiceNinja"
     ["INM_COMPATIBILITY_VERSION"]="5+"
     ["INM_KEEP_BACKUPS"]="2"
+    ["INM_GH_API_CREDENTIALS"]=""
 )
 
 # Declare an associative array for the corresponding prompt texts
@@ -34,6 +38,7 @@ declare -A prompt_texts=(
     ["INM_ENFORCED_SHELL"]="Which shell should be used? In doubt, keep as is."
     ["INM_PHP_EXECUTABLE"]="Path to the PHP executable? In doubt, keep as is."
     ["INM_KEEP_BACKUPS"]="How many backup files and update iterations to keep?  If set to 7 and backups occour on a daily basis you have 7 snapshots available. Make sure you have enough disk space."
+    ["INM_GH_API_CREDENTIALS"]="Github API Crednetials may be neccessary in Shared Hosting environments in order to gain access to github. Put them like username:password. All connections will be initiated with these parameters to curl command. Default is none."
 )
 
 # Function to prompt for user input
@@ -218,6 +223,18 @@ check_env() {
   fi
 }
 
+
+check_gh_credentials() {
+    # Check for GH Credentials
+    if [[ -n "${INM_GH_API_CREDENTIALS}" && "${INM_GH_API_CREDENTIALS}" == *:* ]]; then
+        CURL_AUTH_FLAG="-u ${INM_GH_API_CREDENTIALS}"
+        # echo "Authentication detected. Curl commands will include credentials."
+    else
+        CURL_AUTH_FLAG=""
+        echo "No valid Github credentials detected. Proceeding without authentication. If update fails, try to add credentials."
+    fi
+}
+
 # Create config file and symlink in base directory
 create_own_config() {
     if touch "$INM_SELF_ENV_FILE"; then
@@ -273,7 +290,7 @@ create_own_config() {
         # Download .env.example for provisioning
         env_example_file="$INM_BASE_DIRECTORY.inmanage/.env.example"
         echo "Downloading .env.example for provisioning"
-        curl -sL "https://raw.githubusercontent.com/invoiceninja/invoiceninja/v5-stable/.env.example" -o "$env_example_file" || {
+        curl -sL ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} "https://raw.githubusercontent.com/invoiceninja/invoiceninja/v5-stable/.env.example" -o "$env_example_file" || {
             echo "Failed to download .env.example for seeding"
             exit 1
         }
@@ -316,7 +333,7 @@ check_missing_settings() {
 
 # Check required commands
 check_commands() {
-    local commands=("curl" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "read" "source" "touch" "sed")
+    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "read" "source" "touch" "sed")
     local missing_commands=()
 
     for cmd in "${commands[@]}"; do
@@ -354,7 +371,7 @@ get_installed_version() {
 # Get latest version
 get_latest_version() {
     local version
-    version=$(curl -s https://api.github.com/repos/invoiceninja/invoiceninja/releases/latest | grep tag_name | cut -d '"' -f 4 | sed 's/v//') || {
+    version=$(curl -s ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} https://api.github.com/repos/invoiceninja/invoiceninja/releases/latest | grep tag_name | cut -d '"' -f 4 | sed 's/v//') || {
         echo "Failed to retrieve latest version"
         exit 1
     }
@@ -377,11 +394,26 @@ download_ninja() {
     app_version=$(get_latest_version)
     sleep 2
     echo "Downloading Invoice Ninja version $app_version..."
-    curl -sL "https://github.com/invoiceninja/invoiceninja/releases/download/v$app_version/invoiceninja.tar" -o invoiceninja.tar || {
-        echo "Failed to download"
+
+    # Temp File
+    temp_file="invoiceninja_temp.tar"
+
+    if curl -sL ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} -w "%{http_code}" "https://github.com/invoiceninja/invoiceninja/releases/download/v$app_version/invoiceninja.tar" -o "$temp_file" | grep -q "200"; then
+        # Check size
+        if [ $(wc -c < "$temp_file") -gt 1048576 ]; then  # < 1MB in size should be good
+            mv "$temp_file" "invoiceninja.tar"
+            echo "Download successful."
+        else
+            echo "Download failed: File is too small. Please check network."
+            rm "$temp_file"
         exit 1
+    fi
+    else
+        echo "Download failed: HTTP-Statuscode not 200. Please check network. Maybe you need Gitgub credentials."
+        rm "$temp_file"
+    exit 1
+    fi
     }
-}
 
 # Install tar
 install_tar() {
@@ -587,14 +619,21 @@ run_update() {
     }
     # Do if Snappdf set in .env file
     source "$INM_ENV_FILE"
+
     if [ "$PDF_GENERATOR" = "snappdf" ]; then
-        echo "Snappdf configuration detected. Updating binaries. Downloading ungoogled chrome."
-        cd "${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}"
-        ## composer require beganovich/snappdf
-    ./vendor/bin/snappdf download
-    else
-    echo "Skipping snappdf config."
+    echo "Snappdf configuration detected. Updating binaries. Downloading ungoogled chrome."
+    cd "${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}"
+    
+    if [ ! -x "./vendor/bin/snappdf" ]; then
+        echo "The file ./vendor/bin/snappdf is not executable. Adding executable flag."
+        chmod +x ./vendor/bin/snappdf
     fi
+    echo "Downloading snappdf"
+    ./vendor/bin/snappdf download
+else
+    echo "Skipping snappdf config."
+fi
+
 
     cleanup_old_versions
 }
@@ -764,6 +803,7 @@ done
 }
 
 check_commands
+check_gh_credentials
 check_env
 parse_options "$@"
 
