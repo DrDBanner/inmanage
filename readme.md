@@ -210,12 +210,13 @@ cd .inmanage && git pull
       INM_PROGRAM_NAME="InvoiceNinja" # Backup file name
       INM_KEEP_BACKUPS="2" # How many iterations to keep
       INM_FORCE_READ_DB_PW="N" # Read DB Password from installation or assume existing .my.cnf
+      INM_GH_API_CREDENTIALS="" # USERNAME:PASSWORD for github API access if Github API rate limit gets exceeded. Not mandatory in default setups.
       ````
    - #### Installation Provisioning
    
       > Tl:dr; Use this option if you want an "up and running" experience in 2 minutes. Install the script, populate the configuration file with at least database credentials and app url, rename the file, and run the script again. ✨
      
-      During [setup](#mgm-script-installation), the `.inmanage/.env.example` file is created, mirroring the standard `.env` file (holds the configuration data) of Invoice Ninja. By pre-populating the `.inmanage/.env.example` file with `APP_URL` and relevant `DB_` data, and **renaming or copying** it to `.env.provision`, it becomes a trigger for automated installation provisioning at the next startup of the script. It's a good idea to populate the file with as much as configurations as possible from the get go. You can find valuable hints and options in the [Official Documentation for .env](https://invoiceninja.github.io/en/env-variables/) and [Mail](https://invoiceninja.github.io/en/self-host-installation/#mail-configuration).
+      During [setup](#mgm-script-installation), the `.inmanage/.env.example` file is created, mirroring the standard `.env` file (holds the configuration data) of Invoice Ninja. By pre-populating the `.inmanage/.env.example` file with `APP_URL` and relevant `DB_` data, and **renaming or copying** it to `.env.provision`, it becomes a trigger for automated installation provisioning at the next startup of the script. It's a good idea to populate the file with as much as configurations as possible from the get go. You can find valuable hints and options in the [Official Documentation for .env](https://invoiceninja.github.io/en/env-variables/) and [Mail](https://invoiceninja.github.io/en/self-host-installation/#mail-configuration). To circumvent issues in shared hosting environments with Github access it has the $INM_GH_API_CREDENTIALS variable to provide Github credentials if neccessary. Either add it during installtion or in .env.inmanage afterwards. USERNAME:PASSWORD is the expected format.
 
       Next time you run the script, it performs the following tasks in one batch:
 
