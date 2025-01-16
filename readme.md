@@ -210,7 +210,7 @@ cd .inmanage && git pull
       INM_PROGRAM_NAME="InvoiceNinja" # Backup file name
       INM_KEEP_BACKUPS="2" # How many iterations to keep
       INM_FORCE_READ_DB_PW="N" # Read DB Password from installation or assume existing .my.cnf
-      INM_GH_API_CREDENTIALS="" # USERNAME:PASSWORD for github API access if Github API rate limit gets exceeded. Not mandatory in default setups.
+      INM_GH_API_CREDENTIALS="" # USERNAME:PASSWORD for Github API access if Github API rate limit gets exceeded. Not mandatory in default setups.
       ````
    - #### Installation Provisioning
    
