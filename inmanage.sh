@@ -225,6 +225,7 @@ check_env() {
 
 
 check_gh_credentials() {
+    source "$INM_SELF_ENV_FILE"
     # Check for GH Credentials
     if [[ -n "$INM_GH_API_CREDENTIALS" && "$INM_GH_API_CREDENTIALS" == *:* ]]; then
         CURL_AUTH_FLAG="-u $INM_GH_API_CREDENTIALS"
