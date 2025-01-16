@@ -226,8 +226,8 @@ check_env() {
 
 check_gh_credentials() {
     # Check for GH Credentials
-    if [[ -n "${INM_GH_API_CREDENTIALS}" && "${INM_GH_API_CREDENTIALS}" == *:* ]]; then
-        CURL_AUTH_FLAG="-u ${INM_GH_API_CREDENTIALS}"
+    if [[ -n "$INM_GH_API_CREDENTIALS" && "$INM_GH_API_CREDENTIALS" == *:* ]]; then
+        CURL_AUTH_FLAG="-u $INM_GH_API_CREDENTIALS"
         # echo "Authentication detected. Curl commands will include credentials."
     else
         CURL_AUTH_FLAG=""
