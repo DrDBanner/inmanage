@@ -24,7 +24,7 @@ declare -A default_settings=(
     ["INM_PROGRAM_NAME"]="InvoiceNinja"
     ["INM_COMPATIBILITY_VERSION"]="5+"
     ["INM_KEEP_BACKUPS"]="2"
-    ["INM_GH_API_CREDENTIALS"]=""
+    ["INM_GH_API_CREDENTIALS"]="0"
 )
 
 # Declare an associative array for the corresponding prompt texts
