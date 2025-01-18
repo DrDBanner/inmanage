@@ -38,7 +38,7 @@ declare -A prompt_texts=(
     ["INM_ENFORCED_SHELL"]="Which shell should be used? In doubt, keep as is."
     ["INM_PHP_EXECUTABLE"]="Path to the PHP executable? In doubt, keep as is."
     ["INM_KEEP_BACKUPS"]="How many backup files and update iterations to keep?  If set to 7 and backups occour on a daily basis you have 7 snapshots available. Make sure you have enough disk space."
-    ["INM_GH_API_CREDENTIALS"]="Github API Crednetials may be neccessary in Shared Hosting environments in order to gain access to github. Put them like username:password. All connections will be initiated with these parameters to curl command. Default is none."
+    ["INM_GH_API_CREDENTIALS"]="Github API Crednetials may be neccessary in Shared Hosting environments in order to gain access to github. Put them like username:password or token:x-oauth. All connections will be initiated with these parameters to curl command. Default is none."
 )
 
 # Function to prompt for user input
@@ -232,7 +232,7 @@ check_gh_credentials() {
         echo "GH Authentication detected. Curl commands will include credentials."
     else
         CURL_AUTH_FLAG=""
-        echo "$INM_GH_API_CREDENTIALS"
+        # echo "$INM_GH_API_CREDENTIALS"
         echo "Proceeding without GH credentials authentication. If update fails, try to add credentials."
     fi
 }
