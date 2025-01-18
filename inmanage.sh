@@ -805,8 +805,8 @@ done
 }
 
 check_commands
-check_gh_credentials
 check_env
+check_gh_credentials
 parse_options "$@"
 
 if [ -z "$command" ]; then
