@@ -341,16 +341,19 @@ If you have multiple instances running under the same base directory this script
 ## FAQ - Frequently asked questions
 
 ### Docker related: prerequisites; write permissions
-Your IN installation is located in the `/var/www/html` folder. However, the user `www-data` currently lacks both a shell and write permissions in the `/var/www` directory. To resolve this, you'll need to make the following adjustments. By default, you are logged in as the root user. Run these commands:
+Your IN installation is located in the `/var/www/html` folder within the docker container. However, the user `www-data` currently lacks both a shell and write permissions in the `/var/www` directory. To resolve this, you'll need to make the following adjustments. By default, you are logged in as the root user. Run these commands:
 ```
-apt-get update && apt-get install git sudo 
-cd /var/www
-usermod -s /bin/bash www-data
-chown root:www-data .
-chmod 775 .
+apt-get update && apt-get install git sudo
+cd /var/www && usermod -s /bin/bash www-data && chown root:www-data . && chmod 775 .
 ```
 
-Once this is done, you can proceed with installing the script. Keep in mind that your installation directory is set to `./html` in this case. During the initial run of the script, you'll need to provide this directory value in the configuration wizard. If you by accident use a different directory or the default value, you can update it later in the .inmanage/.env.inmanage file.
+Once this is done, you can proceed with installing the script. Keep in mind that your installation directory (not base directory) is set to `./html` in this case. During the initial run of the script, you'll need to provide this directory value in the configuration wizard. A good cause should be to set the backup dir to `./html/storage/app/public/_in_backups` which is available in the persisted folders.
+
+```bash
+runuser www-data -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh"
+```
+
+If you by accident use a different directory or the default value, you can update it later in the .inmanage/.env.inmanage file.
 
 If you intend to access the database via .my.cnf file you need to add a file and set the permissions accordingly:
 
@@ -361,11 +364,12 @@ echo -e "[client]\nuser=ninja\npassword=ninja\ndatabases=ninja\nhost=localhost" 
 chown www-data:www-data /var/www/.my.cnf
 chmod 600 /var/www/.my.cnf
 ```
+But you can let it grab the DB credentials from the Invoice Ninja .env file automatically if you want. 
 
 Then you can do your business with INmanage. Like creating a backup:
 
 ```
-sudo -u www-data bash -c "./inmanage.sh backup"
+runuser www-data -c "./inmanage.sh backup"
 ```
 
 
