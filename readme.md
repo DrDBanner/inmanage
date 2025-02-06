@@ -336,7 +336,7 @@ If you tell me, "No, no ... completely different" then I would think again about
 
 - The script is designed to manage a single installation. If you have multiple instances to manage, you'll most probably have them running in different base directories. So, you install this script for each instance.
 - If you have multiple instances running under the same base directory this script would need to get extended to handle multiple .env.inmange files and a kind of router to manage each instance individually and/or in one batch.
-- Docker related: Currently a CLI inplace update of Invoice Ninja can't succeed with inmanage due to it's mounted paths. A fix or workaround will be built in the future. 
+- **Docker related**: Currently, a CLI-based in-place update of Invoice Ninja cannot succeed with inmanage due to its mounted paths. A fix or workaround will be implemented in the future.
 
 ## FAQ - Frequently asked questions
 
