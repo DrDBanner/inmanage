@@ -335,7 +335,7 @@ check_missing_settings() {
 
 # Check required commands
 check_commands() {
-    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "read" "source" "touch" "sed")
+    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "read" "source" "touch" "sed" "sudo")
     local missing_commands=()
 
     for cmd in "${commands[@]}"; do
@@ -688,8 +688,8 @@ run_backup() {
             exit 1
         }
     else
-        echo "Using .my.cnf for database access"
-        mysqldump -f --no-create-db $tablespace_option -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_DATABASE" >"${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
+        echo "Using .my.cnf file for database selection and access"
+        mysqldump -f --no-create-db $tablespace_option -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" >"${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
             echo "Failed to dump database"
             exit 1
         }
