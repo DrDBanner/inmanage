@@ -615,6 +615,10 @@ run_update() {
         echo "Failed to run translations"
         exit 1
     }
+    $INM_ARTISAN_STRING ninja:design-update || {
+        echo "Failed to run design-update"
+        exit 1
+    }
     $INM_ARTISAN_STRING up || {
         echo "Failed to run artisan up"
         exit 1
