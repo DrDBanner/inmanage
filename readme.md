@@ -370,6 +370,34 @@ Then you can do your business with INmanage. Like creating a backup:
 
 ```
 runuser www-data -c "./inmanage.sh backup"
+
+> All required commands are available.
+> Environment check starts.
+> Self configuration found
+> All settings are present in .inmanage/.env.inmanage.
+> No provision.
+> Proceeding without GH credentials authentication. If update fails, try to add credentials.
+> Creating backup directory.
+> Compressing Data. This may take a while. Hang on...
+> Cleaning up old backups.
+> total 185328
+> drwxr-xr-x 2 www-data www-data      4096 Feb 19 08:28 .
+> drwxr-xr-x 3 www-data www-data      4096 Feb 19 08:28 ..
+> -rw-r--r-- 1 www-data www-data 189765229 Feb 19 08:28 InvoiceNinja_20250219_082806.tar.gz
+
+cd ./html/storage/app/public/_in_backups
+```
+
+When you login to the container, be sure to be within the app container, which has the mountpoints to RW instead of RO.
+
+```
+mount
+...
+...
+> /dev/vda1 on /var/www/html/public type ext4 (rw,relatime,discard)
+> /dev/vda1 on /var/www/html/storage type ext4 (rw,relatime,discard)
+...
+...
 ```
 
 
