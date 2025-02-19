@@ -341,6 +341,19 @@ If you tell me, "No, no ... completely different" then I would think again about
 ## FAQ - Frequently asked questions
 
 ### Docker related: prerequisites; write permissions
+
+When you login to the container, be sure to be within the app container, which has the mountpoints to RW instead of RO.
+
+```
+mount
+...
+...
+> /dev/vda1 on /var/www/html/public type ext4 (rw,relatime,discard)
+> /dev/vda1 on /var/www/html/storage type ext4 (rw,relatime,discard)
+...
+...
+```
+
 Your IN installation is located in the `/var/www/html` folder within the docker container. However, the user `www-data` currently lacks both a shell and write permissions in the `/var/www` directory. To resolve this, you'll need to make the following adjustments. By default, you are logged in as the root user. Run these commands:
 ```
 apt-get update && apt-get install git sudo
@@ -387,21 +400,6 @@ runuser www-data -c "./inmanage.sh backup"
 
 cd ./html/storage/app/public/_in_backups
 ```
-
-When you login to the container, be sure to be within the app container, which has the mountpoints to RW instead of RO.
-
-```
-mount
-...
-...
-> /dev/vda1 on /var/www/html/public type ext4 (rw,relatime,discard)
-> /dev/vda1 on /var/www/html/storage type ext4 (rw,relatime,discard)
-...
-...
-```
-
-
-
 
 ### So, how does your script work on an existing installation? Does it start everything from scratch, does it delete something?
 
