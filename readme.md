@@ -25,7 +25,7 @@ This script manages your Invoice Ninja installation (version 5 and above) by per
 * **Automated Updates**: Downloads and installs the latest version.
 * **Installations**: Provisioned and clean options. 
 * **Efficient Backups**: Manages backups with custom settings.
-* **Docker Friendly**: Can be integrated in docker setups to deploy updates decoupled from webserver.
+* **Docker Friendly**: Can be integrated in docker setups to deploy updates decoupled from webserver. [1](#docker-related-prerequisites-write-permissions) [2](#limitations)
 * **Maintenance Management**: Handles maintenance mode, cache clearing, and more.
 * **Post-Update Tasks**: Includes data migration, optimization, snappdf installation handling and integrity checks.
 
