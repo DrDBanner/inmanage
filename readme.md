@@ -417,6 +417,13 @@ The `.env.provision` file is a template generated from a standard `.env`, but it
  
 This script does not backup any cronjobs nor does it register new ones. It just gives you the exact minimum cronjob line you need after an initial install.
 
+### How do I extract the dumped *.sql file from my backup without extracting everything?
+
+1. Go to your backup folder where the tar.gz files reside e.g. `cd /var/www/html/storage/app/public/_in_backups`
+2. Pass `tar -xf *20250219*.tar.gz --wildcards '*20250219*.sql' --strip-components=6` while substitute the desired part of the filename to match e.g. today.
+3. Done
+
+
 ## Contribs
 
 The beloved Invoice Ninja
