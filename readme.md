@@ -350,6 +350,9 @@ Absolutely yes. Install the script as described in [#mgm-script-installation](#m
 #### Can I use this script, when I have a broken installation and/permission problems?
 Absolutely yes. If in doubt, you can switch over to inmanage handling at any stage. It doesn't delete your previous installation. It reads the .env file, moves your old installation to a different location, pulls the current tar, places it in the correct location with the appropriate permissions, and copies over your previous .env file, ensuring that everything is as intended. If you invoke a backup beforehand, it also creates a database dump and compresses all data into one file.
 
+### During the inmanage installation wizard I made a mistake, how do I fix that or start from scratch?
+You'll find the configuration file under `.inmanage/inmanage.env`. Either alter the file according to your needs or delete it. The next time you start the script, it will either process your new instructions or restart the wizard if the file is not found -and create a new config file. 
+
 ### Docker related: prerequisites; write permissions
 
 When you login to the container, be sure to be within the app container, which has the mountpoints to RW instead of RO.
