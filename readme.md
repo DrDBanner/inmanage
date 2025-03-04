@@ -342,66 +342,75 @@ If you tell me, "No, no ... completely different" then I would think again about
 
 ## FAQ - Frequently asked questions
 
+### Can I use
+
+#### Can I use this script, when I already have installed Invoice Ninja manually?
+   Absolutely yes. Install the script as described in [#mgm-script-installation](#mgm-script-installation), run a backup followed by a forced update. 
+
 ### Docker related: prerequisites; write permissions
 
 When you login to the container, be sure to be within the app container, which has the mountpoints to RW instead of RO.
 
-```
-mount
-...
-...
-> /dev/vda1 on /var/www/html/public type ext4 (rw,relatime,discard)
-> /dev/vda1 on /var/www/html/storage type ext4 (rw,relatime,discard)
-...
-...
-```
-
-Your IN installation is located in the `/var/www/html` folder within the docker container. However, the user `www-data` currently lacks both a shell and write permissions in the `/var/www` directory. To resolve this, you'll need to make the following adjustments. By default, you are logged in as the root user. Run these commands:
-```
-apt-get update && apt-get install git sudo
-cd /var/www && usermod -s /bin/bash www-data && chown root:www-data . && chmod 775 .
-```
-
-Once this is done, you can proceed with installing the script. Keep in mind that your installation directory (not base directory) is set to `./html` in this case. During the initial run of the script, you'll need to provide this directory value in the configuration wizard. A good cause should be to set the backup dir to `./html/storage/app/public/_in_backups` which is available in the persisted folders.
-
-```bash
-runuser www-data -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh"
-```
-
-If you by accident use a different directory or the default value, you can update it later in the .inmanage/.env.inmanage file.
-
-If you intend to access the database via .my.cnf file you need to add a file and set the permissions accordingly:
-
-```
-echo -e "[client]\nuser=ninja\npassword=ninja\ndatabases=ninja\nhost=localhost" > /var/www/.my.cnf
-
-
-chown www-data:www-data /var/www/.my.cnf
-chmod 600 /var/www/.my.cnf
-```
-But you can let it grab the DB credentials from the Invoice Ninja .env file automatically if you want. 
-
-Then you can do your business with INmanage. Like creating a backup:
-
-```
-runuser www-data -c "./inmanage.sh backup"
-
-> All required commands are available.
-> Environment check starts.
-> Self configuration found
-> All settings are present in .inmanage/.env.inmanage.
-> No provision.
-> Proceeding without GH credentials authentication. If update fails, try to add credentials.
-> Creating backup directory.
-> Compressing Data. This may take a while. Hang on...
-> Cleaning up old backups.
-> total 185328
-> drwxr-xr-x 2 www-data www-data      4096 Feb 19 08:28 .
-> drwxr-xr-x 3 www-data www-data      4096 Feb 19 08:28 ..
-> -rw-r--r-- 1 www-data www-data 189765229 Feb 19 08:28 InvoiceNinja_20250219_082806.tar.gz
-
-cd ./html/storage/app/public/_in_backups
-```
+<details>
+   <summary>Click to see full "Docker related: prerequisites; write permissions" FAQ answer</summary>
+      
+   ```
+   mount
+   ...
+   ...
+   > /dev/vda1 on /var/www/html/public type ext4 (rw,relatime,discard)
+   > /dev/vda1 on /var/www/html/storage type ext4 (rw,relatime,discard)
+   ...
+   ...
+   ```
+   
+   Your IN installation is located in the `/var/www/html` folder within the docker container. However, the user `www-data` currently lacks both a shell and write permissions in the `/var/www` directory. To resolve this, you'll need to make the following adjustments. By default, you are logged in as the root user. Run these commands:
+   ```
+   apt-get update && apt-get install git sudo
+   cd /var/www && usermod -s /bin/bash www-data && chown root:www-data . && chmod 775 .
+   ```
+   
+   Once this is done, you can proceed with installing the script. Keep in mind that your installation directory (not base directory) is set to `./html` in this case. During the initial run of the script, you'll need to provide this directory value in the configuration wizard. A good cause should be to set the backup dir to `./html/storage/app/public/_in_backups` which is available in the persisted folders.
+   
+   ```bash
+   runuser www-data -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh"
+   ```
+   
+   If you by accident use a different directory or the default value, you can update it later in the .inmanage/.env.inmanage file.
+   
+   If you intend to access the database via .my.cnf file you need to add a file and set the permissions accordingly:
+   
+   ```
+   echo -e "[client]\nuser=ninja\npassword=ninja\ndatabases=ninja\nhost=localhost" > /var/www/.my.cnf
+   
+   
+   chown www-data:www-data /var/www/.my.cnf
+   chmod 600 /var/www/.my.cnf
+   ```
+   But you can let it grab the DB credentials from the Invoice Ninja .env file automatically if you want. 
+   
+   Then you can do your business with INmanage. Like creating a backup:
+   
+   ```
+   runuser www-data -c "./inmanage.sh backup"
+   
+   > All required commands are available.
+   > Environment check starts.
+   > Self configuration found
+   > All settings are present in .inmanage/.env.inmanage.
+   > No provision.
+   > Proceeding without GH credentials authentication. If update fails, try to add credentials.
+   > Creating backup directory.
+   > Compressing Data. This may take a while. Hang on...
+   > Cleaning up old backups.
+   > total 185328
+   > drwxr-xr-x 2 www-data www-data      4096 Feb 19 08:28 .
+   > drwxr-xr-x 3 www-data www-data      4096 Feb 19 08:28 ..
+   > -rw-r--r-- 1 www-data www-data 189765229 Feb 19 08:28 InvoiceNinja_20250219_082806.tar.gz
+   
+   cd ./html/storage/app/public/_in_backups
+   ```
+</details>
 
 ### So, how does your script work on an existing installation? Does it start everything from scratch, does it delete something?
 
