@@ -347,7 +347,7 @@ If you tell me, "No, no ... completely different" then I would think again about
 #### Can I use this script, when I already have installed Invoice Ninja manually?
 Absolutely yes. Install the script as described in [#mgm-script-installation](#mgm-script-installation), run a backup followed by a forced update. 
 
-#### Can I use this script, when I have a broken installation and/permission problems?
+#### Can I use this script, when I have a broken installation and/or permission problems?
 Absolutely yes. If in doubt, you can switch over to inmanage handling at any stage. It doesn't delete your previous installation. It reads the .env file, moves your old installation to a different location, pulls the current tar, places it in the correct location with the appropriate permissions, and copies over your previous .env file, ensuring that everything is as intended. If you invoke a backup beforehand, it also creates a database dump and compresses all data into one file.
 
 ### During the inmanage installation wizard I made a mistake, how do I fix that or start from scratch?
