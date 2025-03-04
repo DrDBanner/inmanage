@@ -353,6 +353,9 @@ Absolutely yes. If in doubt, you can switch over to inmanage handling at any sta
 #### Can I use this script, when I do my udates from the Invoice Ninja GUI manually?
 Absolutely yes. It's first come, first serve. Though, with inmange script you are able to create a fully fledged and versioned backup prior to an update. So, you get an additional edge.
 
+### Can I use this script, to backup my Invoice Ninja automatically via cronjob?
+Absolutely yes. Check the [#run-as-cronjob](#run-as-cronjob) section.
+
 ### During the inmanage installation wizard I made a mistake, how do I fix that or start from scratch?
 You'll find the configuration file under `.inmanage/.env.inmanage`. Either alter the file according to your needs or delete it. The next time you start the script, it will either process your new instructions or restart the wizard if the file is not found -and create a new config file. 
 
