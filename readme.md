@@ -355,7 +355,7 @@ You'll find the configuration file under `.inmanage/.env.inmanage`. Either alter
 
 ### Docker related: prerequisites; write permissions
 
-When you login to the container, be sure to be within the app container, which has the mountpoints to RW instead of RO.
+When you login to the container, be sure to be within the app container, which has the mountpoints to RW instead of RO. Additionally, some permission adjustments need to take place.
 
 <details>
    <summary>Click to see full "Docker related: prerequisites; write permissions" FAQ answer</summary>
