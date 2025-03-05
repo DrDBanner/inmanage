@@ -309,10 +309,9 @@ Maybe I'll add some more functionality like ~~initial installation~~ and sync to
 
 Things I could imagine:
 
-- [🍒] ~~Invoice Ninja installation from scratch with distribution based templates~~
 - [🍒] Docker related: determine docker environment; Circumvent mv of storage paths since they're mountpoints in order to have a successful update XP; Set storage path automatically to the docker set storage path;
 - [🍒] Backup: database only option without all files included;
-- [🍒] Sync and push
+- [🍒] Migration: Add migration support from backup file. Create backup; Push to new Server; Install inmanage; Let it install everything and populate the DB from the dump file; All with a single command;
 - [🍒] Pre- and Post- Hooks with callbacks for external management software or notifications
 - [🍒] Multi instance support within one base directory
 - [🍒] Multi instance support with multiple base directories 
