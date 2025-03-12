@@ -41,6 +41,7 @@ This script manages your Invoice Ninja installation (version 5 and above) by per
 
 Go to your **base directory** where the `invoiceninja` folder resides or shall reside. Then run:
 
+#### as non-elevated user
 ```bash
 sudo -u www-data bash -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh"
 ```
@@ -49,6 +50,7 @@ sudo -u www-data bash -c "git clone https://github.com/DrDBanner/inmanage.git .i
 
    If you are in a shared hosting environment with SSH access, you'll most likely have to stick with the user you are logged in and this should/could be fine. Then you install this script with your current user/credentials like this:
 
+#### as user with elevated rights
 ```bash
 git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh
 ```
@@ -57,6 +59,7 @@ And follow the installation wizard. You can accept defaults by pressing `[Enter]
 
 > [!NOTE]
 > - Ensure you install in the base directory containing the `invoiceninja` folder to avoid file permission issues.
+> - Do not put it inside of the folder, to avoid the backup task to break.
 > - Run the script as a user who can read the `.env` file of your Invoice Ninja installation. Typically, this is the web server user, such as `www-data`, `httpd`, `web`, `apache`, or `nginx`.
 > - Ensure you put its name into the script's `.env.inmanage` configuration file during installation or manually afterwards under $INM_ENFORCED_USER.
 > - The script tries to ensure all needed CLI tools are available and will prompt you if something is missing.
