@@ -576,8 +576,16 @@ run_update() {
         }
         else
             echo "Directory does not exist: $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/storage/"
-            echo "This may be normal if this is an initial installation, or if your storage is located somewhere different."
+            echo "This may be normal if this is an initial installation, or if your storage is located somewhere different. You may need to copy data manually."
     fi
+    
+    # check, if .ini-files in public/ and copy over -or do nothing; This may be important if you have additional user.ini active for php running in public folder 
+    if compgen -G "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini > /dev/null; then
+        cp "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini "$INM_INSTALLATION_DIRECTORY/public/" || {
+            echo "Failed to copy .ini files from $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/."
+        }
+    fi
+    
     mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')" || {
         echo "Failed to rename old installation"
         exit 1
