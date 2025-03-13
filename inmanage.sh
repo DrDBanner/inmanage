@@ -581,17 +581,17 @@ run_update() {
     
     # check, if .ini-files in public/ and copy over -or do nothing; This may be important if you have additional user.ini active for php running in public folder 
     if compgen -G "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/".*.ini > /dev/null; then
-        cp "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini "$INM_INSTALLATION_DIRECTORY/public/" || {
+        cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini "$INM_INSTALLATION_DIRECTORY/public/" || {
             echo "Failed to copy .ini files from $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/."
         }
-        cp "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/".*.ini "$INM_INSTALLATION_DIRECTORY/public/" || {
+        cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/".*.ini "$INM_INSTALLATION_DIRECTORY/public/" || {
             echo "Failed to copy .ini files with dot (hidden) from $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/."
         }
     fi
     
     # copies over last .htacess file from storage. So, if you modified it manually at some point it survives the update.
     if [ -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" ]; then
-        cp "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" "$INM_INSTALLATION_DIRECTORY/public/.htaccess" || {
+        cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" "$INM_INSTALLATION_DIRECTORY/public/.htaccess" || {
             echo "Failed to copy .htaccess from $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"
         }
     fi
