@@ -580,16 +580,31 @@ run_update() {
     fi
     
     # check, if .ini-files in public/ and copy over -or do nothing; This may be important if you have additional user.ini active for php running in public folder 
-    if compgen -G "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini > /dev/null; then
+    if compgen -G "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/".*.ini > /dev/null; then
         cp "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini "$INM_INSTALLATION_DIRECTORY/public/" || {
             echo "Failed to copy .ini files from $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/."
         }
+        cp "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/".*.ini "$INM_INSTALLATION_DIRECTORY/public/" || {
+            echo "Failed to copy .ini files with dot (hidden) from $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/."
+        }
     fi
     
+    # copies over last .htacess file from storage. So, if you modified it manually at some point it survives the update.
+    if [ -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" ]; then
+        cp "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" "$INM_INSTALLATION_DIRECTORY/public/.htaccess" || {
+            echo "Failed to copy .htaccess from $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"
+        }
+    fi
+
     mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')" || {
         echo "Failed to rename old installation"
         exit 1
     }
+    
+    chmod 600 "$INM_INSTALLATION_DIRECTORY/.env" || {
+        echo "Failed to chmod 600 .env file. Please check what's wrong."
+    }
+    
     # Remove the 'down' file if it exists in the versioned old directory
     old_version_dir="$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')"
     if [ -f "$old_version_dir/public/storage/framework/down" ]; then
