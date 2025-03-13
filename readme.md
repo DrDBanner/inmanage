@@ -60,7 +60,7 @@ And follow the installation wizard. You can accept defaults by pressing `[Enter]
 > [!NOTE]
 > - Ensure you install in the base directory containing the `invoiceninja` folder to avoid file permission issues.
 > - Do not put it inside of the folder, to avoid the backup task to break.
-> - Run the script as a user who can read the `.env` file of your Invoice Ninja installation. Typically, this is the web server user, such as `www-data`, `httpd`, `web`, `apache`, or `nginx`.
+> - Run the script as a user who can read the `.env` file of your Invoice Ninja installation. Typically, this is the web server user, such as `www-data`, `httpd`, `web`, `apache`, or `nginx`, in a shared hosting environment it's quite often the user you are logged in with like `u439534522`.
 > - Ensure you put its name into the script's `.env.inmanage` configuration file during installation or manually afterwards under $INM_ENFORCED_USER.
 > - The script tries to ensure all needed CLI tools are available and will prompt you if something is missing.
 > - To circumvent issues in shared hosting environments with Github access it has the $INM_GH_API_CREDENTIALS variable to provide Github credentials if neccessary. Either add it during installation or in `.env.inmanage` afterwards. `USERNAME:PASSWORD` is the expected format.
