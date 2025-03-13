@@ -579,10 +579,22 @@ run_update() {
             echo "This may be normal if this is an initial installation, or if your storage is located somewhere different. You may need to copy data manually."
     fi
     
-    # Copy .ini files and htaccess if they exist
-    cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini "$INM_INSTALLATION_DIRECTORY/public/" 2>/dev/null
-    cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/".*.ini "$INM_INSTALLATION_DIRECTORY/public/" 2>/dev/null
-    cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/".htaccess "$INM_INSTALLATION_DIRECTORY/public/" 2>/dev/null
+   
+    # Copy regular .ini files if they exist
+    if compgen -G "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini > /dev/null; then
+        cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini "$INM_INSTALLATION_DIRECTORY/public/"
+    fi
+    
+    # Copy hidden .ini files if they exist
+    if compgen -G "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/".*.ini > /dev/null; then
+        cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/".*.ini "$INM_INSTALLATION_DIRECTORY/public/"
+    fi
+    
+    # Copy .htaccess if it exists
+    if [[ -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" ]]; then
+        cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" "$INM_INSTALLATION_DIRECTORY/public/"
+    fi
+
 
     mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')" || {
         echo "Failed to rename old installation"
