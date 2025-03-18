@@ -335,7 +335,7 @@ check_missing_settings() {
 
 # Check required commands
 check_commands() {
-    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "read" "source" "touch" "sed" "sudo")
+    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "read" "source" "touch" "sed" "sudo" "tee")
     local missing_commands=()
 
     for cmd in "${commands[@]}"; do
@@ -701,26 +701,20 @@ run_backup() {
         exit 1
     }
 
-    # Check, if INM_KEEP_DBTABLESPACE is N
-    if [ "$INM_KEEP_DBTABLESPACE" == "N" ]; then
-        tablespace_option="--no-tablespaces"
-    else
-        tablespace_option=""
-    fi
-
     # Use CLI Password mode or my.cnf
     if [ "$INM_FORCE_READ_DB_PW" == "Y" ]; then
-        mysqldump $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" >"${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
+        mysqldump $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" | tee "${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
             echo "Failed to dump database"
             exit 1
         }
     else
         echo "Using .my.cnf file for database selection and access"
-        mysqldump $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" >"${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
+        mysqldump $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_DATABASE" | tee "${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
             echo "Failed to dump database"
             exit 1
         }
     fi
+
 
     cd "$INM_BASE_DIRECTORY" || {
         echo "Failed to change to base directory"
