@@ -14,7 +14,7 @@ declare -A default_settings=(
     ["INM_INSTALLATION_DIRECTORY"]="./invoiceninja"
     ["INM_ENV_FILE"]="\${INM_BASE_DIRECTORY}\${INM_INSTALLATION_DIRECTORY}/.env"
     ["INM_TEMP_DOWNLOAD_DIRECTORY"]="./._in_tempDownload"
-    ["INM_KEEP_DBTABLESPACE"]="N"
+    ["INM_DUMP_OPTIONS"]="--default-character-set=utf8mb4 --no-tablespaces --skip-add-drop-table --quick --single-transaction"
     ["INM_BACKUP_DIRECTORY"]="./_in_backups"
     ["INM_FORCE_READ_DB_PW"]="N"
     ["INM_ENFORCED_USER"]="www-data"
@@ -31,7 +31,7 @@ declare -A default_settings=(
 declare -A prompt_texts=(
     ["INM_BASE_DIRECTORY"]="Which directory contains your IN installation folder? Must have a trailing slash."
     ["INM_INSTALLATION_DIRECTORY"]="What is the installation directory name? Must be relative from \$INM_BASE_DIRECTORY and can start with a . dot."
-    ["INM_KEEP_DBTABLESPACE"]="In shared hosting, tablespaces in mysqldump may cause issues. (Y): Keep if your DB is memory-optimized. (N): Exclude to avoid compatibility problems."
+    ["INM_DUMP_OPTIONS"]="Add options to your dump command. In doubt, keep defaults."
     ["INM_BACKUP_DIRECTORY"]="Where shall backups go?"
     ["INM_FORCE_READ_DB_PW"]="Include DB password in backup? (Y): May expose the password to other server users during runtime. (N): Assumes a secure .my.cnf file with credentials to avoid exposure."
     ["INM_ENFORCED_USER"]="Script user? Usually the webserver user. Ensure it matches your webserver setup."
@@ -710,13 +710,13 @@ run_backup() {
 
     # Use CLI Password mode or my.cnf
     if [ "$INM_FORCE_READ_DB_PW" == "Y" ]; then
-        mysqldump -f --no-create-db $tablespace_option -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" >"${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
+        mysqldump -f $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" >"${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
             echo "Failed to dump database"
             exit 1
         }
     else
         echo "Using .my.cnf file for database selection and access"
-        mysqldump -f --no-create-db $tablespace_option -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" >"${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
+        mysqldump -f $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" >"${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
             echo "Failed to dump database"
             exit 1
         }
