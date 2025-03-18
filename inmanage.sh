@@ -703,16 +703,20 @@ run_backup() {
 
     # Use CLI Password mode or my.cnf
     if [ "$INM_FORCE_READ_DB_PW" == "Y" ]; then
-        mysqldump $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" | tee "${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
+        echo -n "Dumping database..."
+        mysqldump $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" | tee "${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" > /dev/null || {
             echo "Failed to dump database"
             exit 1
         }
+        echo " Done."
     else
         echo "Using .my.cnf file for database selection and access"
-        mysqldump $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_DATABASE" | tee "${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" || {
+        echo -n "Dumping database..."
+        mysqldump $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_DATABASE" | tee "${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" > /dev/null || {
             echo "Failed to dump database"
             exit 1
         }
+        echo " Done."
     fi
 
 
