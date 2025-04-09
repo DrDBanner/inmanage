@@ -614,6 +614,13 @@ run_update() {
         }
         echo "'Maintenanace' file removed from $old_version_dir/public/storage/framework/."
     fi
+    if [ -f "$old_version_dir/storage/framework/down" ]; then
+        rm "$old_version_dir/storage/framework/down" || {
+            echo "Failed to remove 'Maintenance' file from $old_version_dir/storage/framework/"
+            exit 1
+        }
+        echo "'Maintenanace' file removed from $old_version_dir/storage/framework/."
+    fi
     mv "$INM_BASE_DIRECTORY$INM_TEMP_DOWNLOAD_DIRECTORY/$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
         echo "Failed to move new installation"
         exit 1
