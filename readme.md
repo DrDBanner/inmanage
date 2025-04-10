@@ -15,6 +15,8 @@ Easily update, backup, and install your self-hosted Invoice Ninja instance with 
 
 > [!TIP]
 > If you seek a very convenient way to install Invoice Ninja from scratch: Go with the [Provisioned Installation](#installation-provisioning) option.
+> 
+> *If you have no clue about webserver configuration and the CLI but you are in the need to get up and running fast you might want to think twice before going down this rabbit hole. The hosted edition of IN should be your convenient choice.* 
 
 ## Overview
 
