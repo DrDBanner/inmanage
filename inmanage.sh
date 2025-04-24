@@ -653,24 +653,30 @@ run_update() {
         echo "Failed to run artisan up"
         exit 1
     }
+
     # Do if Snappdf set in .env file
     source "$INM_ENV_FILE"
 
-    if [ "$PDF_GENERATOR" = "snappdf" ]; then
-    echo "Snappdf configuration detected. Updating binaries. Downloading ungoogled chrome."
+if [ "$PDF_GENERATOR" = "snappdf" ]; then
+    echo "Snappdf configuration detected."
+
+    if [ -n "$SNAPPDF_CHROMIUM_PATH" ]; then
+        echo "Chromium path is set to '$SNAPPDF_CHROMIUM_PATH'. Skipping ungoogled chrome download via SNAPPDF_SKIP_DOWNLOAD."
+        export SNAPPDF_SKIP_DOWNLOAD=true
+    fi
+
     cd "${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}"
-    
+
     if [ ! -x "./vendor/bin/snappdf" ]; then
         echo "The file ./vendor/bin/snappdf is not executable. Adding executable flag."
         chmod +x ./vendor/bin/snappdf
     fi
-    echo "Downloading snappdf"
+
+    echo "Download and install Chromium if needed."
     $INM_PHP_EXECUTABLE ./vendor/bin/snappdf download
 else
-    echo "Skipping snappdf config."
+    echo "No snappdf support. PDF generation is set to '$PDF_GENERATOR'"
 fi
-
-
     cleanup_old_versions
 }
 
