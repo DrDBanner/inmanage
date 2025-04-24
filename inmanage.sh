@@ -665,7 +665,7 @@ run_update() {
         chmod +x ./vendor/bin/snappdf
     fi
     echo "Downloading snappdf"
-    ./vendor/bin/snappdf download
+    $INM_PHP_EXECUTABLE ./vendor/bin/snappdf download
 else
     echo "Skipping snappdf config."
 fi
