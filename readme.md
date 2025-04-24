@@ -288,7 +288,7 @@ cd .inmanage && git pull
       - Translations: Grabs the latest translations.
       - Production Mode: Puts Invoice Ninja back into production mode.
       - Clean Up: Automatically cleans up old installation backups based on your settings.
-      - Snappdf Update: If snappdf is set in .env file it will get automatically downloaded and updated to the latest available version.
+      - Snappdf Update: If snappdf is set in .env file it will get automatically downloaded and updated to the latest available version. Script now detects if a SNAPPDF_CHROMIUM_PATH is set to the .env file and if true it will skip downloading an additional chromium version and use the path's version instead.
 
 6. #### Backup Invoice Ninja
 
