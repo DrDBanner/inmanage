@@ -7,8 +7,9 @@ Easily update, backup, and install your self-hosted Invoice Ninja instance with 
 ### TOC -  Table of Content
 
 - [Overview](#overview)
-- [Installation](#mgm-script-installation)
-- [Running the script](#running-the-script)
+- [Install the script](#script-installation)
+- [Run the script](#run-the-script)
+- [Update the Script](#update-the-script)
 - [Commands](#commands)
 - [What this script does](#what-this-script-does)
 - [FAQ](#faq---frequently-asked-questions)
@@ -39,11 +40,11 @@ This script manages your Invoice Ninja installation (version 5 and above) by per
 * A peek into the basics of Invoice Ninja mechanics 
 
 
-## MGM Script Installation
+## Script Installation
 
 Go to your **base directory** where the `invoiceninja` folder resides or shall reside. Then run:
 
-#### as non-elevated user
+### as non-elevated user
 ```bash
 sudo -u www-data bash -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh"
 ```
@@ -52,7 +53,7 @@ sudo -u www-data bash -c "git clone https://github.com/DrDBanner/inmanage.git .i
 
    If you are in a shared hosting environment with SSH access, you'll most likely have to stick with the user you are logged in and this should/could be fine. Then you install this script with your current user/credentials like this:
 
-#### as user with elevated rights
+### as user with elevated rights
 ```bash
 git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh
 ```
@@ -67,7 +68,7 @@ And follow the installation wizard. You can accept defaults by pressing `[Enter]
 > - The script tries to ensure all needed CLI tools are available and will prompt you if something is missing.
 > - To circumvent issues in shared hosting environments with Github access it has the $INM_GH_API_CREDENTIALS variable to provide Github credentials if neccessary. Either add it during installation or in `.env.inmanage` afterwards. `USERNAME:PASSWORD` is the expected format.
 
-## Running the script
+## Run the script
 
 Once installed, you can run the script using the symlink in your base directory. For example:
 
@@ -135,7 +136,7 @@ If you want to run it as a cronjob add this line to your crontab. Mind the user 
       - If no new version is available, the script will wait for user input for up to 60 seconds. If there is no response within this timeframe, the script will abort.
       - If a new version is available, the update will be performed automatically without requiring user interaction.
 
-## Update the script
+## Update the Script
 
 To update the script, use:
 
