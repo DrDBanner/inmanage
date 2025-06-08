@@ -350,7 +350,7 @@ sudo -u www-data git clone https://github.com/DrDBanner/inmanage.git .inmanage &
 
 The installation procedure of the installation script starts. You can go with the defaults by pressing [enter] each, except for `Include DB password in backup`. You answer with `Y` instead.
 
-```bash
+```text
 ...
 ...
 ...
@@ -442,7 +442,7 @@ inmanage
 
 The caution message is correct (*The path was already created to circumvent a webserver error.*) and you can easily enter `yes` in order to carry on.
 
-```log
+```text
 All required commands are available.
 Environment check starts.
 Self configuration found
@@ -597,7 +597,7 @@ inmanage backup
 
 The first backup in your hand. 
 
-```log
+```text
 All required commands are available.
 Environment check starts.
 Self configuration found
