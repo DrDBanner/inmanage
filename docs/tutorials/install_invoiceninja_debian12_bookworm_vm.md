@@ -1,6 +1,6 @@
 # Installation Guide: Invoice Ninja on a Debian 12.xx VM
 
-You'll learn how to install Invoiceninja on a Debian 12.xx VM from scratch including everything and extended with a helper script for fast install, backups, and updates. It takes you about 5 to 15 minutes depending on your experience level.
+You'll learn how to install Invoice Ninja on a Debian 12.xx VM from scratch including everything and extended with a helper script for fast install, backups, and updates. It takes you about 5 to 15 minutes depending on your experience level.
 
 *If you already have a pre-configured webserver and database, you can fast forward to [Invoice Ninja installation](#9-invoice-ninja-installation). This part is independent from Debian and can be applied to any machine, where the requirements are met.*
 
