@@ -99,6 +99,20 @@ Run the script with one of the following commands to perform the associated task
 ./inmanage.sh backup && ./inmanage.sh update
 ```
 
+### register command
+
+If you are running on bash you can register the command in your `~/.bashrc` and make it globally available for your local user. Use this code snippet and adapt the paths(!) and user to your needs:
+
+```bash
+echo 'inmanage() { cd /var/www/billing.debian12vm.local/ && sudo -u www-data /var/www/billing.debian12vm.local/inmanage.sh "$@"; }' >> ~/.bashrc
+source ~/.bashrc
+```
+Once done, you can run the script like this from everywhere:
+
+```bash
+inmanage udpate
+```
+
 Performing a backup prior to an update is a good cause. In case something goes wrong you can switch back to the last working version in no time by renaming the broken installation and putting the last working in place. Like this:
 
 ### Rollback
