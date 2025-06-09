@@ -76,7 +76,7 @@ git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inman
 Run with correct permissions:
 
 ```bash
-sudo -u www-data ./inmanage.sh backupF
+sudo -u www-data ./inmanage.sh backup
 ```
 
 Or if already correct user:
