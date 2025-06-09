@@ -410,7 +410,8 @@ cd /var/www/billing.debian12vm.local/.inmanage/ && sudo -u www-data cp .env.exam
 sudo -u www-data nano .env.provision
 ```
 
-Full [Installation Provisioning Readme](https://github.com/DrDBanner/inmanage/#installation-provisioning)
+Full [Provisioning Readme](https://github.com/DrDBanner/inmanage/#provisioned-invoice-ninja-installation)
+
 Mandatory settings to adjust:
 
 ```env
