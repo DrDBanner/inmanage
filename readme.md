@@ -37,6 +37,7 @@ If you seek a very convenient, fast, and optionally automated way to install Inv
 * *Docker Compatible* (partial)
 * *Maintenance Handling*
 * *Post-Update Checks*
+* *Automatic Snappdf updates*
 
 ## Install the Script
 
@@ -135,12 +136,20 @@ cd .inmanage && git pull
   * Renames any existing target folder and creates a new target folder
   * Downloads and extracts latest release
   * Creates a new `.env` file and generates application key
-  * * Suggests required cronjob for schedule execution
+  * Suggests required cronjob for schedule execution
 
 * `update`
 
+  * Creates versioned snapshot of last installation status
   * Downloads and installs latest version
   * Optional `--force` bypasses version check
+  * Handles maintenance
+  * Handles DB migrations
+  * Ensures file permissions
+  * (Re-)Installs or validates Snappdf (incl. Chromium setups if path is set)
+    * Server must satisfy dependencies (e.g. for Debian 12 [like this](https://github.com/DrDBanner/inmanage/blob/main/docs/tutorials/install_invoiceninja_debian12_bookworm_vm.md#8-additional-software))
+    * `PDF_GENERATOR=snappdf` must be set in Invoice Ninja `.env` configuration file.   
+
 
 * `backup`
 
