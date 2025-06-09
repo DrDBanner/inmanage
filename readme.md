@@ -210,6 +210,25 @@ On the next run, the script will:
 
 **Note:** Add `DB_ELEVATED_USERNAME` and `DB_ELEVATED_PASSWORD` to `.env.provision` if the script should create the database and user. These credentials will be removed from the file automatically after setup completes.
 
+### Register Invoice Ninja scheduler cronjob
+After a successful installation you need to register the scheduler via cronjob:
+ 
+**Example for cron.d setup**
+
+Copy, modify, and paste this code to create a cron.d file:
+
+```bash
+echo '* * * * * www-data /usr/bin/php /var/www/billing.yourdomain.com/invoiceninja/artisan schedule:run >> /dev/null 2>&1' | sudo tee /etc/cron.d/invoiceninja
+```
+
+**Example for crontab setup**
+
+Copy, modify, and paste this code after you invoked `crontab -e` as a given user other than `root` keep in mind this user must have the corresponding file-permissions.
+
+```bash
+* * * * * php /var/www/billing.yourdomain.com/invoiceninja/artisan schedule:run >> /dev/null 2>&1
+```
+
 ## Rollback
 
 Restore older version:
@@ -230,6 +249,10 @@ Backup example:
 ```
 
 Avoid update via cron unless using `--force`. Without it, script may block waiting for input.
+
+**How do I install the Invoice Ninja scheduler cronjob?**
+
+A complete explanation can be found under [Register Invoice Ninja scheduler cronjob](#register-invoice-ninja-scheduler-cronjob)
 
 ## Extract SQL
 
@@ -256,6 +279,10 @@ Yes. The script works independently. However, the script allows you to perform v
 ### Can I use this script for automated backups?
 
 Yes. Add a cronjob as shown in the [Cronjob](#cronjob) section.
+
+### How do I install the Invoice Ninja scheduler cronjob?
+
+A complete explanation can be found under [Register Invoice Ninja scheduler cronjob](#register-invoice-ninja-scheduler-cronjob)
 
 ### What if I made a mistake during the installation wizard?
 
