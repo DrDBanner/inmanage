@@ -47,7 +47,7 @@ If you seek a very convenient, fast, and optionally automated way to install Inv
 /var/www/billing.yourdomain.com/            # The base-directory
 ├── .inmanage/                              # The script-directory (cloned here)
 ├── inmanage.sh -> .inmanage/inmanage.sh    # Symlink automatically created by the script
-├── invoiceninja/                           # The actual/future Invoice Ninja installation-directory
+├── invoiceninja/                           # The current/future Invoice Ninja installation-directory
 │   └── public/                             # Webroot (set this as your web server root-folder)
 ```
 
