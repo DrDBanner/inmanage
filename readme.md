@@ -54,7 +54,7 @@ If you seek a very convenient, fast, and optionally automated way to install Inv
 Make sure you change into your `base-directory` when you clone the script. The symlink `inmanage.sh` is created into this directory so that you can easily call the script via `./inmanage.sh` without referencing the `.inmanage` subfolder.
 
 > [!WARNING]
-> Do **not install inside** the `invoiceninja`-ìnstallation-directory`. The script must to reside next to it.
+> Do **not install inside** the Invoice Ninja `installation-directory`. The script must to reside next to it.
 
 ### With Sudo – Webserver user (recommended):
 
