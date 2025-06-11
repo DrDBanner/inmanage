@@ -203,11 +203,9 @@ INM_GH_API_CREDENTIALS=""
 
 *Click image for provisioned install video.*
 
-The file `.env.example` is already included in the Invoice Ninja repository. To perform a provisioned installation of Invoice Ninja, fill in values such as `APP_URL` and the required `DB_*` variables in `.env.example`, then rename or copy it to `.env.provision`.
+A clean `.env.example` file is already included in the cloned `script-directory`. To perform a provisioned installation of Invoice Ninja, fill in values such as `APP_URL` and the required `DB_*` variables in `.env.example`, save it, then rename or copy it to `.env.provision` into the same directory.
 
-To perform a provisioned installation of Invoice Ninja, fill in values such as `APP_URL` and the required `DB_*` variables in `.env.example`, then rename or copy it to `.env.provision`.
-
-On the next run, the script will:
+On the next run of the script, without any parameters, the script will:
 
 * Create the database and database user
 * Download and install the latest Invoice Ninja release
@@ -218,7 +216,7 @@ On the next run, the script will:
 * Create an admin user
 * Suggest a cronjob and prompt for initial backup
 
-**Note:** Add `DB_ELEVATED_USERNAME` and `DB_ELEVATED_PASSWORD` to `.env.provision` if the script should create the database and user. These credentials will be removed from the file automatically after setup completes.
+**Note:** Make sure you added `DB_ELEVATED_USERNAME` and `DB_ELEVATED_PASSWORD` to `.env.provision`, if the script should create the Invoice Ninja database and user based on what you values you put into the `DB_*` fields. These `*_ELEVATED_*` credentials will be removed from the file automatically after setup completes. If you do not put them in there, the script assumes the database and user already exists, those parameters must be set accodingly within the `DB_*` fields. 
 
 ### Register Invoice Ninja scheduler cronjob
 After a successful installation you need to register the scheduler via cronjob:
