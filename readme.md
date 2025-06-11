@@ -138,15 +138,18 @@ cd .inmanage && git pull
 
 * `update`
 
-  * Creates versioned snapshot of last installation status
+  * Creates versioned snapshot of the current installation-directory status
   * Downloads and installs latest version
+  * Copies over data from the data storage
+  * Takes care of existing *.ini and .htaccess files
   * Optional `--force` bypasses version check
   * Handles maintenance
   * Handles DB migrations
   * Ensures file permissions
-  * (Re-)Installs or validates Snappdf (incl. Chromium setups if path is set)
+  * (Re-)Installs Snappdf
     * Server must satisfy dependencies (e.g. for Debian 12 [like this](https://github.com/DrDBanner/inmanage/blob/main/docs/tutorials/install_invoiceninja_debian12_bookworm_vm.md#8-additional-software))
-    * `PDF_GENERATOR=snappdf` must be set in Invoice Ninja `.env` configuration file.   
+    * `PDF_GENERATOR=snappdf` must be set in Invoice Ninja `.env` configuration file.
+    * If a custom `chromium-path` is set in `.env` it will skip the download of new sources   
 
 
 * `backup`
