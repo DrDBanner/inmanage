@@ -44,19 +44,17 @@ If you seek a very convenient, fast, and optionally automated way to install Inv
 *To ensure proper functionality and avoid permission or backup issues, use the following directory structure:*
 
 ```
-/var/www/billing.yourdomain.com/
-├── .inmanage/                              # The script directory (cloned here)
+/var/www/billing.yourdomain.com/            # The base-directory
+├── .inmanage/                              # The script-directory (cloned here)
 ├── inmanage.sh -> .inmanage/inmanage.sh    # Symlink automatically created by the script
-├── invoiceninja/                           # The actual Invoice Ninja installation
-│   └── public/                             # Webroot (set this as your web server root)
+├── invoiceninja/                           # The actual/future Invoice Ninja installation-directory
+│   └── public/                             # Webroot (set this as your web server root-folder)
 ```
 
-Make sure you are in e.g. `/var/www/billing.yourdomain.com/` when you clone the script. The symlink `inmanage.sh` is created in this directory so that you can easily call the script via `./inmanage.sh` without referencing the `.inmanage` subfolder.
-
-Change to the base directory (where the `invoiceninja` folder resides or will be created).
+Make sure you change into your `base-directory` when you clone the script. The symlink `inmanage.sh` is created into this directory so that you can easily call the script via `./inmanage.sh` without referencing the `.inmanage` subfolder.
 
 > [!WARNING]
-> Do **not install inside** the `invoiceninja` folder. The script expects to reside next to it.
+> Do **not install inside** the `invoiceninja`-ìnstallation-directory`. The script must to reside next to it.
 
 ### With Sudo – Webserver user (recommended):
 
