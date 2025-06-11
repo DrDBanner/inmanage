@@ -2,10 +2,18 @@
 set -e
 
 [[ -n "$BASH_VERSION" ]] || {
-    echo "Error: This script requires Bash."
-    echo "Try: sudo bash ./inmanage.sh"
+    echo "This script requires Bash."
+
+    if [ -f ".inmanage/.env.inmanage" ]; then
+        user=$(grep '^INM_ENFORCED_USER=' .inmanage/.env.inmanage | cut -d= -f2 | tr -d '"')
+        echo "Try: sudo -u ${user:-{your-user}} bash ./inmanage.sh"
+    else
+        echo "Try: sudo -u {your-user} bash ./inmanage.sh"
+    fi
+
     exit 1
 }
+
 
 ## Self configuration
 INM_SELF_ENV_FILE=".inmanage/.env.inmanage"
