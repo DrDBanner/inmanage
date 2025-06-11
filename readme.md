@@ -208,15 +208,17 @@ A clean `.env.example` file is already included in the cloned `script-directory`
 On the next run of the script, without any parameters, the script will:
 
 * Create the database and database user
-* Download and install the latest Invoice Ninja release
-* Copy `.env.provision` to `.env`
+* Remove elevated database credentials from `.env.provision`
+* Determine, download, and install the latest Invoice Ninja release
+* Move `.env.provision` to `.env`
 * Generate the application key
 * Run database migrations and seed the database
 * Warm up the cache
 * Create an admin user
 * Suggest a cronjob and prompt for initial backup
 
-**Note:** Make sure you added `DB_ELEVATED_USERNAME` and `DB_ELEVATED_PASSWORD` to `.env.provision`, if the script should create the Invoice Ninja database and user based on what you values you put into the `DB_*` fields. These `*_ELEVATED_*` credentials will be removed from the file automatically after setup completes. If you do not put them in there, the script assumes the database and user already exists, those parameters must be set accodingly within the `DB_*` fields. 
+> [!NOTE]
+> Make sure you added `DB_ELEVATED_USERNAME` and `DB_ELEVATED_PASSWORD` to `.env.provision`, if the script should create the Invoice Ninja database and user based on what you values you put into the `DB_*` fields. These `*_ELEVATED_*` credentials will be removed from the file automatically after setup completes. If you do not put them in there, the script assumes the database and user already exists, those parameters must be set accodingly within the `DB_*` fields. 
 
 ### Register Invoice Ninja scheduler cronjob
 After a successful installation you need to register the scheduler via cronjob:
