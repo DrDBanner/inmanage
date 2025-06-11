@@ -218,7 +218,7 @@ On the next run of the script, without any parameters, the script will:
 * Suggest a cronjob and prompt for initial backup
 
 > [!NOTE]
-> Make sure to add DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD to `.env.provision` if the script should create the Invoice Ninja database and user based on the values in the DB_* fields. These `*_ELEVATED_*` credentials will be automatically removed from the file once setup is complete.
+> Make sure to add `DB_ELEVATED_USERNAME` and `DB_ELEVATED_PASSWORD` to `.env.provision` if the script should create the Invoice Ninja database and user based on the values in the DB_* fields. These `*_ELEVATED_*` credentials will be automatically removed from the file once setup is complete.
 If omitted, the script assumes the database and user already exist, and the corresponding `DB_*` values must be configured accordingly.
 
 ### Register Invoice Ninja scheduler cronjob
