@@ -59,7 +59,8 @@ Make sure you change into your `base-directory` when you clone the script. The s
 ### With Sudo – Webserver user (recommended):
 
 ```bash
-sudo -u www-data bash -c "git clone https://github.com/DrDBanner/inmanage.git .inmanage && .inmanage/inmanage.sh"
+sudo -u www-data git clone https://github.com/DrDBanner/inmanage.git .inmanage &&
+sudo -u www-data .inmanage/inmanage.sh
 ```
 
 Ensure the specified user (e.g. `www-data`) has access to the `invoiceninja` folder and its `.env`.
