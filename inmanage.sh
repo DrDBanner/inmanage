@@ -1,5 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
+
+[[ -n "$BASH_VERSION" ]] || {
+    echo "Error: This script requires Bash."
+    echo "Try: sudo bash ./inmanage.sh"
+    exit 1
+}
 
 ## Self configuration
 INM_SELF_ENV_FILE=".inmanage/.env.inmanage"
@@ -122,7 +128,7 @@ EOF
 ## Check for .env for installation provisioning, create db, move IN config to target
 check_provision_file() {
   if [ -f "$INM_PROVISION_ENV_FILE" ]; then
-    source "$INM_PROVISION_ENV_FILE"
+    . "$INM_PROVISION_ENV_FILE"
 
     if [ -z "$DB_HOST" ] || [ -z "$DB_DATABASE" ] || [ -z "$DB_USERNAME" ] || [ -z "$DB_PORT" ]; then
       echo "Some DB variables are missing in provision file."
@@ -210,7 +216,7 @@ check_env() {
     create_own_config
   else
     echo -e "Self configuration found"
-    source "$INM_SELF_ENV_FILE"
+    . "$INM_SELF_ENV_FILE"
         # Ensure script runs as INM_ENFORCED_USER
         if [ "$(whoami)" != "$INM_ENFORCED_USER" ]; then
             INM_SCRIPT_PATH=$(realpath "$0")
@@ -225,7 +231,7 @@ check_env() {
 
 
 check_gh_credentials() {
-    source "$INM_SELF_ENV_FILE"
+    . "$INM_SELF_ENV_FILE"
     # Check for GH Credentials
     if [[ -n "$INM_GH_API_CREDENTIALS" && "$INM_GH_API_CREDENTIALS" == *:* ]]; then
         CURL_AUTH_FLAG="-u $INM_GH_API_CREDENTIALS"
@@ -258,7 +264,7 @@ create_own_config() {
         done
 
         echo "$INM_SELF_ENV_FILE has been created and configured."
-        source "$INM_SELF_ENV_FILE"
+        . "$INM_SELF_ENV_FILE"
         
         # Defined?
         if [ -z "$INM_BASE_DIRECTORY" ]; then
@@ -303,7 +309,7 @@ create_own_config() {
         fi
 
         # Source the configuration file and check for provisioning
-        source "$INM_SELF_ENV_FILE"
+        . "$INM_SELF_ENV_FILE"
         check_provision_file
     else
         echo "Error: Could not create $INM_SELF_ENV_FILE. Aborting configuration."
@@ -327,7 +333,7 @@ check_missing_settings() {
     # Reload the environment file if any settings were updated
     if [ "$updated" -eq 1 ]; then
         echo "Updated $INM_SELF_ENV_FILE with missing settings. Reloading..."
-        source "$INM_SELF_ENV_FILE"
+        . "$INM_SELF_ENV_FILE"
     else
         echo "All settings are present in $INM_SELF_ENV_FILE."
     fi
@@ -335,12 +341,19 @@ check_missing_settings() {
 
 # Check required commands
 check_commands() {
-    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "read" "source" "touch" "sed" "sudo" "tee")
+    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "touch" "sed" "sudo" "tee")
     local missing_commands=()
 
     for cmd in "${commands[@]}"; do
         if ! command -v "$cmd" &>/dev/null; then
             missing_commands+=("$cmd")
+        fi
+    done
+
+    local shell_builtins=("read")
+    for builtin in "${shell_builtins[@]}"; do
+        if ! type "$builtin" &>/dev/null; then
+            echo "Warning: Shell builtin '$builtin' not found – is this running in Bash?"
         fi
     done
 
@@ -351,9 +364,10 @@ check_commands() {
         done
         exit 1
     else
-        echo "All required commands are available."
+        echo "All required external commands are available."
     fi
 }
+
 
 # Get installed version
 get_installed_version() {
@@ -654,8 +668,8 @@ run_update() {
         exit 1
     }
 
-    # Do if Snappdf set in .env file
-    source "$INM_ENV_FILE"
+    # Source again
+    . "$INM_ENV_FILE"
 
 if [ "$PDF_GENERATOR" = "snappdf" ]; then
     echo "Snappdf configuration detected."
