@@ -102,7 +102,7 @@ This sets up a shell function that changes into your Invoice Ninja base director
 Copy, customize, and paste the ✨ magic code ✨ below into the shell terminal to add a line to your `~/.bashrc` and make it available instant:
 
 ```bash
-echo 'inmanage() { cd /your/path && sudo -u www-data ./inmanage.sh "$@"; }' >> ~/.bashrc
+echo 'inmanage() { cd /your/base-directory && sudo -u www-data ./inmanage.sh "$@"; }' >> ~/.bashrc
 source ~/.bashrc
 ```
 
