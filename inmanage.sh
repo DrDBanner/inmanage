@@ -2,27 +2,60 @@
 set -e
 
 [[ -n "$BASH_VERSION" ]] || {
-    echo "This script requires Bash."
+    log err "This script requires Bash."
 
     if [ -f ".inmanage/.env.inmanage" ]; then
         user=$(grep '^INM_ENFORCED_USER=' .inmanage/.env.inmanage | cut -d= -f2 | tr -d '"')
-        echo "Try: sudo -u ${user:-{your-user}} bash ./inmanage.sh"
+        log info "Try: sudo -u ${user:-{your-user}} bash ./inmanage.sh"
     else
-        echo "Try: sudo -u {your-user} bash ./inmanage.sh"
+        log info "Try: sudo -u {your-user} bash ./inmanage.sh"
     fi
 
     exit 1
 }
-
 
 ## Self configuration
 INM_SELF_ENV_FILE=".inmanage/.env.inmanage"
 INM_PROVISION_ENV_FILE=".inmanage/.env.provision"
 
 ## Globals
-CURL_AUTH_FLAG="" 
+CURL_AUTH_FLAG=""
 
-# Declare an associative array for default settings and their corresponding prompt texts. Will be used to create .
+# ===== Color Setup: only if output is a terminal =====
+if [[ -t 1 ]]; then
+    GREEN='\033[0;32m'
+    RED='\033[0;31m'
+    CYAN='\033[0;36m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    WHITE='\033[1;37m'
+    BOLD='\033[1m'
+    RESET='\033[0m'
+else
+    GREEN=''; RED=''; CYAN=''; YELLOW=''; BLUE=''; WHITE=''; BOLD=''; RESET=''
+fi
+
+# ====== Logging ======
+log() {
+    local type="$1"; shift
+    local timestamp
+    timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+    case "$type" in
+        debug)
+            if [ "$DEBUG" = true ]; then
+                printf "${CYAN}%s [DEBUG] %s${RESET}\n" "$timestamp" "$*"
+            fi
+            ;;
+        info)    printf "${WHITE}%s [INFO] %s${RESET}\n" "$timestamp" "$*" ;;
+        ok)      printf "${GREEN}%s [OK] %s${RESET}\n" "$timestamp" "$*" ;;
+        warn)    printf "${YELLOW}%s [WARN] %s${RESET}\n" "$timestamp" "$*" ;;
+        err)     printf "${RED}%s [ERR] %s${RESET}\n" "$timestamp" "$*" ;;
+        bold)    printf "${BOLD}%s [BOLD] %s${RESET}\n" "$timestamp" "$*" ;;
+        *)       echo "$*" ;;
+    esac
+}
+
+# ====== Array Setup ======
 declare -A default_settings=(
     ["INM_BASE_DIRECTORY"]="$PWD/"
     ["INM_INSTALLATION_DIRECTORY"]="./invoiceninja"
@@ -40,13 +73,23 @@ declare -A default_settings=(
     ["INM_KEEP_BACKUPS"]="2"
     ["INM_GH_API_CREDENTIALS"]="0"
 )
-
-# Declare an associative array for the corresponding prompt texts
+prompt_order=(
+    "INM_BASE_DIRECTORY"
+    "INM_INSTALLATION_DIRECTORY"
+    "INM_DUMP_OPTIONS"
+    "INM_BACKUP_DIRECTORY"
+    "INM_KEEP_BACKUPS"
+    "INM_FORCE_READ_DB_PW"
+    "INM_ENFORCED_USER"
+    "INM_ENFORCED_SHELL"
+    "INM_PHP_EXECUTABLE"
+    "INM_GH_API_CREDENTIALS"
+)
 declare -A prompt_texts=(
-    ["INM_BASE_DIRECTORY"]="Which directory contains your IN installation folder? Must have a trailing slash."
-    ["INM_INSTALLATION_DIRECTORY"]="What is the installation directory name? Must be relative from \$INM_BASE_DIRECTORY and can start with a . dot."
-    ["INM_DUMP_OPTIONS"]="Add options to your dump command. In doubt, keep defaults."
-    ["INM_BACKUP_DIRECTORY"]="Where shall backups go?"
+    ["INM_BASE_DIRECTORY"]="Which shall be your base-directory? Must have a trailing slash."
+    ["INM_INSTALLATION_DIRECTORY"]="The current/future Invoice Ninja folder? Must be relative from \$INM_BASE_DIRECTORY and can start with a . dot."
+    ["INM_DUMP_OPTIONS"]="Modify database dump options: In doubt, keep defaults."
+    ["INM_BACKUP_DIRECTORY"]="Backup Directory?"
     ["INM_FORCE_READ_DB_PW"]="Include DB password in backup? (Y): May expose the password to other server users during runtime. (N): Assumes a secure .my.cnf file with credentials to avoid exposure."
     ["INM_ENFORCED_USER"]="Script user? Usually the webserver user. Ensure it matches your webserver setup."
     ["INM_ENFORCED_SHELL"]="Which shell should be used? In doubt, keep as is."
@@ -55,29 +98,13 @@ declare -A prompt_texts=(
     ["INM_GH_API_CREDENTIALS"]="GitHub API credentials may be required on shared hosting. Use the format username:password or token:x-oauth. If provided, all curl commands will use these credentials;"
 )
 
-# Function to prompt for user input
-prompt() {
-    local var_name="$1"
-    local default_value="$2"
-    local prompt_message="$3"
-
-    while true; do
-        read -r -p "${prompt_message} [default: $default_value]: " input
-        if [ -z "$input" ]; then
-            input="$default_value"
-        fi
-        if [ -n "$input" ]; then
-            echo "$input"
-            return
-        else
-            echo "Invalid input. Please try again."
-        fi
-    done
+prompt_var() {
+    local var="$1"
+    local default="$2"
+    local text="${prompt_texts[$var]}"
+    read -r -p "$(echo -e "${BLUE}${text}${NC} ${WHITE}[$default]${NC} > ")" input
+    echo "${input:-$default}"
 }
-
-## Create Database
-## Consumes parameters for the connection like: create_database "$DB_ELEVATED_USERNAME" "$DB_ELEVATED_PASSWORD"
-## If username is missing, it prompts for user input. If password is missing it tries to connect with elevated user only.
 
 create_database() {
   local username="$1"
@@ -85,13 +112,12 @@ create_database() {
 
   if [ -z "$username" ]; then
     username=$(prompt "DB_ELEVATED_USERNAME" "" "Enter a DB username with create database permissions.")
-    echo "Enter the password (input will be hidden):"
+    log info "Enter the password (input will be hidden):"
     read -s password
   fi
 
-  # Create database and user
   if [ -z "$password" ]; then
-    echo -e "No password given: Assuming .my.cnf credentials connection."
+    log info "No password given: Assuming .my.cnf credentials connection."
     mysql -h "$DB_HOST" -P "$DB_PORT" -u "$username" <<EOF
 CREATE DATABASE IF NOT EXISTS $DB_DATABASE DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
 CREATE USER IF NOT EXISTS '$DB_USERNAME'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
@@ -116,119 +142,97 @@ EOF
   fi
 
   if [ $? -eq 0 ]; then
-    echo "Database and user created successfully. If they already existed, they were untouched. Privileges were granted."
-
-    # Remove DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD from INM_PROVISION_ENV_FILE
+    log ok "Database and user created successfully. If they already existed, they were untouched. Privileges were granted."
     if [ -f "$INM_PROVISION_ENV_FILE" ]; then
       sed -i '/^DB_ELEVATED_USERNAME/d' "$INM_PROVISION_ENV_FILE"
       sed -i '/^DB_ELEVATED_PASSWORD/d' "$INM_PROVISION_ENV_FILE"
-      echo "Removed DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD from $INM_PROVISION_ENV_FILE if they were there."
+      log info "Removed DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD from $INM_PROVISION_ENV_FILE if they were there."
     else
-      echo "$INM_PROVISION_ENV_FILE not found, cannot remove elevated credentials."
+      log warn "$INM_PROVISION_ENV_FILE not found, cannot remove elevated credentials."
     fi
   else
-    echo "Failed to create database and user."
+    log err "Failed to create database and user."
     exit 1
   fi
 }
 
-
-## Check for .env for installation provisioning, create db, move IN config to target
 check_provision_file() {
   if [ -f "$INM_PROVISION_ENV_FILE" ]; then
     . "$INM_PROVISION_ENV_FILE"
 
     if [ -z "$DB_HOST" ] || [ -z "$DB_DATABASE" ] || [ -z "$DB_USERNAME" ] || [ -z "$DB_PORT" ]; then
-      echo "Some DB variables are missing in provision file."
+      log err "Some DB variables are missing in provision file."
       exit 1
     fi
 
-    # Check for elevated credentials
     if [ -n "$DB_ELEVATED_USERNAME" ]; then
-      echo "Elevated SQL user $DB_ELEVATED_USERNAME found in $INM_PROVISION_ENV_FILE."
+      log info "Elevated SQL user $DB_ELEVATED_USERNAME found in $INM_PROVISION_ENV_FILE."
       elevated_username="$DB_ELEVATED_USERNAME"
       elevated_password="$DB_ELEVATED_PASSWORD"
     else
-      echo "No elevated SQL username found. Continuing with standard credentials."
+      log info "No elevated SQL username found. Continuing with standard credentials."
       elevated_username=""
       elevated_password=""
     fi
 
-    echo "Provision file loaded. Checking database connection and database existence now."
+    log info "Provision file loaded. Checking database connection and database existence now."
 
-    # Attempt connection using elevated credentials if available
     if [ -n "$elevated_username" ]; then
       if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e 'quit'; then
-        echo "Elevated credentials: Connection successful."
-        # Check if database exists
+        log ok "Elevated credentials: Connection successful."
         if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e "use $DB_DATABASE"; then
-          echo "Connection Possible. Database already exists."
+          log ok "Connection Possible. Database already exists."
         else
-          echo "Connection Possible. Database does not exist."
-          echo "Trying to create database now."
+          log warn "Connection Possible. Database does not exist."
+          log info "Trying to create database now."
           create_database "$elevated_username" "$elevated_password"
         fi
       else
-        echo "Failed to connect using elevated credentials. Check your elevated DB credentials and connection settings."
-
-        # Prompt for elevated password if not provided
+        log err "Failed to connect using elevated credentials. Check your elevated DB credentials and connection settings."
         if [ -z "$elevated_password" ]; then
           elevated_password=$(prompt "DB_ELEVATED_PASSWORD" "" "Enter the password for elevated user")
         fi
-
-        # Retry connection with the provided password
         if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e 'quit'; then
-          echo "Connection successful with provided elevated credentials."
-          # Check if database exists
+          log debug "Connection successful with provided elevated credentials."
           if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e "use $DB_DATABASE"; then
-            echo "Connection Possible. Database already exists."
+            log ok "Connection Possible. Database already exists."
           else
-            echo "Connection Possible. Database does not exist."
-            echo "Trying to create database now."
             create_database "$elevated_username" "$elevated_password"
           fi
         else
-          echo "Failed to connect with provided elevated credentials. Unable to proceed."
           exit 1
         fi
       fi
     else
-      echo "No elevated credentials available. Trying to connect with standard user."
-
-      # Check database connection using standard user credentials
+      log info "No elevated credentials available. Trying to connect with standard user."
       if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e 'quit'; then
-        # Check if database exists
         if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "use $DB_DATABASE"; then
-          echo "Connection Possible. Database already exists."
+          log ok "Connection Possible. Database already exists."
         else
-          echo "Connection Possible. Database does not exist."
-          echo "Trying to create database now."
           create_database "$DB_USERNAME" "$DB_PASSWORD"
         fi
       else
-        echo "Failed to connect to the database with standard credentials. Check your DB credentials and connection settings."
+        log err "Failed to connect to the database with standard credentials. Check your DB credentials and connection settings."
         exit 1
       fi
     fi
     install_tar "Provisioned"
   else
-    echo "No provision."
+    log debug "No provision."
   fi
 }
 
-# Check and load the self environment file
 check_env() {
-    echo -e "Environment check starts."
+    log debug "Environment check starts."
   if [ ! -f "$INM_SELF_ENV_FILE" ]; then
-    echo "$INM_SELF_ENV_FILE configuration file for this script not found. Attempting to create it..."
+    log warn "$INM_SELF_ENV_FILE configuration file for this script not found. Attempting to create it..."
     create_own_config
   else
-    echo -e "Self configuration found"
+    log debug "Self configuration found"
     . "$INM_SELF_ENV_FILE"
-        # Ensure script runs as INM_ENFORCED_USER
         if [ "$(whoami)" != "$INM_ENFORCED_USER" ]; then
             INM_SCRIPT_PATH=$(realpath "$0")
-            echo "Switching to user '$INM_ENFORCED_USER'."
+            log info "Switching to user '$INM_ENFORCED_USER'."
             exec sudo -u "$INM_ENFORCED_USER" "$INM_ENFORCED_SHELL" -c "cd '$(pwd)' && \"$INM_SCRIPT_PATH\" \"$@\""
             exit 0
         fi
@@ -237,117 +241,113 @@ check_env() {
   fi
 }
 
-
 check_gh_credentials() {
     . "$INM_SELF_ENV_FILE"
-    # Check for GH Credentials
     if [[ -n "$INM_GH_API_CREDENTIALS" && "$INM_GH_API_CREDENTIALS" == *:* ]]; then
         CURL_AUTH_FLAG="-u $INM_GH_API_CREDENTIALS"
-        echo "GH Authentication detected. Curl commands will include credentials."
+        log info "GH Authentication detected. Curl commands will include credentials."
     else
         CURL_AUTH_FLAG=""
-        # echo "$INM_GH_API_CREDENTIALS"
-        echo "Proceeding without GH credentials authentication. If update fails, try to add credentials."
+        log info "No GH credentials set. If connection fails, try to add credentials."
     fi
 }
 
-# Create config file and symlink in base directory
 create_own_config() {
     if touch "$INM_SELF_ENV_FILE"; then
-        echo "Write Permissions OK. Proceeding with configuration..."
+        log ok "Write Permissions OK."
         rm $INM_SELF_ENV_FILE
+        echo -e " "
+        echo -e "${YELLOW}========== Install Wizard ==========${NC}"
+        echo -e " "
+        log bold "Just press [ENTER] to accept defaults."
+        echo -e " "
 
-        echo -e "\n\n Just press [ENTER] to accept defaults. \n\n"
-
-        # Loop through default settings and prompt user for input, allowing them to override
-        for key in "${!default_settings[@]}"; do
+        # Prompt for variables in the order specified by prompt_order
+        for key in "${prompt_order[@]}"; do
             value=${default_settings[$key]}
             prompt_text=${prompt_texts[$key]:-"Provide value for $key:"}
-            default_settings[$key]=$(prompt "$key" "$value" "$prompt_text")
+            default_settings[$key]=$(prompt_var "$key" "$value" "$prompt_text")
         done
 
-        # Save configuration to .env.inmanage
-        for key in "${!default_settings[@]}"; do
+        # Write variables to env file in the same order
+        for key in "${prompt_order[@]}"; do
             echo "$key=\"${default_settings[$key]}\"" >> "$INM_SELF_ENV_FILE"
         done
 
-        echo "$INM_SELF_ENV_FILE has been created and configured."
+        # Write any remaining default_settings not in prompt_order
+        for key in "${!default_settings[@]}"; do
+            found=0
+            for ordered_key in "${prompt_order[@]}"; do
+            if [[ "$key" == "$ordered_key" ]]; then
+                found=1
+                break
+            fi
+            done
+            if [[ $found -eq 0 ]]; then
+            echo "$key=\"${default_settings[$key]}\"" >> "$INM_SELF_ENV_FILE"
+            fi
+        done
+
+        log ok "$INM_SELF_ENV_FILE has been created and configured."
         . "$INM_SELF_ENV_FILE"
         
-        # Defined?
         if [ -z "$INM_BASE_DIRECTORY" ]; then
-            echo "Error: 'INM_BASE_DIRECTORY' variable is empty. Stopping script. File an issue on github."
+            log err "Error: 'INM_BASE_DIRECTORY' variable is empty. Stopping script. File an issue on github."
             exit 1
         fi
         
-        # Handle symlink
         target="$INM_BASE_DIRECTORY.inmanage/inmanage.sh"
         link="$INM_BASE_DIRECTORY/inmanage.sh"
 
-        # Debug
-        # echo "DEBUG: link='$link', target='$target'"
-
-        # Check if the link exists
         if [ -L "$link" ]; then
-            # Check if it points to the correct target
             current_target=$(readlink "$link")
             if [ "$current_target" == "$target" ]; then
-                echo "The symlink is correct."
+                log debug "The symlink is correct."
             else
-                echo "The symlink is incorrect. Updating..."
+                log warn "The symlink is incorrect. Updating."
                 ln -sf "$target" "$link"
             fi
         else
-            echo "The symlink does not exist. Creating..."
+            log debug "The symlink does not exist. Creating."
             ln -s "$target" "$link"
         fi
 
-
-        # Download .env.example for provisioning
         env_example_file="$INM_BASE_DIRECTORY.inmanage/.env.example"
-        echo "Downloading .env.example for provisioning"
+        log info "Downloading .env.example for provisioning"
         curl -sL ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} "https://raw.githubusercontent.com/invoiceninja/invoiceninja/v5-stable/.env.example" -o "$env_example_file" || {
-            echo "Failed to download .env.example for seeding"
+            log err "Failed to download .env.example for seeding"
             exit 1
         }
 
-        # Modify the downloaded file
         if [ -f "$env_example_file" ]; then
             sed -i '/^DB_PORT=/a DB_ELEVATED_USERNAME=\nDB_ELEVATED_PASSWORD=' "$env_example_file"
         fi
 
-        # Source the configuration file and check for provisioning
         . "$INM_SELF_ENV_FILE"
         check_provision_file
     else
-        echo "Error: Could not create $INM_SELF_ENV_FILE. Aborting configuration."
+        log err "Error: Could not create $INM_SELF_ENV_FILE. Aborting configuration."
         exit 1
     fi
 }
 
-# Check if any new settings are missing from the environment file
 check_missing_settings() {
     updated=0
-
-    # Loop through default settings and check if they exist in the env file
     for key in "${!default_settings[@]}"; do
         if ! grep -q "^$key=" "$INM_SELF_ENV_FILE"; then
-            echo "$key not found in $INM_SELF_ENV_FILE. Adding with default value '${default_settings[$key]}'."
+            log warn "$key not found in $INM_SELF_ENV_FILE. Adding with default value '${default_settings[$key]}'."
             echo "$key=\"${default_settings[$key]}\"" >> "$INM_SELF_ENV_FILE"
             updated=1
         fi
     done
-
-    # Reload the environment file if any settings were updated
     if [ "$updated" -eq 1 ]; then
-        echo "Updated $INM_SELF_ENV_FILE with missing settings. Reloading..."
+        log ok "Updated $INM_SELF_ENV_FILE with missing settings. Reloading."
         . "$INM_SELF_ENV_FILE"
     else
-        echo "All settings are present in $INM_SELF_ENV_FILE."
+        log ok "Loaded settings from $INM_SELF_ENV_FILE."
     fi
 }
 
-# Check required commands
 check_commands() {
     local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "touch" "sed" "sudo" "tee")
     local missing_commands=()
@@ -361,85 +361,78 @@ check_commands() {
     local shell_builtins=("read")
     for builtin in "${shell_builtins[@]}"; do
         if ! type "$builtin" &>/dev/null; then
-            echo "Warning: Shell builtin '$builtin' not found – is this running in Bash?"
+            log warn "Warning: Shell builtin '$builtin' not found – is this running in Bash?"
         fi
     done
 
     if [ ${#missing_commands[@]} -ne 0 ]; then
-        echo "Error: The following commands are not available:"
+        log err "Error: The following commands are not available:"
         for missing in "${missing_commands[@]}"; do
-            echo "  - $missing"
+            log err "  - $missing"
         done
         exit 1
     else
-        echo "All required external commands are available."
+        log debug "All required external commands are available."
     fi
 }
 
-
-# Get installed version
 get_installed_version() {
     local version
     if [ -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/VERSION.txt" ]; then
         version=$(cat "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/VERSION.txt") || {
-            echo "Failed to read installed version"
+            log err "Failed to read installed version"
             exit 1
         }
         echo "$version"
     else
-        echo "VERSION.txt not found"
+        log err "VERSION.txt not found"
         exit 1
     fi
 }
 
-# Get latest version
 get_latest_version() {
     local version
     version=$(curl -s ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} https://api.github.com/repos/invoiceninja/invoiceninja/releases/latest | grep tag_name | cut -d '"' -f 4 | sed 's/v//') || {
-        echo "Failed to retrieve latest version"
+        log err "Failed to retrieve latest version"
         exit 1
     }
     echo "$version"
 }
 
-# Download Invoice Ninja
 download_ninja() {
     [ -d "$INM_TEMP_DOWNLOAD_DIRECTORY" ] && rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
     mkdir -p "$INM_TEMP_DOWNLOAD_DIRECTORY" || {
-        echo "Failed to create temp directory"
+        log err "Failed to create temp directory."
         exit 1
     }
     cd "$INM_TEMP_DOWNLOAD_DIRECTORY" || {
-        echo "Failed to change to temp directory"
+        log err "Failed to change to temp directory."
         exit 1
     }
 
     local app_version
     app_version=$(get_latest_version)
     sleep 2
-    echo "Downloading Invoice Ninja version $app_version..."
+    log info "Downloading Invoice Ninja version $app_version."
 
-    # Temp File
     temp_file="invoiceninja_temp.tar"
 
     if curl -sL ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} -w "%{http_code}" "https://github.com/invoiceninja/invoiceninja/releases/download/v$app_version/invoiceninja.tar" -o "$temp_file" | grep -q "200"; then
-        # Check size
-        if [ $(wc -c < "$temp_file") -gt 1048576 ]; then  # < 1MB in size should be good
+        if [ $(wc -c < "$temp_file") -gt 1048576 ]; then
             mv "$temp_file" "invoiceninja.tar"
-            echo "Download successful."
+            log ok "Download successful."
         else
-            echo "Download failed: File is too small. Please check network."
+            log err "Download failed: File is too small. Please check network."
             rm "$temp_file"
+            exit 1
+        fi
+    else
+        log err "Download failed: HTTP-Statuscode not 200. Please check network. Maybe you need GitHub credentials."
+        rm "$temp_file"
         exit 1
     fi
-    else
-        echo "Download failed: HTTP-Statuscode not 200. Please check network. Maybe you need Gitgub credentials."
-        rm "$temp_file"
-    exit 1
-    fi
-    }
+}
 
-# Install tar
 install_tar() {
     local mode="$1"
     local env_file
@@ -455,97 +448,77 @@ install_tar() {
     latest_version=$(get_latest_version)
 
     if [ -d "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" ]; then
-        echo -n "Caution: Installation directory already exists! Current installation directory will get renamed. Proceed with installation? (yes/no): "
-        # Set a timeout for 60 seconds
+        log warn "Caution: Installation directory already exists! Current installation directory will get renamed. Proceed with installation? (yes/no): "
         if ! read -t 60 response; then
-            echo "No response within 60 seconds. Installation aborted."
+            log warn "No response within 60 seconds. Installation aborted."
             exit 0
         fi
         if [[ ! "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-            echo "Installation aborted."
+            log info "Installation aborted."
             exit 0
         fi
         mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "_last_IN_$(date +'%Y%m%d_%H%M%S')"
     fi
 
-    echo "Installation starts now"
+    log info "Installation starts now"
 
     download_ninja
 
     mkdir "$INM_INSTALLATION_DIRECTORY" || {
-        echo "Failed to create installation directory"
+        log err "Failed to create installation directory"
         exit 1
     }
     chown "$INM_ENFORCED_USER" "$INM_INSTALLATION_DIRECTORY" || {
-        echo "Failed to change owner"
+        log err "Failed to change owner"
         exit 1
     }
-    echo -e "Unpacking tar"
+    log info "Unpacking tar"
     tar -xzf invoiceninja.tar -C "$INM_INSTALLATION_DIRECTORY" || {
-        echo "Failed to unpack"
+        log err "Failed to unpack"
         exit 1
     }
     mv "$env_file" "$INM_INSTALLATION_DIRECTORY/.env" || {
-        echo "Failed to move .env file"
+        log err "Failed to move .env file"
         exit 1
     }
     chmod 600 "$INM_INSTALLATION_DIRECTORY/.env" || {
-        echo "Failed to chmod 600 .env file"
+        log err "Failed to chmod 600 .env file"
         exit 1
     }
     mv "$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
-        echo "Failed move installation to target directory $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY"
+        log err "Failed move installation to target directory $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY"
         exit 1
     }
-    echo -e "Generating Key" 
+    log info "Generating Key"
     $INM_ARTISAN_STRING key:generate --force || {
-        echo "Failed to generate key"
+        log err "Failed to generate key"
         exit 1
     }
     $INM_ARTISAN_STRING optimize || {
-        echo "Failed to run optimize"
+        log err "Failed to run optimize"
         exit 1
     }
     $INM_ARTISAN_STRING up || {
-        echo "Failed to run artisan up"
+        log err "Failed to run artisan up"
         exit 1
     }
     if [ "$mode" == "Provisioned" ]; then
-    $INM_ARTISAN_STRING migrate:fresh --seed --force || {
-        echo "Failed to run artisan migrate"
-        exit 1
-    }
-    $INM_ARTISAN_STRING ninja:create-account --email=admin@admin.com --password=admin && echo -e "\n\nLogin: $APP_URL Username: admin@admin.com Password: admin" || {
-        echo "Standard user creation failed"
-        exit 1
-    }
-        echo -e "\n\nSetup Complete!\n\n\
-Open your browser at $APP_URL to access the application.\n\
-The database and user are configured.\n\n\
-IT'S A GOOD TIME TO MAKE YOUR FIRST BACKUP NOW!!\n\n\
-Cronjob Setup:\n\
-Add this for scheduled tasks:\n\
-* * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1\n\n\
-Scheduled Backup:\n\
-To schedule a backup, add this:\n\
-* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY./inmanage.sh backup\" >> /dev/null 2>&1\n\n"
-
+        $INM_ARTISAN_STRING migrate:fresh --seed --force || {
+            log err "Failed to run artisan migrate"
+            exit 1
+        }
+        $INM_ARTISAN_STRING ninja:create-account --email=admin@admin.com --password=admin && log info "\n\nLogin: $APP_URL Username: admin@admin.com Password: admin" || {
+            log err "Standard user creation failed"
+            exit 1
+        }
+        log ok "\n\nSetup Complete!\n\nOpen your browser at $APP_URL to access the application.\nThe database and user are configured.\n\nIT'S A GOOD TIME TO MAKE YOUR FIRST BACKUP NOW!!\n\nCronjob Setup:\nAdd this for scheduled tasks:\n* * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1\n\nScheduled Backup:\nTo schedule a backup, add this:\n* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY./inmanage.sh backup\" >> /dev/null 2>&1\n\n"
     else
-        echo -e "\n\nSetup Complete!\n\n\
-Open your browser at your configured address https://your.url/setup now to carry on with database setup.\n\n\
-IT'S A GOOD TIME TO MAKE YOUR FIRST BACKUP NOW!!\n\n\
-Cronjob Setup:\n\
-Add this for scheduled tasks:\n\
-* * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1\n\n\
-Scheduled Backup:\n\
-To schedule a backup, add this:\n\
-* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY./inmanage.sh backup\" >> /dev/null 2>&1\n\n"
+        log ok "\n\nSetup Complete!\n\nOpen your browser at your configured address https://your.url/setup now to carry on with database setup.\n\nIT'S A GOOD TIME TO MAKE YOUR FIRST BACKUP NOW!!\n\nCronjob Setup:\nAdd this for scheduled tasks:\n* * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1\n\nScheduled Backup:\nTo schedule a backup, add this:\n* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY./inmanage.sh backup\" >> /dev/null 2>&1\n\n"
     fi
 
     cd "$INM_BASE_DIRECTORY" && rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
 }
 
-# Run update
 run_update() {
     local installed_version latest_version
 
@@ -553,238 +526,220 @@ run_update() {
     latest_version=$(get_latest_version)
 
     if [ "$installed_version" == "$latest_version" ] && [ "$force_update" != true ]; then
-        echo -e "Already up-to-date. Proceed with update? (yes/no): "
-        # Set a timeout for 60 seconds
+        log info "Already up-to-date. Proceed with update? (yes/no): "
         if ! read -t 60 response; then
-            echo "No response within 60 seconds. Update aborted."
+            log warn "No response within 60 seconds. Update aborted."
             exit 0
         fi
         if [[ ! "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-            echo "Update aborted."
+            log info "Update aborted."
             exit 0
         fi
     fi
 
-    echo "Update starts now."
+    log info "Update starts now."
     download_ninja
     mkdir "$INM_INSTALLATION_DIRECTORY" || {
-        echo "Failed to create installation directory"
+        log err "Failed to create installation directory"
         exit 1
     }
     chown "$INM_ENFORCED_USER" "$INM_INSTALLATION_DIRECTORY" || {
-        echo "Failed to change owner"
+        log err "Failed to change owner"
         exit 1
     }
-    echo -e "Unpacking Data."
+    log info "Unpacking Data."
     tar -xzf invoiceninja.tar -C "$INM_INSTALLATION_DIRECTORY" || {
-        echo "Failed to unpack"
+        log err "Failed to unpack"
         exit 1
     }
     $INM_ARTISAN_STRING cache:clear || {
-        echo "Failed to clear artisan cache"
+        log err "Failed to clear artisan cache"
         exit 1
     }
     $INM_ARTISAN_STRING down || {
-        echo "Failed to run artisan down"
+        log err "Failed to run artisan down"
         exit 1
     }
     cp "$INM_ENV_FILE" "$INM_INSTALLATION_DIRECTORY/" || {
-        echo "Failed to copy .env"
+        log err "Failed to copy .env"
         exit 1
     }
     if [ -d "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/storage/" ]; then
         cp -R "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/storage/." "$INM_INSTALLATION_DIRECTORY/public/storage/" || {
-            echo "Failed to copy storage from $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/storage/."
+            log warn "Failed to copy storage from $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/storage/."
         }
-        else
-            echo "Directory does not exist: $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/storage/"
-            echo "This may be normal if this is an initial installation, or if your storage is located somewhere different. You may need to copy data manually."
+    else
+        log info "Directory does not exist: $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/storage/"
+        log info "This may be normal if this is an initial installation, or if your storage is located somewhere different. You may need to copy data manually."
     fi
-    
-   
-    # Copy regular .ini files if they exist
+
     if compgen -G "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini > /dev/null; then
         cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/"*.ini "$INM_INSTALLATION_DIRECTORY/public/"
     fi
-    
-    # Copy hidden .ini files if they exist
     if compgen -G "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/".*.ini > /dev/null; then
         cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/".*.ini "$INM_INSTALLATION_DIRECTORY/public/"
     fi
-    
-    # Copy .htaccess if it exists
     if [[ -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" ]]; then
         cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" "$INM_INSTALLATION_DIRECTORY/public/"
     fi
 
-
     mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')" || {
-        echo "Failed to rename old installation"
+        log err "Failed to rename old installation"
         exit 1
     }
-    
     chmod 600 "$INM_INSTALLATION_DIRECTORY/.env" || {
-        echo "Failed to chmod 600 .env file. Please check what's wrong."
+        log warn "Failed to chmod 600 .env file. Please check what's wrong."
     }
-    
-    # Remove the 'down' file if it exists in the versioned old directory
     old_version_dir="$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')"
     if [ -f "$old_version_dir/public/storage/framework/down" ]; then
         rm "$old_version_dir/public/storage/framework/down" || {
-            echo "Failed to remove 'Maintenance' file from $old_version_dir/public/storage/framework/"
+            log err "Failed to remove 'Maintenance' file from $old_version_dir/public/storage/framework/"
             exit 1
         }
-        echo "'Maintenanace' file removed from $old_version_dir/public/storage/framework/."
+        log ok "'Maintenanace' file removed from $old_version_dir/public/storage/framework/."
     fi
     if [ -f "$old_version_dir/storage/framework/down" ]; then
         rm "$old_version_dir/storage/framework/down" || {
-            echo "Failed to remove 'Maintenance' file from $old_version_dir/storage/framework/"
+            log err "Failed to remove 'Maintenance' file from $old_version_dir/storage/framework/"
             exit 1
         }
-        echo "'Maintenanace' file removed from $old_version_dir/storage/framework/."
+        log ok "'Maintenanace' file removed from $old_version_dir/storage/framework/."
     fi
     mv "$INM_BASE_DIRECTORY$INM_TEMP_DOWNLOAD_DIRECTORY/$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
-        echo "Failed to move new installation"
+        log err "Failed to move new installation"
         exit 1
     }
     $INM_ARTISAN_STRING optimize || {
-        echo "Failed to artisan optimize"
+        log err "Failed to artisan optimize"
         exit 1
     }
     $INM_ARTISAN_STRING ninja:post-update || {
-        echo "Failed to run post-update"
+        log err "Failed to run post-update"
         exit 1
     }
     $INM_ARTISAN_STRING migrate --force || {
-        echo "Failed to run artisan migrate"
+        log err "Failed to run artisan migrate"
         exit 1
     }
     $INM_ARTISAN_STRING ninja:check-data || {
-        echo "Failed to run check data"
+        log err "Failed to run check data"
         exit 1
     }
     $INM_ARTISAN_STRING ninja:translations || {
-        echo "Failed to run translations"
+        log err "Failed to run translations"
         exit 1
     }
     $INM_ARTISAN_STRING ninja:design-update || {
-        echo "Failed to run design-update"
+        log err "Failed to run design-update"
         exit 1
     }
     $INM_ARTISAN_STRING up || {
-        echo "Failed to run artisan up"
+        log err "Failed to run artisan up"
         exit 1
     }
 
-    # Source again
     . "$INM_ENV_FILE"
 
-if [ "$PDF_GENERATOR" = "snappdf" ]; then
-    echo "Snappdf configuration detected."
-
-    if [ -n "$SNAPPDF_CHROMIUM_PATH" ]; then
-        echo "Chromium path is set to '$SNAPPDF_CHROMIUM_PATH'. Skipping ungoogled chrome download via SNAPPDF_SKIP_DOWNLOAD."
-        export SNAPPDF_SKIP_DOWNLOAD=true
+    if [ "$PDF_GENERATOR" = "snappdf" ]; then
+        log info "Snappdf configuration detected."
+        if [ -n "$SNAPPDF_CHROMIUM_PATH" ]; then
+            log info "Chromium path is set to '$SNAPPDF_CHROMIUM_PATH'. Skipping ungoogled chrome download via SNAPPDF_SKIP_DOWNLOAD."
+            export SNAPPDF_SKIP_DOWNLOAD=true
+        fi
+        cd "${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}"
+        if [ ! -x "./vendor/bin/snappdf" ]; then
+            log debug "The file ./vendor/bin/snappdf is not executable. Adding executable flag."
+            chmod +x ./vendor/bin/snappdf
+        fi
+        log debug "Download and install Chromium if needed."
+        $INM_PHP_EXECUTABLE ./vendor/bin/snappdf download
+    else
+        log info "PDF generation is set to '$PDF_GENERATOR'"
     fi
-
-    cd "${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}"
-
-    if [ ! -x "./vendor/bin/snappdf" ]; then
-        echo "The file ./vendor/bin/snappdf is not executable. Adding executable flag."
-        chmod +x ./vendor/bin/snappdf
-    fi
-
-    echo "Download and install Chromium if needed."
-    $INM_PHP_EXECUTABLE ./vendor/bin/snappdf download
-else
-    echo "No snappdf support. PDF generation is set to '$PDF_GENERATOR'"
-fi
     cleanup_old_versions
+    log ok "Update completed successfully!"
 }
 
-# Run backup
 run_backup() {
     if [ ! -d "$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY" ]; then
-        echo "Creating backup directory."
+        log info "Creating backup directory."
         mkdir -p "$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY" || {
-            echo "Failed to create backup directory"
+            log err "Failed to create backup directory"
             exit 1
         }
     else
-        echo "Backup directory already exists. Using it."
+        log debug "Backup directory exists."
     fi
 
     if [ -f "$INM_ENV_FILE" ]; then
         local export_vars
         export_vars=$("$INM_ENFORCED_SHELL" -c "grep '^DB_' '$INM_ENV_FILE' | xargs") || {
-            echo "Failed to extract DB variables"
+            log err "Failed to extract DB variables."
             exit 1
         }
         eval "$export_vars" || {
-            echo "Failed to evaluate DB variables"
+            log err "Failed to evaluate DB variables."
             exit 1
         }
 
         if [ -z "$DB_HOST" ] || [ -z "$DB_DATABASE" ] || [ -z "$DB_USERNAME" ] || [ -z "$DB_PORT" ]; then
-            echo "Some DB variables are missing."
+            log err "Some DB variables are missing."
             exit 1
         fi
     fi
 
     cd "$INM_BACKUP_DIRECTORY" || {
-        echo "Failed to change to backup directory"
+        log err "Failed to change to backup directory."
         exit 1
     }
 
-    # Use CLI Password mode or my.cnf
     if [ "$INM_FORCE_READ_DB_PW" == "Y" ]; then
-        echo -n "Dumping database..."
+        log info "Dumping database..."
         mysqldump $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" | tee "${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" > /dev/null || {
-            echo "Failed to dump database"
+            log err "Failed to dump database."
             exit 1
         }
-        echo " Done."
+        log ok "Database dump done."
     else
-        echo "Using .my.cnf file for database selection and access"
-        echo -n "Dumping database..."
+        log info "Using .my.cnf file for database selection and access."
+        log info "Dumping database..."
         mysqldump $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_DATABASE" | tee "${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" > /dev/null || {
-            echo "Failed to dump database"
+            log err "Failed to dump database."
             exit 1
         }
-        echo " Done."
+        log ok "Database dump done."
     fi
 
-
     cd "$INM_BASE_DIRECTORY" || {
-        echo "Failed to change to base directory"
+        log err "Failed to change to base-directory."
         exit 1
     }
-    echo -e "Compressing Data. This may take a while. Hang on..."
+    log info "Compressing Data. This may take a while. Hang on..."
     tar -czf "${INM_PROGRAM_NAME}_$(date +'%Y%m%d_%H%M%S').tar.gz" "$INM_BACKUP_DIRECTORY"/*.sql -C "$INM_INSTALLATION_DIRECTORY" . || {
-        echo "Failed to create backup"
+        log err "Failed to create backup."
         exit 1
     }
     rm "$INM_BACKUP_DIRECTORY"/*.sql || {
-        echo "Failed to remove SQL files"
+        log err "Failed to remove SQL files."
         exit 1
     }
     mv ${INM_PROGRAM_NAME}_*.tar.gz "$INM_BACKUP_DIRECTORY" || {
-        echo "Failed to move backups"
+        log err "Failed to move backup."
         exit 1
     }
 
     cleanup_old_backups
+    log ok "Backup completed successfully!"
 }
 
-# Cleanup old versions
 cleanup_old_versions() {
-    echo "Cleaning up old update directory versions."
+    log info "Cleaning up old update directory versions."
     local update_dirs
     update_dirs=$(find "$INM_BASE_DIRECTORY" -maxdepth 1 -type d -name "$(basename "$INM_INSTALLATION_DIRECTORY")_*" | sort -r | tail -n +$((INM_KEEP_BACKUPS + 1)))
 
     if [ -n "$update_dirs" ]; then
         echo "$update_dirs" | xargs -r rm -rf || {
-            echo "Failed to clean up old versions"
+            log err "Failed to clean up old versions."
             exit 1
         }
     fi
@@ -792,26 +747,21 @@ cleanup_old_versions() {
     ls -la "$INM_BASE_DIRECTORY"
 }
 
-# Cleanup old backups
 cleanup_old_backups() {
-    echo "Cleaning up old backups."
-
-    # Find backup files and list them
+    log info "Cleaning up old backups."
     local backup_files
     backup_files=$(find "$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY" -maxdepth 1 -type f -name "*.tar.gz" | sort -r | tail -n +$((INM_KEEP_BACKUPS + 1)))
 
     if [ -n "$backup_files" ]; then
         echo "$backup_files" | xargs -r rm -f || {
-            echo "Failed to clean up old backups"
+            log err "Failed to clean up old backups."
             exit 1
         }
     fi
     rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
-    # List remaining files in the backup directory
     ls -la "$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY"
 }
 
-# Function caller
 function_caller() {
     case "$1" in
     clean_install)
@@ -833,20 +783,22 @@ function_caller() {
         cleanup_old_backups
         ;;
     *)
-        echo "Unknown parameter $1"
+        log err "Unknown parameter $1"
         return 1
         ;;
     esac
 }
 
-# Parse command-line options
 command=""
 force_update=false
 
 parse_options() {
-
 while [[ $# -gt 0 ]]; do
     case $1 in
+    --debug)
+        DEBUG=true
+        shift
+        ;;
     --force)
         force_update=true
         shift
@@ -856,8 +808,8 @@ while [[ $# -gt 0 ]]; do
         shift
         ;;
     *)
-        echo "Unknown option: $1"
-        echo -e "\n\n Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] \n Full Documentation https://github.com/DrDBanner/inmanage/#readme \n\n"
+        log err "Unknown option: $1"
+        log warn "Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] [--debug]  Full Documentation https://github.com/DrDBanner/inmanage/#readme"
         exit 1
         ;;
     esac
@@ -870,7 +822,7 @@ check_gh_credentials
 parse_options "$@"
 
 if [ -z "$command" ]; then
-    echo -e "\n\n Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] \n Full Documentation https://github.com/DrDBanner/inmanage/#readme \n\n"
+    log warn "Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] [--debug] Full Documentation https://github.com/DrDBanner/inmanage/#readme"
     exit 1
 fi
 
