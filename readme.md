@@ -199,8 +199,7 @@ INM_GH_API_CREDENTIALS=""
 ```
 
 ## Provisioned Invoice Ninja Installation
-
-[IN_CLI_PROVISIONED_INSTALL_vp9.webm](https://github.com/user-attachments/assets/889c0cb8-0362-4eb2-8939-97274c7ff4cc)
+[IN_CLI_PROVISIONED_INSTALL_vp9.webm](https://github.com/user-attachments/assets/b29fcc10-752f-4b71-923d-f734c5a4f204)
 
 *Click image for provisioned install video.*
 
