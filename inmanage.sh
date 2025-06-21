@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 set -e
 
 [[ -n "$BASH_VERSION" ]] || {
@@ -37,6 +38,7 @@ fi
 
 # ====== Logging ======
 log() {
+    #printf "${WHITE}%s [INFO] Logger starts %s${RESET}\n"
     local type="$1"; shift
     local timestamp
     timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
@@ -106,6 +108,27 @@ prompt_var() {
     echo "${input:-$default}"
 }
 
+parse_options() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --force)
+                force_update=true
+                ;;
+            --debug)
+                DEBUG=true
+                ;;
+            update|backup|clean_install|cleanup_versions|cleanup_backups)
+                command=$1
+                ;;
+            *)
+                log warn "Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] [--debug] ..."
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
+
 create_database() {
   local username="$1"
   local password="$2"
@@ -165,6 +188,8 @@ check_provision_file() {
       exit 1
     fi
 
+    log ok "Provision file loaded. Installation starts now."
+
     if [ -n "$DB_ELEVATED_USERNAME" ]; then
       log info "Elevated SQL user $DB_ELEVATED_USERNAME found in $INM_PROVISION_ENV_FILE."
       elevated_username="$DB_ELEVATED_USERNAME"
@@ -175,7 +200,6 @@ check_provision_file() {
       elevated_password=""
     fi
 
-    log info "Provision file loaded. Checking database connection and database existence now."
 
     if [ -n "$elevated_username" ]; then
       if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e 'quit'; then
@@ -222,23 +246,25 @@ check_provision_file() {
   fi
 }
 
+# shellcheck source=.inmanage/.env.inmanage
 check_env() {
     log debug "Environment check starts."
-  if [ ! -f "$INM_SELF_ENV_FILE" ]; then
-    log warn "$INM_SELF_ENV_FILE configuration file for this script not found. Attempting to create it..."
-    create_own_config
-  else
-    log debug "Self configuration found"
-    . "$INM_SELF_ENV_FILE"
+    if [ ! -f "$INM_SELF_ENV_FILE" ]; then
+        log warn "$INM_SELF_ENV_FILE configuration file for this script not found. Attempting to create it..."
+        create_own_config
+    else
+        log debug "Self configuration found"
+        # shellcheck source=.inmanage/.env.inmanage
+        . "$INM_SELF_ENV_FILE"
         if [ "$(whoami)" != "$INM_ENFORCED_USER" ]; then
             INM_SCRIPT_PATH=$(realpath "$0")
             log info "Switching to user '$INM_ENFORCED_USER'."
-            exec sudo -u "$INM_ENFORCED_USER" "$INM_ENFORCED_SHELL" -c "cd '$(pwd)' && \"$INM_SCRIPT_PATH\" \"$@\""
+            exec sudo -u "$INM_ENFORCED_USER" bash "$INM_SCRIPT_PATH" "$@"
             exit 0
         fi
-    check_missing_settings
-    check_provision_file
-  fi
+        check_missing_settings
+        check_provision_file
+    fi
 }
 
 check_gh_credentials() {
@@ -507,16 +533,38 @@ install_tar() {
             log err "Failed to run artisan migrate"
             exit 1
         }
-        $INM_ARTISAN_STRING ninja:create-account --email=admin@admin.com --password=admin && log info "\n\nLogin: $APP_URL Username: admin@admin.com Password: admin" || {
+        $INM_ARTISAN_STRING ninja:create-account --email=admin@admin.com --password=admin && \
+        {
+            printf "\n${BLUE}%s${RESET}\n" "========================================"
+            printf "${BOLD}${GREEN}Setup Complete!${RESET}\n\n"
+            printf "${BOLD}Login:${RESET} ${CYAN}%s${RESET}\n" "$APP_URL"
+            printf "${BOLD}Username:${RESET} admin@admin.com\n"
+            printf "${BOLD}Password:${RESET} admin\n"
+            printf "${BLUE}%s${RESET}\n\n" "========================================"
+            printf "${WHITE}Open your browser at ${CYAN}%s${RESET} to access the application.${RESET}\n" "$APP_URL"
+            printf "The database and user are configured.\n\n"
+            printf "${YELLOW}It's a good time to make your first backup now!${RESET}\n\n"
+            printf "${BOLD}Cronjob Setup:${RESET}\n"
+            printf "  ${CYAN}* * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1${RESET}\n\n"
+            printf "${BOLD}Scheduled Backup:${RESET}\n"
+            printf "  ${CYAN}* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY./inmanage.sh backup\" >> /dev/null 2>&1${RESET}\n\n"
+        } || {
             log err "Standard user creation failed"
             exit 1
         }
-        log ok "\n\nSetup Complete!\n\nOpen your browser at $APP_URL to access the application.\nThe database and user are configured.\n\nIT'S A GOOD TIME TO MAKE YOUR FIRST BACKUP NOW!!\n\nCronjob Setup:\nAdd this for scheduled tasks:\n* * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1\n\nScheduled Backup:\nTo schedule a backup, add this:\n* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY./inmanage.sh backup\" >> /dev/null 2>&1\n\n"
-    else
-        log ok "\n\nSetup Complete!\n\nOpen your browser at your configured address https://your.url/setup now to carry on with database setup.\n\nIT'S A GOOD TIME TO MAKE YOUR FIRST BACKUP NOW!!\n\nCronjob Setup:\nAdd this for scheduled tasks:\n* * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1\n\nScheduled Backup:\nTo schedule a backup, add this:\n* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY./inmanage.sh backup\" >> /dev/null 2>&1\n\n"
-    fi
+        else
+        printf "\n${BLUE}%s${RESET}\n" "========================================"
+        printf "${BOLD}${GREEN}Setup Complete!${RESET}\n\n"
+        printf "${WHITE}Open your browser at your configured address ${CYAN}https://your.url/setup${RESET} to carry on with database setup.${RESET}\n\n"
+        printf "${YELLOW}It's a good time to make your first backup now!${RESET}\n\n"
+        printf "${BOLD}Cronjob Setup:${RESET}\n"
+        printf "  ${CYAN}* * * * * $INM_ENFORCED_USER $INM_ARTISAN_STRING schedule:run >> /dev/null 2>&1${RESET}\n\n"
+        printf "${BOLD}Scheduled Backup:${RESET}\n"
+        printf "  ${CYAN}* 3 * * * $INM_ENFORCED_USER $INM_ENFORCED_SHELL -c \"$INM_BASE_DIRECTORY./inmanage.sh backup\" >> /dev/null 2>&1${RESET}\n\n"
+        fi
 
     cd "$INM_BASE_DIRECTORY" && rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
+    exit 0
 }
 
 run_update() {
@@ -783,43 +831,21 @@ function_caller() {
         cleanup_old_backups
         ;;
     *)
-        log err "Unknown parameter $1"
         return 1
         ;;
     esac
 }
 
 command=""
+parse_options "$@"
+
 force_update=false
 
-parse_options() {
-while [[ $# -gt 0 ]]; do
-    case $1 in
-    --debug)
-        DEBUG=true
-        shift
-        ;;
-    --force)
-        force_update=true
-        shift
-        ;;
-    clean_install | update | backup | cleanup_versions | cleanup_backups)
-        command=$1
-        shift
-        ;;
-    *)
-        log err "Unknown option: $1"
-        log warn "Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] [--debug]  Full Documentation https://github.com/DrDBanner/inmanage/#readme"
-        exit 1
-        ;;
-    esac
-done
-}
-
 check_commands
-check_env
+check_env "$@"
 check_gh_credentials
-parse_options "$@"
+
+log debug "$0='$0' $1='$1' $2='$2' \$@='$@' \$*='$*'"
 
 if [ -z "$command" ]; then
     log warn "Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] [--debug] Full Documentation https://github.com/DrDBanner/inmanage/#readme"
