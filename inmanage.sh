@@ -48,7 +48,7 @@ log() {
                 printf "${CYAN}%s [DEBUG] %s${RESET}\n" "$timestamp" "$*"
             fi
             ;;
-        info)    printf "${WHITE}%s [INFO] %s${RESET}\n" "$timestamp" "$*" ;;
+        info)    printf "${WHITE}%s [INFO] %s${RESET}\n" "" "$*" ;;
         ok)      printf "${GREEN}%s [OK] %s${RESET}\n" "$timestamp" "$*" ;;
         warn)    printf "${YELLOW}%s [WARN] %s${RESET}\n" "$timestamp" "$*" ;;
         err)     printf "${RED}%s [ERR] %s${RESET}\n" "$timestamp" "$*" ;;
@@ -113,6 +113,8 @@ parse_options() {
         case $1 in
             --force)
                 force_update=true
+                shift
+                continue
                 ;;
             --debug)
                 DEBUG=true
@@ -128,6 +130,20 @@ parse_options() {
         shift
     done
 }
+
+print_logo() {
+    printf "${BLUE}"
+    printf "   _____   __                                       __\n"
+    printf "   /  _/ | / /___ ___  ____ _____  ____ _____ ____  / /\n"
+    printf "   / //  |/ / __ \`__ \\/ __ \`/ __ \\/ __ \`/ __ \`/ _ \\/ / \n"
+    printf " _/ // /|  / / / / / / /_/ / / / / /_/ / /_/ /  __/_/  \n"
+    printf "/___/_/ |_/_/ /_/ /_/\\__,_/_/ /_/\\__,_/\\__, /\\___(_)   \n"
+    printf "                                      /____/           ${RESET}\n"
+    printf "${BLUE}${BOLD}INVOICE NINJA - MANAGEMENT SCRIPT${RESET}\n\n"
+    printf "\n\n"
+}
+
+
 
 create_database() {
   local username="$1"
@@ -536,7 +552,7 @@ install_tar() {
         $INM_ARTISAN_STRING ninja:create-account --email=admin@admin.com --password=admin && \
         {
             printf "\n${BLUE}%s${RESET}\n" "========================================"
-            printf "${BOLD}${GREEN}Setup Complete!${RESET}\n\n"
+            printf "${GREEN}${BOLD}Setup Complete!${RESET}\n\n"
             printf "${BOLD}Login:${RESET} ${CYAN}%s${RESET}\n" "$APP_URL"
             printf "${BOLD}Username:${RESET} admin@admin.com\n"
             printf "${BOLD}Password:${RESET} admin\n"
@@ -554,7 +570,7 @@ install_tar() {
         }
         else
         printf "\n${BLUE}%s${RESET}\n" "========================================"
-        printf "${BOLD}${GREEN}Setup Complete!${RESET}\n\n"
+        printf "${GREEN}${BOLD}Setup Complete!${RESET}\n\n"
         printf "${WHITE}Open your browser at your configured address ${CYAN}https://your.url/setup${RESET} to carry on with database setup.${RESET}\n\n"
         printf "${YELLOW}It's a good time to make your first backup now!${RESET}\n\n"
         printf "${BOLD}Cronjob Setup:${RESET}\n"
@@ -836,10 +852,13 @@ function_caller() {
     esac
 }
 
-command=""
-parse_options "$@"
-
 force_update=false
+DEBUG=false
+command=""
+
+clear
+print_logo
+parse_options "$@"
 
 check_commands
 check_env "$@"
@@ -848,7 +867,8 @@ check_gh_credentials
 log debug "$0='$0' $1='$1' $2='$2' \$@='$@' \$*='$*'"
 
 if [ -z "$command" ]; then
-    log warn "Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] [--debug] Full Documentation https://github.com/DrDBanner/inmanage/#readme"
+    log info "Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] [--debug]"
+    log info "Full Documentation https://github.com/DrDBanner/inmanage/#readme"
     exit 1
 fi
 
