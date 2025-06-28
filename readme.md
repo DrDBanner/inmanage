@@ -1,8 +1,13 @@
-# Backup | Update | Install - Invoice Ninja - Maintenance CLI Script
+# INMANAGE - Invoice Ninja - Management Script
+
+*Backup | Update | Install*
 
 Easily manage your self-hosted Invoice Ninja instance with a CLI shell script. Perform updates, backups, clean installations, and provisioning with minimal effort.
 
+**Installation takes just 2–3 minutes and will save you many hours of manual work later.**
+
 If you seek a very convenient, fast, and optionally automated way to install Invoice Ninja from scratch: Go with the [Provisioned Installation](#provisioned-invoice-ninja-installation) option.
+
 
 [![Install Invoice Ninja in 5 minutes](https://github.com/user-attachments/assets/adcecf2e-1cb7-471e-92cd-93e31443e7b6)](https://www.youtube.com/watch?v=SdOmEkSL9os)
 
