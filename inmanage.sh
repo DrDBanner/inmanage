@@ -133,7 +133,7 @@ parse_options() {
 
 print_logo() {
     printf "${BLUE}"
-    printf "   _____   __                                       __\n"
+    printf "    _____   __                                       __\n"
     printf "   /  _/ | / /___ ___  ____ _____  ____ _____ ____  / /\n"
     printf "   / //  |/ / __ \`__ \\/ __ \`/ __ \\/ __ \`/ __ \`/ _ \\/ / \n"
     printf " _/ // /|  / / / / / / /_/ / / / / /_/ / /_/ /  __/_/  \n"
@@ -408,10 +408,11 @@ check_commands() {
     done
 
     if [ ${#missing_commands[@]} -ne 0 ]; then
-        log err "Error: The following commands are not available:"
+        log err "Dependency Checks: The following commands are not available:"
         for missing in "${missing_commands[@]}"; do
             log err "  - $missing"
         done
+        log note "Please install the missing commands to proceed. Hints for different distributions: https://invoiceninja.github.io/en/self-host-installation/#linux-server-configs"
         exit 1
     else
         log debug "All required external commands are available."
