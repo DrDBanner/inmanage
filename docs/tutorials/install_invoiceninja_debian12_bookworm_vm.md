@@ -424,7 +424,8 @@ Now test and start webserver and install autostart for php fpm and webserver
 sudo nginx -t
 
 if systemctl is-system-running --quiet 2>/dev/null; then
-  sudo systemctl start php8.4-fpm
+   sudo systemctl enable php8.4-fpm
+   sudo systemctl start php8.4-fpm
    sudo systemctl enable nginx
    sudo systemctl start nginx
 else
