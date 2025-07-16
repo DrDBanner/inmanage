@@ -27,8 +27,8 @@ You'll learn how to install Invoice Ninja on a Debian 12.xx VM from scratch incl
     - Enable repository mirrors
     - Enable software packages: web server, SSH server, standard tools. 
   
-    > [!NOTE]
-    > These VM machines does not have any local firewall rules set. So, any local service shall be accessible from the get go, as long as your virtualization host's setup aligns. This setup is not meant for public facing machines.
+> [!NOTE]
+> These VM machines do not have any local firewall rules set. So, any local service shall be accessible from the get go, as long as your virtualization host's setup aligns. This setup is not meant for public facing machines.
 
 ### 2.1 Run Invoice Ninja on Windows WSL
 
@@ -39,8 +39,6 @@ WSL (Windows Subsystem for Linux) allows you to run a Linux environment directly
 <summary><strong>2.1.1–2.1.7: WSL & Debian VM Setup on Windows (click to unfold)</strong></summary>
 
 #### 2.1.1. Enable WSL and Virtual Machine Platform
-
-This is a guide how to create a Debian VM on a Windows host. 
 
 Open a terminal as **Administrator** (Press `[WIN]`, type `Terminal`, right click -> select `run as Administrator`.) and enable WSL:
 
@@ -65,6 +63,18 @@ wsl --install Debian
 # Username shall not have empty spaces. 
 ```
 
+> ## NOTE
+> 
+> *This WSL VM automatically has the IP-Address of your local Windows and your Firewall may need to be taught to accept connections on port 443 in order to serve the https:// webinterface.* 
+> 
+> And in order to disable the VM get crawled by Windows Defender Antimalware Service.
+> Paste this to the terminal as **Administrator** only if you use Microsoft Defender:
+> ```  
+> New-NetFirewallRule -DisplayName "Allow HTTPS Inbound" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
+> 
+> Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\Packages\TheDebianProject.DebianGNULinux_*\LocalState"
+> ```
+
 #### 2.1.4. Launch Debian Terminal
 
 Open Terminal as your current user
@@ -85,16 +95,6 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y git curl wget unzip zip htop openssh-client libc-bin openssl
 ```
 
-> [!NOTE]
-> *This WSL VM automatically has the IP-Address of your local Windows and your Firewall may need to be taught to accept connections on port 443 in order to serve the https:// webinterface. 
-> 
-> And in order to disable the VM get crawled by Windows Defender Antimalware Service.
-> Paste this to the terminal as **Administrator** only if you use Microsoft Defender:
-> ```  
-> New-NetFirewallRule -DisplayName "Allow HTTPS Inbound" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
-> 
-> Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\Packages\TheDebianProject.DebianGNULinux_*\LocalState"
-> ```
 #### 2.1.8. Scheduler Task – Autostart and Shutdown the VM on Windows Start and Shutdown
 
 To automatically start and stop your WSL Debian VM with Windows:
@@ -125,6 +125,15 @@ This ensures your Debian VM starts with Windows and shuts down cleanly when Wind
 You can now proceed with the tutorial – jump to [4. Name resolution (DNS)](#4-name-resolution-dns) and right after that skip to [6. Webserver](#6-webserver) since sudo is already available on the WSL Debian VM. All further commands should be run within your Debian terminal as your created VM's user.
 
 *You can login to the WSL VM at any time from a new terminal by executing `wsl -d Debian`*
+
+> ## SNAPPDF on WSL 1
+> 
+> *Snappdf seems not to work on WSL 1 VM's* 
+> 
+> So, leave the variable in the .env file like this when you configure the provision file: 
+> ```  
+> PDF_GENERATOR=hosted_ninja
+> ```
 
 </details>
 
