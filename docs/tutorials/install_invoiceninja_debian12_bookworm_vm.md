@@ -85,7 +85,7 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y git curl wget unzip zip htop openssh-client libc-bin openssl
 ```
 
-> [!TIP]
+> [!NOTE]
 > *This WSL VM automatically has the IP-Address of your local Windows and your Firewall may need to be taught to accept connections on port 443 in order to serve the https:// webinterface. 
 > 
 > And in order to disable the VM get crawled by Windows Defender Antimalware Service.
