@@ -852,7 +852,7 @@ Now you can check if the cron service is alive:
 
 ```bash
 if systemctl is-system-running --quiet 2>/dev/null; then
-  echo "📦 Detected systemd – checking cron service status:"
+  echo "Detected systemd – checking cron service status:"
   sudo systemctl status cron
 else
   echo "systemd not active – checking via pgrep:"
@@ -872,7 +872,7 @@ This method avoids editing the crontab manually and ensures system-wide clarity.
 
 Since everything is working as expected it's time to login:
 
-Open your local browser at https://billing.debian12vm.local to access the application. Most likely your browser will complain about the certificate –that's pretty normal, since you self-signed the certificate. You'll need to look for a link that says `Extended` or `Continue to billing.debian12vm.local (insecure)` and click that once. You browser should remember your choice next time you open this page.
+Open your local browser at https://billing.debian12vm.local to access the application. Most likely your browser will complain about the certificate –that's pretty normal, since you self-signed the certificate. You'll need to look for a link that says `Extended` or `Continue to billing.debian12vm.local (insecure)` and click that once. Your browser should remember your choice next time you open this page.
 
 **Username:** admin@admin.com 
 
