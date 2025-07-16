@@ -368,17 +368,6 @@ sudo chown www-data:www-data -R /var/www/billing.debian12vm.local
 # Make configuration available; check it and enable webserver
 sudo ln -sf /etc/nginx/sites-available/billing.debian12vm.local /etc/nginx/sites-enabled/
 
-sudo nginx -t
-
-if systemctl is-system-running --quiet 2>/dev/null; then
-  sudo systemctl enable nginx
-  sudo systemctl start nginx
-else
-  sudo service nginx start
-  grep -q 'pgrep nginx' ~/.bashrc || echo 'pgrep nginx >/dev/null || sudo service nginx start' >> ~/.bashrc
-fi
-
-
 ```
 
 ---
@@ -429,16 +418,20 @@ date.timezone = Europe/Berlin       ;Adapt to your location
 EOF
 ```
 
-Now restart webserver and install autostart php fpm
+Now test and start webserver and install autostart for php fpm and webserver
 
 ```bash
+sudo nginx -t
+
 if systemctl is-system-running --quiet 2>/dev/null; then
-  sudo systemctl restart php8.4-fpm
-  sudo systemctl restart nginx
+  sudo systemctl start php8.4-fpm
+   sudo systemctl enable nginx
+   sudo systemctl start nginx
 else
-  sudo /etc/init.d/php8.4-fpm restart
-  sudo service nginx restart
+  sudo /etc/init.d/php8.4-fpm start
+  sudo service nginx start
   grep -q 'php8.4-fpm' ~/.bashrc || echo "pgrep php-fpm8.4 >/dev/null || sudo /etc/init.d/php8.4-fpm start" >> ~/.bashrc
+  grep -q 'pgrep nginx' ~/.bashrc || echo 'pgrep nginx >/dev/null || sudo service nginx start' >> ~/.bashrc
 fi
 ```
 

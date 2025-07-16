@@ -480,6 +480,8 @@ install_tar() {
     local mode="$1"
     local env_file
 
+    timestamp="$(date +'%Y%m%d_%H%M%S')"
+
     if [ "$mode" == "Provisioned" ]; then
         env_file="$INM_BASE_DIRECTORY$INM_PROVISION_ENV_FILE"
     else
@@ -500,7 +502,7 @@ install_tar() {
             log info "Installation aborted."
             exit 0
         fi
-        mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "_last_IN_$(date +'%Y%m%d_%H%M%S')"
+        mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "_last_IN_$timestamp"
     fi
 
     log info "Installation starts now"
@@ -586,6 +588,8 @@ install_tar() {
 
 run_update() {
     local installed_version latest_version
+    
+    timestamp="$(date +'%Y%m%d_%H%M%S')"
 
     installed_version=$(get_installed_version)
     latest_version=$(get_latest_version)
@@ -648,14 +652,14 @@ run_update() {
         cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" "$INM_INSTALLATION_DIRECTORY/public/"
     fi
 
-    mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')" || {
+    mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$timestamp" || {
         log err "Failed to rename old installation"
         exit 1
     }
     chmod 600 "$INM_INSTALLATION_DIRECTORY/.env" || {
         log warn "Failed to chmod 600 .env file. Please check what's wrong."
     }
-    old_version_dir="$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$(date +'%Y%m%d_%H%M%S')"
+    old_version_dir="$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$timestamp"
     if [ -f "$old_version_dir/public/storage/framework/down" ]; then
         rm "$old_version_dir/public/storage/framework/down" || {
             log err "Failed to remove 'Maintenance' file from $old_version_dir/public/storage/framework/"
