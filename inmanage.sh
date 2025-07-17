@@ -442,6 +442,62 @@ get_latest_version() {
     echo "$version"
 }
 
+safe_move_or_copy_and_clean() {
+    local src="$1"
+    local dst="$2"
+    local mode="$3"  # optional: "new" (create dst) or "existing" (dst must exist)
+
+    # Determine if no parameter was given
+    if [ -z "$mode" ]; then
+        if [ -d "$dst" ]; then
+            mode="existing"
+        else
+            mode="new"
+        fi
+    fi
+
+    if mv "$src" "$dst"; then
+        return 0
+    else
+        log warn "mv failed from '$src' to '$dst'. Fallback initiated (mode: $mode). Moving data will take longer, but should work in most cases."
+
+        if [ "$mode" = "new" ]; then
+            mkdir -p "$dst" || {
+                log err "Failed to create target directory '$dst'"
+                return 1
+            }
+        elif [ "$mode" = "existing" ]; then
+            if [ ! -d "$dst" ]; then
+                log err "Expected existing directory at '$dst', but it does not exist"
+                return 1
+            fi
+        else
+            log err "Unknown mode '$mode' – must be 'new', 'existing', or empty"
+            return 1
+        fi
+
+        cp -a "$src"/. "$dst"/ || {
+            log err "Fallback copy failed from '$src' to '$dst'"
+            return 1
+        }
+
+        # Protection: dst must not be empty after copy
+        if [ -z "$(find "$dst" -mindepth 1 -print -quit)" ]; then
+            log err "Fallback copy appears to have failed silently – target '$dst' is empty"
+            return 1
+        fi
+
+        find "$src" -mindepth 1 -exec rm -rf {} + || {
+            log err "Failed to clean original directory '$src' after copy"
+            return 1
+        }
+
+        log ok "Fallback copy+delete completed from '$src' to '$dst'"
+        return 0
+    fi
+}
+
+
 download_ninja() {
     [ -d "$INM_TEMP_DOWNLOAD_DIRECTORY" ] && rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
     mkdir -p "$INM_TEMP_DOWNLOAD_DIRECTORY" || {
@@ -598,8 +654,13 @@ run_update() {
     installed_version=$(get_installed_version)
     latest_version=$(get_latest_version)
 
+    type safe_move_or_copy_and_clean >/dev/null 2>&1 || {
+        log err "Required function safe_move_or_copy_and_clean is not defined."
+        exit 1
+    }
+
     if [ "$installed_version" == "$latest_version" ] && [ "$force_update" != true ]; then
-        log info "Already up-to-date. Proceed with update? (yes/no): "
+        log info "Version $installed_version is already up-to-date. Proceed anyway? (yes/no): "
         if ! read -t 60 response; then
             log warn "No response within 60 seconds. Update aborted."
             exit 0
@@ -655,9 +716,8 @@ run_update() {
     if [[ -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" ]]; then
         cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" "$INM_INSTALLATION_DIRECTORY/public/"
     fi
-
-    mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$timestamp" || {
-        log err "Failed to rename old installation"
+    safe_move_or_copy_and_clean "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$timestamp" new || {
+        log err "Failed to archive old installation"
         exit 1
     }
     chmod 600 "$INM_INSTALLATION_DIRECTORY/.env" || {
@@ -678,8 +738,8 @@ run_update() {
         }
         log ok "'Maintenanace' file removed from $old_version_dir/storage/framework/."
     fi
-    mv "$INM_BASE_DIRECTORY$INM_TEMP_DOWNLOAD_DIRECTORY/$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
-        log err "Failed to move new installation"
+    safe_move_or_copy_and_clean "$INM_BASE_DIRECTORY$INM_TEMP_DOWNLOAD_DIRECTORY/$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" existing || {
+        log err "Failed to deploy new installation"
         exit 1
     }
     $INM_ARTISAN_STRING optimize || {
@@ -820,33 +880,6 @@ cleanup_old_versions() {
     ls -la "$INM_BASE_DIRECTORY"
 }
 
-# todo: Make script a global script, so it can be called from anywhere. Check create config additionally;
-#  todo: Find installation automatically, or let it be set via --base-directory -> see wpm
-#  todo: Think about merging INM env into IN env
-#  todo: Add download cache for downloaded files, so they can be reused; Clean up cache after a while;
-# todo: Identify if installation directory mv fails, and if so, don't do mv; Do rsync --delete instead; Also check clean_install and base install;
-# todo: Add db:export db:import commands; while import needs to check if database has content and only drop if --force; if db has content a backup shall be obligated;
-
-# e.g.
-
-#| Context | Action | Syntax                                                                       | Description                                                                                                                                                            | Flags                              |
-#|---------|--------|------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------|
-#| core    | clear-cache  | `inm core clear-cache <environment>`                                | Clears all caches (Redis, file-cache, views, config).                                                                   | –                                  |
-#| core    | install      | `inm core install <environment> [--version=<version>] [--force]`    | Installs or reinstalls Invoice-Ninja; latest if no version given.                                                        | `--version`, `--force`             |
-#| core    | provision    | `inm core provision <environment> [--version=<version>] [--force]`  | Installs Invoice-Ninja with a preconfigured .env file. If no version is given, latest is used.                                                                               | `--version`, `--force`             |
-#| core    | info         | `inm core info <environment> [--verbose]`                           | Shows server-environment details: OS, kernel, CPU, memory, disk usage (quota), PHP version & settings, PHP extensions, DB type & version, webserver & PHP-FPM status, current user, application .env values., indicate dependencies met and give advice `--format`, `--filter` Performs health checks (DB connection, permissions, cron jobs). | `--verbose`                        |
-#| core    | update       | `inm core update <environment> [--force] [--no-downtime]`           | Fetches latest release, runs migrations, atomic switch.                                                                    | `--force`, `--no-downtime`         |
-#| core    | version      | `inm core version <environment>`                                    | Shows the installed Invoice-Ninja version.                                                                                 | –                                  |
-#| db      | backup       | `inm db backup <environment> [--out=<file>] [--gzip]`               | Dumps the database to `<file>`, optionally compressing.                                                                    | `--out`, `--gzip`                  |
-#| db      | prune        | `inm db prune <environment> [--keep=<count>]`                       | Deletes old backups, keeping at most `<count>`.                                                                            | `--keep`                           |
-#| db      | restore      | `inm db restore <environment> --input=<file> [--dry-run]`           | Restores the database from `<file>`.                                                                                        | `--input`, `--dry-run`             |
-#| files   | backup       | `inm files backup <environment> [--out=<dir>] [--archive]`          | Archives `storage/` & `public/uploads` into `<dir>`. Maybe it should diff compare to clean install folder. Should have a switch to copy over symlinked content as static copy.                                                                         | `--out`, `--archive`               |
-#| files   | prune        | `inm files prune <environment> [--keep=<count>]`                    | Deletes old file backups, keeping at most `<count>`.                                                                         | `--keep`                           |
-#| files   | restore      | `inm files restore <environment> --input=<archive> [--dry-run]`     | Restores files from `<archive>`.                                                                                            | `--input`, `--dry-run`             |
-#| env     | set          | `inm env set <environment> <key>=<value>`                           | Sets or updates a key-value pair in the application .env file. If the key already exists, it will be updated.                                                                | –                                  |
-#| env     | unset        | `inm env unset <environment> <key>`                                 | Removes a key-value pair from the application .env file. If the key does not exist, it will be ignored.                                                                        | –                                  |
-#
-
 cleanup_old_backups() {
     log info "Cleaning up old backups."
     local backup_files
@@ -887,6 +920,33 @@ function_caller() {
         ;;
     esac
 }
+
+# todo: Make script a global script, so it can be called from anywhere. Check create config additionally;
+#  todo: Find installation automatically, or let it be set via --base-directory -> see wpm
+#  todo: Think about merging INM env into IN env
+#  todo: Add download cache for downloaded files, so they can be reused; Clean up cache after a while;
+# todo: Add db:export db:import commands; while import needs to check if database has content and only drop if --force; if db has content a backup shall be obligated;
+
+# e.g.
+
+#| Context | Action | Syntax                                                                       | Description                                                                                                                                                            | Flags                              |
+#|---------|--------|------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------|
+#| core    | clear-cache  | `inm core clear-cache <environment>`                                | Clears all caches (Redis, file-cache, views, config).                                                                   | –                                  |
+#| core    | install      | `inm core install <environment> [--version=<version>] [--force]`    | Installs or reinstalls Invoice-Ninja; latest if no version given.                                                        | `--version`, `--force`             |
+#| core    | provision    | `inm core provision <environment> [--version=<version>] [--force]`  | Installs Invoice-Ninja with a preconfigured .env file. If no version is given, latest is used.                                                                               | `--version`, `--force`             |
+#| core    | info         | `inm core info <environment> [--verbose]`                           | Shows server-environment details: OS, kernel, CPU, memory, disk usage (quota), PHP version & settings, PHP extensions, DB type & version, webserver & PHP-FPM status, current user, application .env values., indicate dependencies met and give advice `--format`, `--filter` Performs health checks (DB connection, permissions, cron jobs). | `--verbose`                        |
+#| core    | update       | `inm core update <environment> [--force] [--no-downtime]`           | Fetches latest release, runs migrations, atomic switch.                                                                    | `--force`, `--no-downtime`         |
+#| core    | version      | `inm core version <environment>`                                    | Shows the installed Invoice-Ninja version.                                                                                 | –                                  |
+#| db      | backup       | `inm db backup <environment> [--out=<file>] [--gzip]`               | Dumps the database to `<file>`, optionally compressing.                                                                    | `--out`, `--gzip`                  |
+#| db      | prune        | `inm db prune <environment> [--keep=<count>]`                       | Deletes old backups, keeping at most `<count>`.                                                                            | `--keep`                           |
+#| db      | restore      | `inm db restore <environment> --input=<file> [--dry-run]`           | Restores the database from `<file>`.                                                                                        | `--input`, `--dry-run`             |
+#| files   | backup       | `inm files backup <environment> [--out=<dir>] [--archive]`          | Archives `storage/` & `public/uploads` into `<dir>`. Maybe it should diff compare to clean install folder. Should have a switch to copy over symlinked content as static copy.                                                                         | `--out`, `--archive`               |
+#| files   | prune        | `inm files prune <environment> [--keep=<count>]`                    | Deletes old file backups, keeping at most `<count>`.                                                                         | `--keep`                           |
+#| files   | restore      | `inm files restore <environment> --input=<archive> [--dry-run]`     | Restores files from `<archive>`.                                                                                            | `--input`, `--dry-run`             |
+#| env     | set          | `inm env set <environment> <key>=<value>`                           | Sets or updates a key-value pair in the application .env file. If the key already exists, it will be updated.                                                                | –                                  |
+#| env     | unset        | `inm env unset <environment> <key>`                                 | Removes a key-value pair from the application .env file. If the key does not exist, it will be ignored.                                                                        | –                                  |
+#
+
 
 force_update=false
 DEBUG=false
