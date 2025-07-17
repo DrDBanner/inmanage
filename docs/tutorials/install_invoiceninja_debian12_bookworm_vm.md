@@ -7,6 +7,7 @@ You'll learn how to install Invoice Ninja on a Debian 12.xx VM from scratch incl
 ## 1. Table of Contents
 
 - [2. Getting Started](#2-getting-started)
+  - [2.1. Invoice Ninja on Windows WSL](#21-run-invoice-ninja-on-windows-wsl)
 - [3. Login via SSH](#3-login-via-ssh)
 - [4. Name resolution (DNS)](#4-name-resolution-dns)
 - [5. General dependencies](#5-general-dependencies)
@@ -18,16 +19,203 @@ You'll learn how to install Invoice Ninja on a Debian 12.xx VM from scratch incl
 
 ## 2. Getting Started
 
-- Clean Debian 12.xx (bookworm) on any VM Host (utm, vmware, qemu, virtualbox, docker, you name it)
+- Clean Debian 12.xx (bookworm) on any VM Host (wsl, utm, vmware, qemu, virtualbox, docker, you name it)
     - Create machine, attach your matching [.iso file](https://www.debian.org/releases/bookworm/debian-installer/) (amd64 most likely), launch, follow installation procedure
 - During setup
     - Create root user with password
     - Create local user with password
     - Enable repository mirrors
     - Enable software packages: web server, SSH server, standard tools. 
-
+  
 > [!NOTE]
-> This VM machine does not have any local firewall rules set. So, any local service shall be accessible from the get go, as long as your virtualization host's setup aligns. This setup is not meant for public facing machines.
+> These VM machines do not have any local firewall rules set. So, any local service shall be accessible from the get go, as long as your virtualization host's setup aligns. This setup is not meant for public facing machines.
+
+### 2.1 Run Invoice Ninja on Windows WSL
+
+#### Optional Tutorial 
+WSL (Windows Subsystem for Linux) allows you to run a Linux environment directly on Windows 10 and above, making it easy to set up and manage Linux-based applications without leaving your Windows system. If you're on Windows, WSL provides a convenient way to run Invoice Ninja in a VM with minimal setup. Take a moment to get familiar with WSL to streamline your installation process.
+
+<details>
+<summary><strong>2.1.1–2.1.7: WSL & Debian VM Setup on Windows (click to unfold)</strong></summary>
+
+#### 2.1.1. Enable WSL and Virtual Machine Platform
+
+Open a terminal as **Administrator** (Press `[WIN]`, type `Terminal`, right click -> select `run as Administrator`.) and enable WSL:
+
+*This enables or switches to WSL1. If you already use WSL you can skip it and just install the Debian image.* 
+```powershell
+dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+```
+
+Restart your computer.
+
+#### 2.1.2. Install Debian
+
+After a successful restart of your computer open a Terminal as your current user and paste these commands.
+
+*If you already use WSL2 skip the `--set-default-version` part.*
+
+```powershell
+wsl --set-default-version 1
+wsl --install Debian
+
+# Enter a Username and a Password when prompted.
+# Username shall not have empty spaces. 
+```
+
+> ## NOTE
+> 
+> *This WSL VM automatically has the IP-Address of your local Windows and your Firewall may need to be taught to accept connections on port 443 in order to serve the https:// webinterface.* 
+> 
+> And in order to disable the VM get crawled by Windows Defender Antimalware Service.
+> Paste this to the terminal as **Administrator** only if you use Microsoft Defender:
+> ```  
+> New-NetFirewallRule -DisplayName "Allow HTTPS Inbound" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
+> 
+> Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\Packages\TheDebianProject.DebianGNULinux_*\LocalState"
+> ```
+
+#### 2.1.4. Launch Debian Terminal
+
+Open Terminal as your current user
+
+```
+wsl -d Debian
+```
+*This command logs you into the Debian VM*
+
+#### 2.1.6. Update Debian
+
+Update package lists and upgrade packages:
+```bash
+sudo apt update && sudo apt upgrade -y
+
+# Install some dependencies NOW!
+
+sudo apt install -y git curl wget unzip zip htop openssh-client libc-bin openssl
+```
+
+#### 2.1.8. Scheduler Task – Autostart and Shutdown the VM on Windows Start and Shutdown
+
+To automatically start and stop your WSL Debian VM with Windows:
+
+**Autostart on Windows boot:**
+1. Press `[WIN]` and type `Task Scheduler`, then open it.
+2. Click **Create Task**.
+3. Under **General**, name it (e.g., `Start WSL Debian`).
+4. Go to **Triggers** tab, click **New**, set **Begin the task** to `At startup`.
+5. Go to **Actions** tab, click **New**, set **Action** to `Start a program`.
+6. In **Program/script**, enter:
+    ```
+    wsl -d Debian
+    ```
+7. Click **OK** to save.
+
+**Shutdown on Windows shutdown:**
+1. Create another task as above, but in **Triggers** set **Begin the task** to `On shutdown`.
+2. In **Actions**, use:
+    ```
+    wsl --shutdown
+    ```
+3. Click **OK**.
+
+This ensures your Debian VM starts with Windows and shuts down cleanly when Windows powers off.
+
+#### 2.1.9. Ready to Continue
+You can now proceed with the tutorial – jump to [4. Name resolution (DNS)](#4-name-resolution-dns) and right after that skip to [6. Webserver](#6-webserver) since sudo is already available on the WSL Debian VM. All further commands should be run within your Debian terminal as your created VM's user.
+
+*You can login to the WSL VM at any time from a new terminal by executing `wsl -d Debian`*
+
+#### 2.1.10 WSL 1 Issues
+
+##### php-fpm via socket
+
+On WSL1 I was not able to get php-fpm properly working. In order to fix that you need to switch to a TCP based listener. Fortunately I created a script for that. Note: You need that with WSL1 only.
+
+*Copy and paste the following into your terminal to create the patch script. Run it as root after setting up the webserver and database, but before installing Invoice Ninja with inmanage.*
+
+```bash
+cat > patch_phpfpm_socket_wsl1.sh <<'EOF'
+#!/bin/bash
+
+set -e
+
+NGINX_SITES="/etc/nginx/sites-available"
+
+for dir in /etc/php/*/fpm; do
+  [ -d "$dir" ] || continue
+
+  PHPVER=$(basename "$(dirname "$dir")")
+  PHP_POOL_CONF="$dir/pool.d/www.conf"
+  PHP_MAIN_CONF="$dir/php-fpm.conf"
+
+  echo "Patching PHP $PHPVER – pool config: $PHP_POOL_CONF"
+
+  if ! grep -q "^listen = 127.0.0.1:9000" "$PHP_POOL_CONF"; then
+    sudo sed -i \
+      -e '/^listen\s*=/{/127.0.0.1:9000/!s/^/;/}' \
+      -e '/^listen\s*=/{/127.0.0.1:9000/!a\
+listen = 127.0.0.1:9000
+}' \
+      -e '/^listen\.owner\s*=/{s/^/;/}' \
+      -e '/^listen\.group\s*=/{s/^/;/}' \
+      -e '/^listen\.mode\s*=/{s/^/;/}' \
+      "$PHP_POOL_CONF"
+  else
+    echo "  → Already using 127.0.0.1:9000"
+  fi
+
+  echo "Patching PHP $PHPVER – main config: $PHP_MAIN_CONF (log_level)"
+  if grep -q "^log_level\s*=\s*warning" "$PHP_MAIN_CONF" && ! grep -q "^log_level\s*=\s*alert" "$PHP_MAIN_CONF"; then
+    sudo sed -i \
+      -e '/^log_level\s*=\s*warning/{s/^/;/;a\
+log_level = alert
+}' \
+      "$PHP_MAIN_CONF"
+  else
+    echo "  → log_level already set or patched"
+  fi
+done
+
+echo "Searching nginx sites in $NGINX_SITES for fastcgi_pass unix:"
+for file in "$NGINX_SITES"/*; do
+  [ -f "$file" ] || continue
+
+  if grep -q "^\s*fastcgi_pass unix:" "$file"; then
+    echo "Patching: $file"
+
+    if ! grep -q "fastcgi_pass 127.0.0.1:9000;" "$file"; then
+      sudo sed -i \
+        -e '/^\s*fastcgi_pass unix:/s/^/#/' \
+        -e '/^\s*#\s*fastcgi_pass unix:/a\
+    fastcgi_pass 127.0.0.1:9000;
+' "$file"
+    else
+      echo "  → 127.0.0.1:9000 already present"
+    fi
+  fi
+done
+
+echo "Done. Restart affected services manually:"
+for dir in /etc/php/*/fpm; do
+  [ -d "$dir" ] || continue
+  PHPVER=$(basename "$(dirname "$dir")")
+  echo "  sudo service php${PHPVER}-fpm restart"
+done
+echo "  sudo service nginx reload"
+EOF
+
+chmod +x patch_phpfpm_socket_wsl1.sh
+```
+
+##### SNAPPDF on WSL1
+*Snappdf seems not to work on WSL 1 VM's*
+So, leave the variable in the .env file like this when you configure the provision file: 
+```  
+PDF_GENERATOR=hosted_ninja
+```
+</details>
+
 
 ## 3. Login via SSH
 
@@ -128,7 +316,9 @@ sed -i '/^deb cdrom:/ s/^/#/' /etc/apt/sources.list
 
 ### 5.1. Sudo installation and activation
 
-Update the apt database and install the package sudo. Afterwards you add the user `user` to the group sudo in order to allow them to execute sudo commands.
+Update the apt database and install the package sudo. Afterwards you add the user `user` to the group sudo in order to allow them to execute sudo commands. 
+
+*Keep in mind to replace `user` with your corresponding username.*
 
 ```bash
 apt update
@@ -201,8 +391,8 @@ server {
         fastcgi_pass unix:/run/php/php8.4-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         fastcgi_intercept_errors off;
-        fastcgi_buffer_size 16k;
-        fastcgi_buffers 4 16k;
+        fastcgi_buffer_size 64k;
+        fastcgi_buffers 8 64k;
     }
 
     location = /favicon.ico { access_log off; log_not_found off; }
@@ -255,9 +445,8 @@ sudo mkdir -p /var/www/billing.debian12vm.local/invoiceninja/public/
 sudo chown www-data:www-data -R /var/www/billing.debian12vm.local
 
 # Make configuration available; check it and enable webserver
-sudo ln -s /etc/nginx/sites-available/billing.debian12vm.local /etc/nginx/sites-enabled/ 2>/dev/null || true && \
-sudo nginx -t && sudo systemctl start nginx && \
-sudo systemctl enable nginx
+sudo ln -sf /etc/nginx/sites-available/billing.debian12vm.local /etc/nginx/sites-enabled/
+
 ```
 
 ---
@@ -306,8 +495,26 @@ upload_max_filesize=1024M
 cgi.fix_pathinfo=0
 date.timezone = Europe/Berlin       ;Adapt to your location
 EOF
-sudo systemctl restart nginx
 ```
+
+Now test and start webserver and install autostart for php fpm and webserver
+
+```bash
+sudo nginx -t
+
+if systemctl is-system-running --quiet 2>/dev/null; then
+   sudo systemctl enable php8.4-fpm
+   sudo systemctl start php8.4-fpm
+   sudo systemctl enable nginx
+   sudo systemctl start nginx
+else
+  sudo /etc/init.d/php8.4-fpm start
+  sudo service nginx start
+  grep -q 'php8.4-fpm' ~/.bashrc || echo "pgrep php-fpm8.4 >/dev/null || sudo /etc/init.d/php8.4-fpm start" >> ~/.bashrc
+  grep -q 'pgrep nginx' ~/.bashrc || echo 'pgrep nginx >/dev/null || sudo service nginx start' >> ~/.bashrc
+fi
+```
+
 ## 7. Database
 ### 7.1. mariadb
 
@@ -315,8 +522,16 @@ This code installs the database, enables the service, and provides the user `roo
 
 ```bash
 sudo apt install mariadb-server mariadb-client -y
-sudo systemctl enable mariadb
-sudo systemctl start mariadb
+
+if systemctl is-system-running --quiet 2>/dev/null; then
+  sudo systemctl enable mariadb
+  sudo systemctl start mariadb
+else
+  sudo service mariadb start
+  grep -q 'pgrep -x mysqld' ~/.bashrc || echo 'pgrep -x mysqld >/dev/null || sudo service mariadb start' >> ~/.bashrc
+fi
+
+sleep 5
 
 # Set a password for MariaDB root user (change YOUR_PASSWORD3556757 if neccessary!)
 sudo mysql -u root <<EOF
@@ -327,14 +542,13 @@ EOF
 
 You may optionally run `mysql_secure_installation` to improve database security, especially on public-facing servers.
 
+
 ## 8. Additional software
 
 Paste this to install other **mandatory** software:
 
 ```bash
 sudo apt install unzip git composer jq libxcomposite1 libxdamage1 libxrandr2 libxss1 libasound2 libnss3 libatk1.0-0 libatk-bridge2.0-0 libx11-xcb1 libxext6 libdrm2 libgbm1 libpango-1.0-0 libxshmfence1 libgtk-3-0 libcups2 libxfixes3 libglib2.0-0 libxcb1 libx11-6 libxrender1 libxcursor1 libxi6 libxtst6 fonts-liberation libappindicator3-1 libdbus-1-3 lsb-release xdg-utils wget curl ca-certificates gnupg xvfb -y 
-
-
 ```
 
 ## 9. Invoice Ninja Installation
@@ -351,42 +565,49 @@ sudo -u www-data git clone https://github.com/DrDBanner/inmanage.git .inmanage &
 The installation procedure of the installation script starts. You can go with the defaults by pressing [enter] each, except for `Include DB password in backup`. You answer with `Y` instead.
 
 ```text
-...
-...
-...
-All required commands are available.
-Environment check starts.
-.inmanage/.env.inmanage configuration file for this script not found. Attempting to create it...
-Write Permissions OK. Proceeding with configuration...
+    _____   __                                       __
+   /  _/ | / /___ ___  ____ _____  ____ _____ ____  / /
+   / //  |/ / __ `__ \/ __ `/ __ \/ __ `/ __ `/ _ \/ /
+ _/ // /|  / / / / / / /_/ / / / / /_/ / /_/ /  __/_/
+/___/_/ |_/_/ /_/ /_/\__,_/_/ /_/\__,_/\__, /\___(_)
+                                      /____/
+INVOICE NINJA - MANAGEMENT SCRIPT
 
 
- Just press [ENTER] to accept defaults. 
 
+2025-07-16 13:32:31 [WARN] .inmanage/.env.inmanage configuration file for this script not found. Attempting to create it...
+2025-07-16 13:32:31 [OK] Write Permissions OK.
 
-Which directory contains your IN installation folder? Must have a trailing slash. [default: /var/www/billing.debian12vm.local/]: 
-Add options to your dump command. In doubt, keep defaults. [default: --default-character-set=utf8mb4 --no-tablespaces --skip-add-drop-table --quick --single-transaction]: 
-Backup retention? Set to 7 for daily backups to keep 7 snapshots. Ensure enough disk space. [default: 2]: 
-Which shell should be used? In doubt, keep as is. [default: /usr/bin/bash]: 
-Path to the PHP executable? In doubt, keep as is. [default: /usr/bin/php]: 
-Script user? Usually the webserver user. Ensure it matches your webserver setup. [default: www-data]: 
-What is the installation directory name? Must be relative from $INM_BASE_DIRECTORY and can start with a . dot. [default: ./invoiceninja]: 
-Provide value for INM_PROGRAM_NAME: [default: InvoiceNinja]: 
-Provide value for INM_ARTISAN_STRING: [default: ${INM_PHP_EXECUTABLE} ${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}/artisan]: 
-Include DB password in backup? (Y): May expose the password to other server users during runtime. (N): Assumes a secure .my.cnf file with credentials to avoid exposure. [default: N]: Y
-Where shall backups go? [default: ./_in_backups]: 
-GitHub API credentials may be required on shared hosting. Use the format username:password or token:x-oauth. If provided, all curl commands will use these credentials; [default: 0]: 
-Provide value for INM_TEMP_DOWNLOAD_DIRECTORY: [default: ./._in_tempDownload]: 
-Provide value for INM_COMPATIBILITY_VERSION: [default: 5+]: 
-Provide value for INM_ENV_FILE: [default: ${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}/.env]: 
-.inmanage/.env.inmanage has been created and configured.
-The symlink does not exist. Creating...
-Downloading .env.example for provisioning
-No provision.
-Proceeding without GH credentials authentication. If update fails, try to add credentials.
+========== Install Wizard ==========
 
+2025-07-16 13:32:31 [BOLD] Just press [ENTER] to accept defaults.
 
- Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] 
- Full Documentation https://github.com/DrDBanner/inmanage/#readme 
+Which shall be your base-directory? Must have a trailing slash. [/var/www/billing.debian12vm.local/] >
+
+The current/future Invoice Ninja folder? Must be relative from $INM_BASE_DIRECTORY and can start with a . dot. [./invoiceninja] >
+
+Modify database dump options: In doubt, keep defaults. [--default-character-set=utf8mb4 --no-tablespaces --skip-add-drop-table --quick --single-transaction] >
+
+Backup Directory? [./_in_backups] > ./backups
+
+Backup retention? Set to 7 for daily backups to keep 7 snapshots. Ensure enough disk space. [2] >
+
+Include DB password in backup? (Y): May expose the password to other server users during runtime. (N): Assumes a secure .my.cnf file with credentials to avoid exposure. [N] > Y
+
+Script user? Usually the webserver user. Ensure it matches your webserver setup. [www-data] >
+
+Which shell should be used? In doubt, keep as is. [/usr/bin/bash] >
+
+Path to the PHP executable? In doubt, keep as is. [/usr/bin/php] >
+
+GitHub API credentials may be required on shared hosting. Use the format username:password or token:x-oauth. If provided, all curl commands will use these credentials; [0] >
+
+2025-07-16 13:33:40 [OK] .inmanage/.env.inmanage has been created and configured.
+ [INFO] Downloading .env.example for provisioning
+ [INFO] No GH credentials set. If connection fails, try to add credentials.
+ [INFO] Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] [--debug]
+ [INFO] Full Documentation https://github.com/DrDBanner/inmanage/#readme
+
 ```
 
 Done. The script is downloaded, installed, and configured.
@@ -444,147 +665,150 @@ inmanage
 The caution message is correct (*The path was already created to circumvent a webserver error.*) and you can easily enter `yes` in order to carry on.
 
 ```text
-All required commands are available.
-Environment check starts.
-Self configuration found
-All settings are present in .inmanage/.env.inmanage.
-Elevated SQL user root found in .inmanage/.env.provision.
-Provision file loaded. Checking database connection and database existence now.
-Elevated credentials: Connection successful.
+   _____   __                                       __
+   /  _/ | / /___ ___  ____ _____  ____ _____ ____  / /
+   / //  |/ / __ `__ \/ __ `/ __ \/ __ `/ __ `/ _ \/ /
+ _/ // /|  / / / / / / /_/ / / / / /_/ / /_/ /  __/_/
+/___/_/ |_/_/ /_/ /_/\__,_/_/ /_/\__,_/\__, /\___(_)
+                                      /____/
+INVOICE NINJA - MANAGEMENT SCRIPT
+
+
+
+2025-07-16 13:39:30 [OK] Loaded settings from .inmanage/.env.inmanage.
+2025-07-16 13:39:30 [OK] Provision file loaded. Installation starts now.
+ [INFO] Elevated SQL user root found in .inmanage/.env.provision.
+2025-07-16 13:39:30 [OK] Elevated credentials: Connection successful.
 ERROR 1049 (42000) at line 1: Unknown database 'ninja'
-Connection Possible. Database does not exist.
-Trying to create database now.
-Database and user created successfully. If they already existed, they were untouched. Privileges were granted.
-Removed DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD from .inmanage/.env.provision if they were there.
-Caution: Installation directory already exists! Current installation directory will get renamed. Proceed with installation? (yes/no): yes
+2025-07-16 13:39:30 [WARN] Connection Possible. Database does not exist.
+ [INFO] Trying to create database now.
+2025-07-16 13:39:30 [OK] Database and user created successfully. If they already existed, they were untouched. Privileges were granted.
+ [INFO] Removed DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD from .inmanage/.env.provision if they were there.
+2025-07-16 13:39:31 [WARN] Caution: Installation directory already exists! Current installation directory will get renamed. Proceed with installation? (yes/no):
+yes
 ```
 
 *The created provision file gets automatically recognized. Time to relax. The heavy lifting is done.*
 
 ```log
-Installation starts now
-Downloading Invoice Ninja version 5.12.0...
-Download successful.
-Unpacking tar
-Generating Key
+ [INFO] Installation starts now
+ [INFO] Downloading Invoice Ninja version 5.12.8.
+2025-07-16 13:50:51 [OK] Download successful.
+ [INFO] Unpacking tar
+ [INFO] Generating Key
 
-   INFO  Application key set successfully.  
-
-
-   INFO  Caching framework bootstrap, configuration, and metadata.  
-
-  config .............................................................................................................................. 21.39ms DONE
-  events ............................................................................................................................... 1.15ms DONE
-  routes .............................................................................................................................. 63.41ms DONE
-  views .............................................................................................................................. 275.04ms DONE
+   INFO  Application key set successfully.
 
 
-   INFO  Application is already up.  
+   INFO  Caching framework bootstrap, configuration, and metadata.
+
+  config ........................................................................................................... 125.51ms DONE
+  events ............................................................................................................. 2.92ms DONE
+  routes ........................................................................................................... 423.35ms DONE
+  views ................................................................................................................. 17s DONE
 
 
-   INFO  Preparing database.  
-
-  Creating migration table ........................................................................................................... 758.83ms DONE
-
-   INFO  Loading stored database schemas.  
-
-  database/schema/mysql-schema.sql ......................................................................................................... 1s DONE
-
-   INFO  Running migrations.  
-
-  2019_15_12_112000_create_elastic_migrations_table ................................................................................... 13.03ms DONE
-  2024_10_08_034355_add_account_e_invoice_quota ....................................................................................... 11.00ms DONE
-  2024_10_09_220533_invoice_gateway_fee ................................................................................................ 1.86ms DONE
-  2024_10_11_151650_create_e_invoice_tokens_table ..................................................................................... 35.53ms DONE
-  2024_10_11_153311_add_e_invoicing_token .............................................................................................. 2.92ms DONE
-  2024_10_14_214658_add_routing_id_to_vendors_table ................................................................................... 12.10ms DONE
-  2024_10_18_211558_updated_currencies ................................................................................................ 68.14ms DONE
-  2024_11_11_043923_kill_switch_licenses_table ........................................................................................ 10.39ms DONE
-  2024_11_19_020259_add_entity_set_to_licenses_table .................................................................................. 11.01ms DONE
-  2024_11_21_011625_add_e_invoicing_logs_table ........................................................................................ 23.03ms DONE
-  2024_11_28_054808_add_referral_earning_column_to_users_table ........................................................................ 11.32ms DONE
-  2024_12_18_023826_2024_12_18_enforce_tax_data_model .................................................................................. 4.94ms DONE
-  2025_01_08_024611_2025_01_07_design_updates .......................................................................................... 3.92ms DONE
-  2025_01_15_222249_2025_01_16_zim_currency_change ..................................................................................... 2.88ms DONE
-  2025_01_18_012550_2025_01_16_wst_currency ............................................................................................ 2.91ms DONE
-  2025_01_22_013047_2025_01_22_add_verification_setting_to_gocardless ................................................................. 19.48ms DONE
-  2025_02_12_000757_change_inr_currency_symbol ......................................................................................... 1.07ms DONE
-  2025_02_12_035916_create_sync_column_for_payments ................................................................................... 12.16ms DONE
-  2025_02_16_213917_add_e_invoice_column_to_recurring_invoices_table .................................................................. 12.12ms DONE
-  2025_02_20_224129_entity_location_schema ........................................................................................... 355.65ms DONE
-  2025_03_09_084919_add_payment_unapplied_pdf_variabels ................................................................................ 1.02ms DONE
-  2025_03_11_044138_update_blockonomics_help_url ....................................................................................... 0.94ms DONE
-  2025_03_13_073151_update_blockonomics ................................................................................................ 0.93ms DONE
-  2025_03_21_032428_add_sync_column_for_quotes ........................................................................................ 15.73ms DONE
-  2025_04_29_225412_add_guiler_currency ................................................................................................ 3.01ms DONE
-  2025_05_14_035605_add_signature_key_to_auth_net ...................................................................................... 1.34ms DONE
-  2025_05_31_055839_add_docuninja_num_users ........................................................................................... 11.21ms DONE
-  2025_06_02_233158_update_date_format_for_d_m_y ....................................................................................... 2.31ms DONE
+   INFO  Application is already up.
 
 
-   INFO  Seeding database.  
+   INFO  Preparing database.
+
+  Creating migration table ......................................................................................... 100.38ms DONE
+
+   INFO  Loading stored database schemas.
+
+  database/schema/mysql-schema.sql ....................................................................................... 1s DONE
+
+   INFO  Running migrations.
+
+  2019_15_12_112000_create_elastic_migrations_table ................................................................. 38.56ms DONE
+  2024_10_08_034355_add_account_e_invoice_quota ..................................................................... 16.63ms DONE
+  2024_10_09_220533_invoice_gateway_fee ............................................................................. 15.53ms DONE
+  2024_10_11_151650_create_e_invoice_tokens_table ................................................................... 63.28ms DONE
+  2024_10_11_153311_add_e_invoicing_token ........................................................................... 13.82ms DONE
+  2024_10_14_214658_add_routing_id_to_vendors_table ................................................................. 43.22ms DONE
+  2024_10_18_211558_updated_currencies ............................................................................. 373.87ms DONE
+  2024_11_11_043923_kill_switch_licenses_table ...................................................................... 15.25ms DONE
+  2024_11_19_020259_add_entity_set_to_licenses_table ................................................................ 17.39ms DONE
+  2024_11_21_011625_add_e_invoicing_logs_table ...................................................................... 39.05ms DONE
+  2024_11_28_054808_add_referral_earning_column_to_users_table ...................................................... 14.97ms DONE
+  2024_12_18_023826_2024_12_18_enforce_tax_data_model ............................................................... 72.82ms DONE
+  2025_01_08_024611_2025_01_07_design_updates ....................................................................... 70.54ms DONE
+  2025_01_15_222249_2025_01_16_zim_currency_change ................................................................... 1.71ms DONE
+  2025_01_18_012550_2025_01_16_wst_currency .......................................................................... 1.46ms DONE
+  2025_01_22_013047_2025_01_22_add_verification_setting_to_gocardless ............................................... 54.12ms DONE
+  2025_02_12_000757_change_inr_currency_symbol ....................................................................... 3.67ms DONE
+  2025_02_12_035916_create_sync_column_for_payments ................................................................. 29.53ms DONE
+  2025_02_16_213917_add_e_invoice_column_to_recurring_invoices_table ................................................ 21.33ms DONE
+  2025_02_20_224129_entity_location_schema ......................................................................... 603.40ms DONE
+  2025_03_09_084919_add_payment_unapplied_pdf_variabels .............................................................. 5.18ms DONE
+  2025_03_11_044138_update_blockonomics_help_url ..................................................................... 0.85ms DONE
+  2025_03_13_073151_update_blockonomics .............................................................................. 0.64ms DONE
+  2025_03_21_032428_add_sync_column_for_quotes ...................................................................... 17.17ms DONE
+  2025_04_29_225412_add_guiler_currency .............................................................................. 1.39ms DONE
+  2025_05_14_035605_add_signature_key_to_auth_net .................................................................... 0.69ms DONE
+  2025_05_31_055839_add_docuninja_num_users ......................................................................... 14.46ms DONE
+  2025_06_02_233158_update_date_format_for_d_m_y .................................................................... 26.57ms DONE
+
+
+   INFO  Seeding database.
 
 Running DatabaseSeeder
-  Database\Seeders\ConstantsSeeder ......................................................................................................... RUNNING  
-  Database\Seeders\ConstantsSeeder ..................................................................................................... 213 ms DONE  
+  Database\Seeders\ConstantsSeeder ....................................................................................... RUNNING
+  Database\Seeders\ConstantsSeeder ................................................................................... 151 ms DONE
 
-  Database\Seeders\PaymentLibrariesSeeder .................................................................................................. RUNNING  
-  Database\Seeders\PaymentLibrariesSeeder .............................................................................................. 331 ms DONE  
+  Database\Seeders\PaymentLibrariesSeeder ................................................................................ RUNNING
+  Database\Seeders\PaymentLibrariesSeeder ............................................................................ 301 ms DONE
 
-  Database\Seeders\BanksSeeder ............................................................................................................. RUNNING  
-  Database\Seeders\BanksSeeder ....................................................................................................... 1,210 ms DONE  
+  Database\Seeders\BanksSeeder ........................................................................................... RUNNING
+  Database\Seeders\BanksSeeder ....................................................................................... 845 ms DONE
 
-  Database\Seeders\CurrenciesSeeder ........................................................................................................ RUNNING  
-  Database\Seeders\CurrenciesSeeder .................................................................................................... 424 ms DONE  
+  Database\Seeders\CurrenciesSeeder ...................................................................................... RUNNING
+  Database\Seeders\CurrenciesSeeder .................................................................................. 258 ms DONE
 
-  Database\Seeders\LanguageSeeder .......................................................................................................... RUNNING  
-  Database\Seeders\LanguageSeeder ...................................................................................................... 130 ms DONE  
+  Database\Seeders\LanguageSeeder ........................................................................................ RUNNING
+  Database\Seeders\LanguageSeeder .................................................................................... 158 ms DONE
 
-  Database\Seeders\CountriesSeeder ......................................................................................................... RUNNING  
-  Database\Seeders\CountriesSeeder ..................................................................................................... 574 ms DONE  
+  Database\Seeders\CountriesSeeder ....................................................................................... RUNNING
+  Database\Seeders\CountriesSeeder ................................................................................... 417 ms DONE
 
-  Database\Seeders\IndustrySeeder .......................................................................................................... RUNNING  
-  Database\Seeders\IndustrySeeder ...................................................................................................... 105 ms DONE  
+  Database\Seeders\IndustrySeeder ........................................................................................ RUNNING
+  Database\Seeders\IndustrySeeder ..................................................................................... 72 ms DONE
 
-  Database\Seeders\PaymentTypesSeeder ...................................................................................................... RUNNING  
-  Database\Seeders\PaymentTypesSeeder .................................................................................................. 108 ms DONE  
+  Database\Seeders\PaymentTypesSeeder .................................................................................... RUNNING
+  Database\Seeders\PaymentTypesSeeder ................................................................................. 59 ms DONE
 
-  Database\Seeders\GatewayTypesSeeder ...................................................................................................... RUNNING  
-  Database\Seeders\GatewayTypesSeeder ................................................................................................... 45 ms DONE  
+  Database\Seeders\GatewayTypesSeeder .................................................................................... RUNNING
+  Database\Seeders\GatewayTypesSeeder ................................................................................. 64 ms DONE
 
-  Database\Seeders\DateFormatsSeeder ....................................................................................................... RUNNING  
-  Database\Seeders\DateFormatsSeeder .................................................................................................... 91 ms DONE  
+  Database\Seeders\DateFormatsSeeder ..................................................................................... RUNNING
+  Database\Seeders\DateFormatsSeeder .................................................................................. 47 ms DONE
 
-  Database\Seeders\DesignSeeder ............................................................................................................ RUNNING  
-  Database\Seeders\DesignSeeder ........................................................................................................ 120 ms DONE  
+  Database\Seeders\DesignSeeder .......................................................................................... RUNNING
+  Database\Seeders\DesignSeeder ...................................................................................... 365 ms DONE
 
-Sun, 08 Jun 2025 18:18:58 +0000 Create Single Account...
+Wed, 16 Jul 2025 11:53:17 +0000 Create Single Account...
 
-
-Login: https://billing.debian12vm.local Username: admin@admin.com Password: admin
-
-
+========================================
 Setup Complete!
+
+Login: https://billing.debian12vm.local
+Username: admin@admin.com
+Password: admin
+========================================
 
 Open your browser at https://billing.debian12vm.local to access the application.
 The database and user are configured.
 
-IT'S A GOOD TIME TO MAKE YOUR FIRST BACKUP NOW!!
+It's a good time to make your first backup now!
 
 Cronjob Setup:
-Add this for scheduled tasks:
-* * * * * www-data /usr/bin/php /var/www/billing.debian12vm.local/./invoiceninja/artisan schedule:run >> /dev/null 2>&1
+  * * * * * www-data /usr/bin/php /var/www/billing.debian12vm.local/./invoiceninja/artisan schedule:run >> /dev/null 2>&1
 
 Scheduled Backup:
-To schedule a backup, add this:
-* 3 * * * www-data /usr/bin/bash -c "/var/www/billing.debian12vm.local/./inmanage.sh backup" >> /dev/null 2>&1
+  * 3 * * * www-data /usr/bin/bash -c "/var/www/billing.debian12vm.local/./inmanage.sh backup" >> /dev/null 2>&1
 
-
-Proceeding without GH credentials authentication. If update fails, try to add credentials.
-
-
- Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] 
- Full Documentation https://github.com/DrDBanner/inmanage/#readme 
+dd@win81:/var/www/billing.debian12vm.local$
 
 ```
 
@@ -706,29 +930,16 @@ echo '* * * * * www-data /usr/bin/php /var/www/billing.debian12vm.local/invoicen
 Now you can check if the cron service is alive:
 
 ```bash
-sudo systemctl status cron
-
-● cron.service - Regular background program processing daemon
-     Loaded: loaded (/lib/systemd/system/cron.service; enabled; preset: enabled)
-     Active: active (running) since Fri 2025-06-06 10:09:10 CEST; 2 days ago
-       Docs: man:cron(8)
-   Main PID: 450 (cron)
-      Tasks: 1 (limit: 4633)
-     Memory: 644.0K
-        CPU: 4.266s
-     CGroup: /system.slice/cron.service
-             └─450 /usr/sbin/cron -f
-
-Jun 08 21:40:01 debian12scratch CRON[25433]: pam_unix(cron:session): session opened for user www-data(uid=33) by (uid=0)
-Jun 08 21:40:01 debian12scratch CRON[25434]: (www-data) CMD (/usr/bin/php /var/www/billing.debian12vm.local/invoiceninja/artisan schedule:run >> /dev/null 2>&1)
-Jun 08 21:40:01 debian12scratch CRON[25435]: (root) CMD (touch /var/www/cronalive >> /dev/null 2>&1)
-Jun 08 21:40:01 debian12scratch CRON[25432]: pam_unix(cron:session): session closed for user root
-Jun 08 21:40:02 debian12scratch CRON[25433]: pam_unix(cron:session): session closed for user www-data
-Jun 08 21:41:01 debian12scratch CRON[25499]: pam_unix(cron:session): session opened for user www-data(uid=33) by (uid=0)
-Jun 08 21:41:01 debian12scratch CRON[25498]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)
-Jun 08 21:41:01 debian12scratch CRON[25501]: (www-data) CMD (/usr/bin/php /var/www/billing.debian12vm.local/invoiceninja/artisan schedule:run >> /dev/null 2>&1)
-Jun 08 21:41:01 debian12scratch CRON[25498]: pam_unix(cron:session): session closed for user root
-Jun 08 21:41:01 debian12scratch CRON[25499]: pam_unix(cron:session): session closed for user www-data
+if command -v systemctl >/dev/null && systemctl is-system-running --quiet 2>/dev/null; then
+  echo "Detected systemd – checking cron service status:"
+  sudo systemctl status cron
+else
+  if pgrep cron >/dev/null; then
+    echo "cron is running (non-systemd environment)"
+  else
+    echo "cron is NOT running. You should fix that. Temporarily you can run: sudo service cron start"
+  fi
+fi
 ```
 
 This method avoids editing the crontab manually and ensures system-wide clarity.
@@ -737,9 +948,10 @@ This method avoids editing the crontab manually and ensures system-wide clarity.
 
 Since everything is working as expected it's time to login:
 
-Open your local browser at https://billing.debian12vm.local to access the application. Most likely your browser will complain about the certificate –that's pretty normal, since you self-signed the certificate. You'll need to look for a link that says `Extended` or `Continue to billing.debian12vm.local (insecure)` and click that once. You browser should remember your choice next time you open this page.
+Open your local browser at https://billing.debian12vm.local to access the application. Most likely your browser will complain about the certificate –that's pretty normal, since you self-signed the certificate. You'll need to look for a link that says `Extended` or `Continue to billing.debian12vm.local (insecure)` and click that once. Your browser should remember your choice next time you open this page.
 
 **Username:** admin@admin.com 
+
 **Password:** admin
 
 Have fun. Don't forget to star and bookmark the https://github.com/DrDBanner/inmanage/ script.
