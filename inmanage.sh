@@ -547,6 +547,10 @@ install_tar() {
         log err "Failed to run artisan up"
         exit 1
     }
+    $INM_ARTISAN_STRING ninja:translations || {
+        log err "Failed to run translations"
+        exit 1
+    }
     if [ "$mode" == "Provisioned" ]; then
         $INM_ARTISAN_STRING migrate:fresh --seed --force || {
             log err "Failed to run artisan migrate"
