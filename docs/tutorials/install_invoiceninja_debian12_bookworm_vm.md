@@ -312,8 +312,9 @@ server {
         fastcgi_pass unix:/run/php/php8.4-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         fastcgi_intercept_errors off;
-        fastcgi_buffer_size 16k;
-        fastcgi_buffers 4 16k;
+        fastcgi_buffer_size 64k;
+        fastcgi_buffers 8 64k;
+        fastcgi_buffers 4 32k;
     }
 
     location = /favicon.ico { access_log off; log_not_found off; }
@@ -851,17 +852,14 @@ echo '* * * * * www-data /usr/bin/php /var/www/billing.debian12vm.local/invoicen
 Now you can check if the cron service is alive:
 
 ```bash
-if systemctl is-system-running --quiet 2>/dev/null; then
+if command -v systemctl >/dev/null && systemctl is-system-running --quiet 2>/dev/null; then
   echo "Detected systemd – checking cron service status:"
   sudo systemctl status cron
 else
-  echo "systemd not active – checking via pgrep:"
   if pgrep cron >/dev/null; then
     echo "cron is running (non-systemd environment)"
-    exit 0
   else
-    echo "cron is NOT running. You should fix that. Temporarily you can run > sudo service cron start"
-    exit 1
+    echo "cron is NOT running. You should fix that. Temporarily you can run: sudo service cron start"
   fi
 fi
 ```
