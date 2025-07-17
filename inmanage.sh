@@ -670,6 +670,11 @@ run_update() {
             exit 0
         fi
     fi
+    
+    if lsof +D "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" >/dev/null 2>&1; then
+        log warn "Active file handles found in $INM_INSTALLATION_DIRECTORY – this may prevent 'mv'."
+        log info "Consider stopping PHP-FPM or nginx temporarily if automatic fallback solution fails."
+    fi
 
     log info "Update starts now."
     download_ninja
