@@ -126,15 +126,94 @@ You can now proceed with the tutorial – jump to [4. Name resolution (DNS)](#4-
 
 *You can login to the WSL VM at any time from a new terminal by executing `wsl -d Debian`*
 
-> ## SNAPPDF on WSL 1
-> 
-> *Snappdf seems not to work on WSL 1 VM's* 
-> 
-> So, leave the variable in the .env file like this when you configure the provision file: 
-> ```  
-> PDF_GENERATOR=hosted_ninja
-> ```
+#### 2.1.10 WSL 1 Issues
 
+##### php-fpm via socket
+
+On WSL1 I was not able to get php-fpm properly working. In order to fix that you need to switch to a TCP based listener. Fortunately I created a script for that. Note: You need that with WSL1 only.
+
+*Copy and paste the following into your terminal to create the patch script. Run it as root after setting up the webserver and database, but before installing Invoice Ninja with inmanage.*
+
+```bash
+cat > patch_phpfpm_socket_wsl1.sh <<'EOF'
+#!/bin/bash
+
+set -e
+
+NGINX_SITES="/etc/nginx/sites-available"
+
+for dir in /etc/php/*/fpm; do
+  [ -d "$dir" ] || continue
+
+  PHPVER=$(basename "$(dirname "$dir")")
+  PHP_POOL_CONF="$dir/pool.d/www.conf"
+  PHP_MAIN_CONF="$dir/php-fpm.conf"
+
+  echo "Patching PHP $PHPVER – pool config: $PHP_POOL_CONF"
+
+  if ! grep -q "^listen = 127.0.0.1:9000" "$PHP_POOL_CONF"; then
+    sudo sed -i \
+      -e '/^listen\s*=/{/127.0.0.1:9000/!s/^/;/}' \
+      -e '/^listen\s*=/{/127.0.0.1:9000/!a\
+listen = 127.0.0.1:9000
+}' \
+      -e '/^listen\.owner\s*=/{s/^/;/}' \
+      -e '/^listen\.group\s*=/{s/^/;/}' \
+      -e '/^listen\.mode\s*=/{s/^/;/}' \
+      "$PHP_POOL_CONF"
+  else
+    echo "  → Already using 127.0.0.1:9000"
+  fi
+
+  echo "Patching PHP $PHPVER – main config: $PHP_MAIN_CONF (log_level)"
+  if grep -q "^log_level\s*=\s*warning" "$PHP_MAIN_CONF" && ! grep -q "^log_level\s*=\s*alert" "$PHP_MAIN_CONF"; then
+    sudo sed -i \
+      -e '/^log_level\s*=\s*warning/{s/^/;/;a\
+log_level = alert
+}' \
+      "$PHP_MAIN_CONF"
+  else
+    echo "  → log_level already set or patched"
+  fi
+done
+
+echo "Searching nginx sites in $NGINX_SITES for fastcgi_pass unix:"
+for file in "$NGINX_SITES"/*; do
+  [ -f "$file" ] || continue
+
+  if grep -q "^\s*fastcgi_pass unix:" "$file"; then
+    echo "Patching: $file"
+
+    if ! grep -q "fastcgi_pass 127.0.0.1:9000;" "$file"; then
+      sudo sed -i \
+        -e '/^\s*fastcgi_pass unix:/s/^/#/' \
+        -e '/^\s*#\s*fastcgi_pass unix:/a\
+    fastcgi_pass 127.0.0.1:9000;
+' "$file"
+    else
+      echo "  → 127.0.0.1:9000 already present"
+    fi
+  fi
+done
+
+echo "Done. Restart affected services manually:"
+for dir in /etc/php/*/fpm; do
+  [ -d "$dir" ] || continue
+  PHPVER=$(basename "$(dirname "$dir")")
+  echo "  sudo service php${PHPVER}-fpm restart"
+done
+echo "  sudo service nginx reload"
+EOF
+
+chmod +x patch_phpfpm_socket_wsl1.sh
+```
+
+##### SNAPPDF on WSL1
+*Snappdf seems not to work on WSL 1 VM's*
+So, leave the variable in the .env file like this when you configure the provision file: 
+```  
+PDF_GENERATOR=hosted_ninja
+```
 </details>
 
 
@@ -314,7 +393,6 @@ server {
         fastcgi_intercept_errors off;
         fastcgi_buffer_size 64k;
         fastcgi_buffers 8 64k;
-        fastcgi_buffers 4 32k;
     }
 
     location = /favicon.ico { access_log off; log_not_found off; }
