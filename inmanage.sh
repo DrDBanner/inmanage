@@ -484,8 +484,15 @@ safe_move_or_copy_and_clean() {
 
         # Protection: dst must not be empty after copy
         if [ -z "$(find "$dst" -mindepth 1 -print -quit)" ]; then
-            log err "Fallback copy appears to have failed silently – target '$dst' is empty"
-            return 1
+            log warn "Target directory '$dst' is empty after fallback copy. Is that OK? Proceed anyway? (yes/no): "
+            if ! read -t 60 response; then
+                log warn "No response within 60 seconds. Operation aborted."
+                return 1
+            fi
+            if [[ ! "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+                log info "Operation aborted by user."
+                return 1
+            fi
         fi
 
         # Clean source
@@ -497,7 +504,7 @@ safe_move_or_copy_and_clean() {
             log err "Failed to clean source directory '$src' after copy."
 
             if command -v lsattr >/dev/null && lsattr -d "$src" 2>/dev/null | grep -q 'i'; then
-                log warn "Directory '$src' is immutable (chattr +i). Consider run 'sudo chattr -i $src' to remove the immutability."
+                log warn "Directory is immutable (chattr +i). Consider run 'sudo chattr -i $src' to remove the immutability."
             fi
 
             if command -v lsof >/dev/null && lsof +D "$src" 2>/dev/null | grep -q .; then
