@@ -457,9 +457,10 @@ safe_move_or_copy_and_clean() {
     fi
 
     if mv "$src" "$dst"; then
+        log ok "Data moved successfully to '$dst'."
         return 0
     else
-        log warn "mv failed from '$src' to '$dst'. Fallback initiated (mode: $mode). Moving data will take longer, but should work in most cases."
+        log warn "Moving data failed to '$dst'. Fallback initiated (mode: $mode). Task will take longer, but should work in most cases."
 
         if [ "$mode" = "new" ]; then
             mkdir -p "$dst" || {
@@ -477,7 +478,7 @@ safe_move_or_copy_and_clean() {
         fi
 
         cp -a "$src"/. "$dst"/ || {
-            log err "Fallback copy failed from '$src' to '$dst'"
+            log err "Fallback copy failed to '$dst'"
             return 1
         }
 
@@ -487,12 +488,42 @@ safe_move_or_copy_and_clean() {
             return 1
         fi
 
-        find "$src" -mindepth 1 -exec rm -rf {} + || {
-            log err "Failed to clean original directory '$src' after copy"
-            return 1
-        }
+        # Clean source
+        if ! find "$src" -mindepth 1 -exec rm -rf {} + 2> >(while read -r line; do
+            if [[ "$DEBUG" == "true" ]]; then
+                log debug "$line"
+            fi
+        done); then
+            log err "Failed to clean source directory '$src' after copy."
 
-        log ok "Fallback copy+delete completed from '$src' to '$dst'"
+            if command -v lsattr >/dev/null && lsattr -d "$src" 2>/dev/null | grep -q 'i'; then
+                log warn "Directory '$src' is immutable (chattr +i). Consider run 'sudo chattr -i $src' to remove the immutability."
+            fi
+
+            if command -v lsof >/dev/null && lsof +D "$src" 2>/dev/null | grep -q .; then
+                log warn "There are open file handles in '$src'. Consider stopping webserver or PHP-FPM temporarily."
+            fi
+
+            if [ ! -w "$src" ]; then
+                log warn "Write permission is missing for '$src'. Check permissions and ownership."
+            fi
+
+            src_owner=$(stat -c '%U' "$src" 2>/dev/null)
+            if [[ -n "$INM_ENFORCED_USER" && "$src_owner" != "$INM_ENFORCED_USER" ]]; then
+                log warn "Directory '$src' is owned by '$src_owner' but script runs as '$INM_ENFORCED_USER'."
+            fi
+
+            if command -v getfacl >/dev/null; then
+                acl_info=$(getfacl -p "$src" 2>/dev/null | grep -E '(^user:|^group:)' | grep -v '::')
+                if [[ -n "$acl_info" ]]; then
+                    log warn "ACLs are defined for '$src'. This may override Unix permissions. Review via 'getfacl $src'."
+                fi
+            fi
+
+            return 1
+        fi
+
+        log ok "Fallback copy+delete completed to '$dst'"
         return 0
     fi
 }
@@ -536,6 +567,11 @@ install_tar() {
     local mode="$1"
     local env_file
 
+     type safe_move_or_copy_and_clean >/dev/null 2>&1 || {
+        log err "Required function safe_move_or_copy_and_clean is not defined."
+        exit 1
+    }
+
     timestamp="$(date +'%Y%m%d_%H%M%S')"
 
     if [ "$mode" == "Provisioned" ]; then
@@ -549,7 +585,12 @@ install_tar() {
     latest_version=$(get_latest_version)
 
     if [ -d "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" ]; then
-        log warn "Caution: Installation directory already exists! Current installation directory will get renamed. Proceed with installation? (yes/no): "
+        
+        if lsof +D "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" >/dev/null 2>&1; then
+            log warn "Active file handles found in $INM_INSTALLATION_DIRECTORY – this may prevent moving the installtion folder."
+            log info "Consider stopping services like php or webserver temporarily if automatic fallback solution fails."
+        fi
+        log warn "Caution: Installation directory already exists! I'll create a copy of that folder. Proceed with installation? (yes/no): "
         if ! read -t 60 response; then
             log warn "No response within 60 seconds. Installation aborted."
             exit 0
@@ -558,14 +599,17 @@ install_tar() {
             log info "Installation aborted."
             exit 0
         fi
-        mv "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "_last_IN_$timestamp"
+        safe_move_or_copy_and_clean "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY/_last_IN_$timestamp" new || {
+        log err "Failed to archive old installation."
+        exit 1
+        }
     fi
 
     log info "Installation starts now"
 
     download_ninja
 
-    mkdir "$INM_INSTALLATION_DIRECTORY" || {
+    mkdir -p "$INM_INSTALLATION_DIRECTORY" || {
         log err "Failed to create installation directory"
         exit 1
     }
@@ -573,7 +617,7 @@ install_tar() {
         log err "Failed to change owner"
         exit 1
     }
-    log info "Unpacking tar"
+    log info "Unpacking Data ..."
     tar -xzf invoiceninja.tar -C "$INM_INSTALLATION_DIRECTORY" || {
         log err "Failed to unpack"
         exit 1
@@ -586,8 +630,8 @@ install_tar() {
         log err "Failed to chmod 600 .env file"
         exit 1
     }
-    mv "$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
-        log err "Failed move installation to target directory $INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY"
+    safe_move_or_copy_and_clean "$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
+        log err "Failed to relocate installation to '$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY'"
         exit 1
     }
     log info "Generating Key"
@@ -670,9 +714,9 @@ run_update() {
             exit 0
         fi
     fi
-    
-    if lsof +D "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" >/dev/null 2>&1; then
-        log warn "Active file handles found in $INM_INSTALLATION_DIRECTORY – this may prevent 'mv'."
+
+     if lsof +D "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" >/dev/null 2>&1; then
+        log warn "Active file handles found in $INM_INSTALLATION_DIRECTORY – this may prevent moving the installtion folder."
         log info "Consider stopping PHP-FPM or nginx temporarily if automatic fallback solution fails."
     fi
 
