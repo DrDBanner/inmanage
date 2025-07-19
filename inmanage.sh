@@ -475,7 +475,6 @@ safe_move() {
         return 0
     fi
 
-    log warn "Fallback initiated. Using copy strategy."
     log debug "mv failed or not suitable. Fallback mode: $mode"
 
     if [ "$mode" = "new" ]; then
@@ -932,7 +931,7 @@ run_backup() {
         log err "Failed to remove SQL files."
         exit 1
     }
-    mv ${INM_PROGRAM_NAME}_*.tar.gz "$INM_BACKUP_DIRECTORY" || {
+    safe_move ${INM_PROGRAM_NAME}_*.tar.gz "$INM_BACKUP_DIRECTORY" || {
         log err "Failed to move backup."
         exit 1
     }
