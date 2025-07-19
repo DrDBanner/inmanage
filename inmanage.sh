@@ -445,14 +445,10 @@ get_latest_version() {
 safe_move() {
     local src="$1"
     local dst="$2"
-    local mode="$3"  # optional: "new" (create dst) or "existing" (dst must exist)
+    local mode="$3"  # optional: "new" or "existing"
 
     if [ -z "$mode" ]; then
-        if [ -d "$dst" ]; then
-            mode="existing"
-        else
-            mode="new"
-        fi
+        mode=$([ -d "$dst" ] && echo "existing" || echo "new")
     fi
 
     log debug "Trying mv '$src' → '$dst' (mode=$mode)"
@@ -460,82 +456,100 @@ safe_move() {
         log ok "Data moved successfully."
         log debug "mv succeeded: '$src' → '$dst'"
         return 0
-    else
-        log warn "Fallback mode initiated. Task will take longer, but should work in most cases."
-        log debug "mv failed: '$src' → '$dst'"
-
-        if [ "$mode" = "new" ]; then
-            mkdir -p "$dst" > /dev/null 2>&1 || {
-                log err "Failed to create target directory '$dst'"
-                return 1
-            }
-            log debug "Created new directory: $dst"
-        elif [ "$mode" = "existing" ]; then
-            if [ ! -d "$dst" ]; then
-                log err "Expected existing directory at '$dst', but it does not exist"
-                return 1
-            fi
-        else
-            log err "Unknown mode '$mode' – must be 'new', 'existing', or empty"
-            return 1
-        fi
-
-        log debug "Copying '$src' → '$dst' via cp -a"
-        if ! cp -a "$src"/. "$dst"/ > /dev/null 2>&1; then
-            log err "Fallback copy failed."
-            return 1
-        fi
-
-        if [ -z "$(find "$dst" -mindepth 1 -print -quit 2>/dev/null)" ]; then
-            log warn "Target directory is empty after fallback copy. Is that OK? Proceed anyway? (yes/no): "
-            if [[ "$DEBUG" == "true" ]]; then
-                log debug "Prompting user: Empty target dir after cp -a"
-            fi
-            if ! read -t 60 response; then
-                log warn "No response within 60 seconds. Operation aborted."
-                return 1
-            fi
-            if [[ ! "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-                log info "Operation aborted by user."
-                return 1
-            fi
-        fi
-
-        log debug "Cleaning source '$src' via find+rm"
-        if ! find "$src" -mindepth 1 -exec rm -rf {} + 2> >(while read -r line; do
-            [[ "$DEBUG" == "true" ]] && log debug "$line"
-        done); then
-            log err "Failed to clean source directory '$src' after copy."
-
-            if command -v lsattr >/dev/null && lsattr -d "$src" 2>/dev/null | grep -q 'i'; then
-                log warn "Directory is immutable (chattr +i). Consider: sudo chattr -i '$src'"
-            fi
-
-            if command -v lsof >/dev/null && lsof +D "$src" 2>/dev/null | grep -q .; then
-                log warn "Open file handles detected in '$src'. Consider stopping PHP-FPM or Webserver."
-            fi
-
-            if [ ! -w "$src" ]; then
-                log warn "Missing write permission for '$src'."
-            fi
-
-            src_owner=$(stat -c '%U' "$src" 2>/dev/null)
-            if [[ -n "$INM_ENFORCED_USER" && "$src_owner" != "$INM_ENFORCED_USER" ]]; then
-                log warn "Owner of '$src' is '$src_owner' but script expects '$INM_ENFORCED_USER'."
-            fi
-
-            if command -v getfacl >/dev/null; then
-                acl_info=$(getfacl -p "$src" 2>/dev/null | grep -E '(^user:|^group:)' | grep -v '::')
-                [[ -n "$acl_info" ]] && log warn "ACLs override permissions on '$src'. Use: getfacl '$src'"
-            fi
-
-            return 1
-        fi
-
-        log ok "Fallback copy+delete completed to '$dst'"
-        return 0
     fi
+
+    log warn "Fallback mode initiated. Task will take longer, but should work in most cases."
+    log debug "mv failed: '$src' → '$dst'"
+
+    if [ "$mode" = "new" ]; then
+        mkdir -p "$dst" > /dev/null 2>&1 || {
+            log err "Failed to create target directory '$dst'"
+            return 1
+        }
+        log debug "Created new directory: $dst"
+    elif [ "$mode" = "existing" ]; then
+        if [ ! -d "$dst" ]; then
+            log err "Expected existing directory at '$dst', but it does not exist"
+            return 1
+        fi
+
+        # fast mv-fallback: move contents only
+        log debug "Trying fast mv-fallback of contents to existing directory"
+        if mv "$src"/.[!.]* "$src"/* "$dst"/ 2>/dev/null; then
+            log ok "Fast fallback: content moved to existing directory '$dst'"
+            log debug "mv (contents only) succeeded: '$src' → '$dst'"
+
+            if [ -z "$(ls -A "$src" 2>/dev/null)" ]; then
+                rmdir "$src" 2>/dev/null
+                log debug "Source '$src' was empty and removed."
+            else
+                log debug "Source '$src' not empty after fast fallback mv."
+            fi
+
+            return 0
+        else
+            log debug "Fast mv-fallback failed, continuing with cp -a fallback."
+        fi
+    else
+        log err "Unknown mode '$mode' – must be 'new', 'existing', or empty"
+        return 1
+    fi
+
+    # Fallback: cp -a
+    log debug "Copying '$src' → '$dst' via cp -a"
+    if ! cp -a "$src"/. "$dst"/ > /dev/null 2>&1; then
+        log err "Fallback copy failed."
+        return 1
+    fi
+
+    if [ -z "$(find "$dst" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+        log warn "Target directory is empty after fallback copy. Is that OK? Proceed anyway? (yes/no): "
+        [[ "$DEBUG" == "true" ]] && log debug "Prompting user: Empty target dir after cp -a"
+        if ! read -t 60 response; then
+            log warn "No response within 60 seconds. Operation aborted."
+            return 1
+        fi
+        if [[ ! "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+            log info "Operation aborted by user."
+            return 1
+        fi
+    fi
+
+    log debug "Cleaning source '$src' via find+rm"
+    if ! find "$src" -mindepth 1 -exec rm -rf {} + 2> >(while read -r line; do
+        [[ "$DEBUG" == "true" ]] && log debug "$line"
+    done); then
+        log err "Failed to clean source directory '$src' after copy."
+
+        if command -v lsattr >/dev/null && lsattr -d "$src" 2>/dev/null | grep -q 'i'; then
+            log warn "Directory is immutable (chattr +i). Consider: sudo chattr -i '$src'"
+        fi
+
+        if command -v lsof >/dev/null && lsof +D "$src" 2>/dev/null | grep -q .; then
+            log warn "Open file handles detected in '$src'. Consider stopping PHP-FPM or Webserver."
+        fi
+
+        if [ ! -w "$src" ]; then
+            log warn "Missing write permission for '$src'."
+        fi
+
+        src_owner=$(stat -c '%U' "$src" 2>/dev/null)
+        if [[ -n "$INM_ENFORCED_USER" && "$src_owner" != "$INM_ENFORCED_USER" ]]; then
+            log warn "Owner of '$src' is '$src_owner' but script expects '$INM_ENFORCED_USER'."
+        fi
+
+        if command -v getfacl >/dev/null; then
+            acl_info=$(getfacl -p "$src" 2>/dev/null | grep -E '(^user:|^group:)' | grep -v '::')
+            [[ -n "$acl_info" ]] && log warn "ACLs override permissions on '$src'. Use: getfacl '$src'"
+        fi
+
+        return 1
+    fi
+
+    log ok "Fallback copy+delete completed to '$dst'"
+    return 0
 }
+
 
 
 download_ninja() {
