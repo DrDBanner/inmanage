@@ -516,7 +516,7 @@ safe_move() {
     fi
 
     log debug "Cleaning source '$src' via find+rm"
-    if ! find "$src" -mindepth 1 -exec rm -rf {} + 2> >(while read -r line; do
+    if ! find "$src" -depth -mindepth 1 -exec rm -rf {} + 2> >(while read -r line; do
         [[ "$DEBUG" == "true" ]] && log debug "$line"
     done); then
         log err "Failed to clean source directory '$src' after copy."
