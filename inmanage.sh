@@ -447,7 +447,6 @@ safe_move() {
     local dst="$2"
     local mode="$3"  # optional: "new" (create dst) or "existing" (dst must exist)
 
-    # Determine if no parameter was given
     if [ -z "$mode" ]; then
         if [ -d "$dst" ]; then
             mode="existing"
@@ -478,18 +477,17 @@ safe_move() {
             log err "Unknown mode '$mode' – must be 'new', 'existing', or empty"
             return 1
         fi
-        log debug "Copying data from '$src' to '$dst' using cp -a"
 
-        cp -a "$src"/. "$dst"/ || {
+        log debug "Copying data from '$src' to '$dst' using cp -a (output suppressed)"
+        if ! cp -a "$src"/. "$dst"/ > /dev/null 2>&1; then
             log err "Fallback copy failed."
             log debug "Fallback copy failed to '$dst'."
             return 1
-        }
+        fi
 
-        # Protection: dst must not be empty after copy
-        if [ -z "$(find "$dst" -mindepth 1 -print -quit)" ]; then
+        if [ -z "$(find "$dst" -mindepth 1 -print -quit 2>/dev/null)" ]; then
             log warn "Target directory is empty after fallback copy. Is that OK? Proceed anyway? (yes/no): "
-            log debug "Target directory '$dst' is empty after fallback copy. Is that OK? Proceed anyway?"
+            log debug "Target directory '$dst' is empty after fallback copy."
             if ! read -t 60 response; then
                 log warn "No response within 60 seconds. Operation aborted."
                 return 1
@@ -500,17 +498,14 @@ safe_move() {
             fi
         fi
 
-        # Clean source
-        log debug "Cleaning source directory '$src' after copy."
+        log debug "Cleaning source directory '$src' after copy (output suppressed)."
         if ! find "$src" -mindepth 1 -exec rm -rf {} + 2> >(while read -r line; do
-            if [[ "$DEBUG" == "true" ]]; then
-                log debug "$line"
-            fi
+            [[ "$DEBUG" == "true" ]] && log debug "$line"
         done); then
             log err "Failed to clean source directory '$src' after copy."
 
             if command -v lsattr >/dev/null && lsattr -d "$src" 2>/dev/null | grep -q 'i'; then
-                log warn "Directory is immutable (chattr +i). Consider run 'sudo chattr -i $src' to remove the immutability."
+                log warn "Directory is immutable (chattr +i). Consider run 'sudo chattr -i $src'."
             fi
 
             if command -v lsof >/dev/null && lsof +D "$src" 2>/dev/null | grep -q .; then
@@ -528,9 +523,7 @@ safe_move() {
 
             if command -v getfacl >/dev/null; then
                 acl_info=$(getfacl -p "$src" 2>/dev/null | grep -E '(^user:|^group:)' | grep -v '::')
-                if [[ -n "$acl_info" ]]; then
-                    log warn "ACLs are defined for '$src'. This may override Unix permissions. Review via 'getfacl $src'."
-                fi
+                [[ -n "$acl_info" ]] && log warn "ACLs are defined for '$src'. They may override Unix permissions. Use 'getfacl $src'."
             fi
 
             return 1
@@ -541,13 +534,15 @@ safe_move() {
     fi
 }
 
-
 download_ninja() {
     [ -d "$INM_TEMP_DOWNLOAD_DIRECTORY" ] && rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
     mkdir -p "$INM_TEMP_DOWNLOAD_DIRECTORY" || {
         log err "Failed to create temp directory."
         exit 1
     }
+
+    log debug "cd to $INM_BASE_DIRECTORY$INM_TEMP_DOWNLOAD_DIRECTORY"
+    
     cd "$INM_TEMP_DOWNLOAD_DIRECTORY" || {
         log err "Failed to change to temp directory."
         exit 1
@@ -556,6 +551,7 @@ download_ninja() {
     local app_version
     app_version=$(get_latest_version)
     sleep 2
+
     log info "Downloading Invoice Ninja version $app_version."
 
     temp_file="invoiceninja_temp.tar"
@@ -590,7 +586,7 @@ install_tar() {
     if [ "$mode" == "Provisioned" ]; then
         env_file="$INM_BASE_DIRECTORY$INM_PROVISION_ENV_FILE"
     else
-        env_file="$INM_INSTALLATION_DIRECTORY/.env.example"
+        env_file="${INM_INSTALLATION_DIRECTORY}_temp/.env.example"
     fi
 
     local latest_version
