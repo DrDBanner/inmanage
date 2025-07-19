@@ -487,8 +487,7 @@ safe_move() {
         fi
     fi
 
-
-    log warn "Fallback initiated – using copy strategy."
+    log debug "mv failed, falling back to copy+clean method."
 
     # Prepare destination
     if [ "$mode" = "new" ]; then
@@ -856,7 +855,7 @@ run_update() {
         }
         log ok "'Maintenanace' file removed from $old_version_dir/storage/framework/."
     fi
-    safe_move "$INM_BASE_DIRECTORY$INM_TEMP_DOWNLOAD_DIRECTORY/$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" existing || {
+    safe_move "$INM_BASE_DIRECTORY$INM_TEMP_DOWNLOAD_DIRECTORY/$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
         log err "Failed to deploy new installation"
         exit 1
     }
