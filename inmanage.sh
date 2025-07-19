@@ -481,7 +481,6 @@ safe_move() {
    # Try mv first – always for files, only for dirs if mode=new and dst doesn't exist
     if [ "$is_dir" = "false" ] || ([ "$mode" = "new" ] && [ ! -e "$dst" ]); then
         if mv "$src" "$dst" > /dev/null 2>&1; then
-            log ok "Moved successfully via mv."
             log debug "mv succeeded: '$src' → '$dst'"
             return 0
         fi
@@ -833,6 +832,7 @@ run_update() {
     if [[ -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" ]]; then
         cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" "$INM_INSTALLATION_DIRECTORY/public/"
     fi
+    log info "Archiving old installation."
     safe_move "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$timestamp" new || {
         log err "Failed to archive old installation"
         exit 1
@@ -846,15 +846,16 @@ run_update() {
             log err "Failed to remove 'Maintenance' file from $old_version_dir/public/storage/framework/"
             exit 1
         }
-        log ok "'Maintenanace' file removed from $old_version_dir/public/storage/framework/."
+        log debug "'Maintenanace' file removed from $old_version_dir/public/storage/framework/."
     fi
     if [ -f "$old_version_dir/storage/framework/down" ]; then
         rm "$old_version_dir/storage/framework/down" || {
             log err "Failed to remove 'Maintenance' file from $old_version_dir/storage/framework/"
             exit 1
         }
-        log ok "'Maintenanace' file removed from $old_version_dir/storage/framework/."
+        log debug "'Maintenanace' file removed from $old_version_dir/storage/framework/."
     fi
+    log info "Moving new installation in."
     safe_move "$INM_BASE_DIRECTORY$INM_TEMP_DOWNLOAD_DIRECTORY/$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
         log err "Failed to deploy new installation"
         exit 1
@@ -912,7 +913,6 @@ run_update() {
 
 run_backup() {
     if [ ! -d "$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY" ]; then
-        log info "Creating backup directory."
         mkdir -p "$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY" || {
             log err "Failed to create backup directory"
             exit 1
