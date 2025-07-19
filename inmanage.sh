@@ -442,7 +442,7 @@ get_latest_version() {
     echo "$version"
 }
 
-safe_move_or_copy_and_clean() {
+safe_move() {
     local src="$1"
     local dst="$2"
     local mode="$3"  # optional: "new" (create dst) or "existing" (dst must exist)
@@ -457,10 +457,12 @@ safe_move_or_copy_and_clean() {
     fi
 
     if mv "$src" "$dst"; then
-        log ok "Data moved successfully to '$dst'."
+        log ok "Data moved successfully."
+        log debug "Data moved successfully to '$dst'."
         return 0
     else
-        log warn "Moving data failed to '$dst'. Fallback initiated (mode: $mode). Task will take longer, but should work in most cases."
+        log warn "Fallback mode initiated. Task will take longer, but should work in most cases."
+        log debug "Mode: $mode"
 
         if [ "$mode" = "new" ]; then
             mkdir -p "$dst" || {
@@ -476,15 +478,18 @@ safe_move_or_copy_and_clean() {
             log err "Unknown mode '$mode' – must be 'new', 'existing', or empty"
             return 1
         fi
+        log debug "Copying data from '$src' to '$dst' using cp -a"
 
         cp -a "$src"/. "$dst"/ || {
-            log err "Fallback copy failed to '$dst'"
+            log err "Fallback copy failed."
+            log debug "Fallback copy failed to '$dst'."
             return 1
         }
 
         # Protection: dst must not be empty after copy
         if [ -z "$(find "$dst" -mindepth 1 -print -quit)" ]; then
-            log warn "Target directory '$dst' is empty after fallback copy. Is that OK? Proceed anyway? (yes/no): "
+            log warn "Target directory is empty after fallback copy. Is that OK? Proceed anyway? (yes/no): "
+            log debug "Target directory '$dst' is empty after fallback copy. Is that OK? Proceed anyway?"
             if ! read -t 60 response; then
                 log warn "No response within 60 seconds. Operation aborted."
                 return 1
@@ -496,6 +501,7 @@ safe_move_or_copy_and_clean() {
         fi
 
         # Clean source
+        log debug "Cleaning source directory '$src' after copy."
         if ! find "$src" -mindepth 1 -exec rm -rf {} + 2> >(while read -r line; do
             if [[ "$DEBUG" == "true" ]]; then
                 log debug "$line"
@@ -574,8 +580,8 @@ install_tar() {
     local mode="$1"
     local env_file
 
-     type safe_move_or_copy_and_clean >/dev/null 2>&1 || {
-        log err "Required function safe_move_or_copy_and_clean is not defined."
+     type safe_move >/dev/null 2>&1 || {
+        log err "Required function safe_move is not defined."
         exit 1
     }
 
@@ -606,8 +612,9 @@ install_tar() {
             log info "Installation aborted."
             exit 0
         fi
-        safe_move_or_copy_and_clean "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY/_last_IN_$timestamp" new || {
+        safe_move "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY/_last_IN_$timestamp" new || {
         log err "Failed to archive old installation."
+        log debug "Failed to archive old installation from "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" to '$INM_BASE_DIRECTORY/_last_IN_$timestamp'."
         exit 1
         }
     fi
@@ -615,30 +622,33 @@ install_tar() {
     log info "Installation starts now"
 
     download_ninja
-
-    mkdir -p "$INM_INSTALLATION_DIRECTORY" || {
-        log err "Failed to create installation directory"
+    log debug "Downloaded Invoice Ninja to $INM_TEMP_DOWNLOAD_DIRECTORY/invoiceninja.tar"
+    log debug "creating temporary installation directory $(pwd)/$INM_INSTALLATION_DIRECTORY"
+    
+    mkdir -p "${INM_INSTALLATION_DIRECTORY}_temp" || {
+        log err "Failed to create temporary installation directory"
         exit 1
     }
-    chown "$INM_ENFORCED_USER" "$INM_INSTALLATION_DIRECTORY" || {
+    chown "$INM_ENFORCED_USER" "${INM_INSTALLATION_DIRECTORY}_temp" || {
         log err "Failed to change owner"
         exit 1
     }
     log info "Unpacking Data ..."
-    tar -xzf invoiceninja.tar -C "$INM_INSTALLATION_DIRECTORY" || {
+    tar -xzf invoiceninja.tar -C "${INM_INSTALLATION_DIRECTORY}_temp" || {
         log err "Failed to unpack"
         exit 1
     }
-    mv "$env_file" "$INM_INSTALLATION_DIRECTORY/.env" || {
+    mv "$env_file" "${INM_INSTALLATION_DIRECTORY}_temp/.env" || {
         log err "Failed to move .env file"
         exit 1
     }
-    chmod 600 "$INM_INSTALLATION_DIRECTORY/.env" || {
+    chmod 600 "${INM_INSTALLATION_DIRECTORY}_temp/.env" || {
         log err "Failed to chmod 600 .env file"
         exit 1
     }
-    safe_move_or_copy_and_clean "$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
-        log err "Failed to relocate installation to '$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY'"
+    safe_move "${INM_INSTALLATION_DIRECTORY}_temp" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" || {
+        log err "Failed to relocate installation."
+        log debug "Failed to relocate installation to '$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY'"
         exit 1
     }
     log info "Generating Key"
@@ -705,8 +715,8 @@ run_update() {
     installed_version=$(get_installed_version)
     latest_version=$(get_latest_version)
 
-    type safe_move_or_copy_and_clean >/dev/null 2>&1 || {
-        log err "Required function safe_move_or_copy_and_clean is not defined."
+    type safe_move >/dev/null 2>&1 || {
+        log err "Required function safe_move is not defined."
         exit 1
     }
 
@@ -772,7 +782,7 @@ run_update() {
     if [[ -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" ]]; then
         cp -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/public/.htaccess" "$INM_INSTALLATION_DIRECTORY/public/"
     fi
-    safe_move_or_copy_and_clean "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$timestamp" new || {
+    safe_move "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY${INM_INSTALLATION_DIRECTORY}_$timestamp" new || {
         log err "Failed to archive old installation"
         exit 1
     }
@@ -794,7 +804,7 @@ run_update() {
         }
         log ok "'Maintenanace' file removed from $old_version_dir/storage/framework/."
     fi
-    safe_move_or_copy_and_clean "$INM_BASE_DIRECTORY$INM_TEMP_DOWNLOAD_DIRECTORY/$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" existing || {
+    safe_move "$INM_BASE_DIRECTORY$INM_TEMP_DOWNLOAD_DIRECTORY/$INM_INSTALLATION_DIRECTORY" "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY" existing || {
         log err "Failed to deploy new installation"
         exit 1
     }
