@@ -455,19 +455,21 @@ safe_move() {
         fi
     fi
 
-    if mv "$src" "$dst"; then
+    log debug "Trying mv '$src' → '$dst' (mode=$mode)"
+    if mv "$src" "$dst" > /dev/null 2>&1; then
         log ok "Data moved successfully."
-        log debug "Data moved successfully to '$dst'."
+        log debug "mv succeeded: '$src' → '$dst'"
         return 0
     else
         log warn "Fallback mode initiated. Task will take longer, but should work in most cases."
-        log debug "Mode: $mode"
+        log debug "mv failed: '$src' → '$dst'"
 
         if [ "$mode" = "new" ]; then
-            mkdir -p "$dst" || {
+            mkdir -p "$dst" > /dev/null 2>&1 || {
                 log err "Failed to create target directory '$dst'"
                 return 1
             }
+            log debug "Created new directory: $dst"
         elif [ "$mode" = "existing" ]; then
             if [ ! -d "$dst" ]; then
                 log err "Expected existing directory at '$dst', but it does not exist"
@@ -478,16 +480,17 @@ safe_move() {
             return 1
         fi
 
-        log debug "Copying data from '$src' to '$dst' using cp -a (output suppressed)"
+        log debug "Copying '$src' → '$dst' via cp -a"
         if ! cp -a "$src"/. "$dst"/ > /dev/null 2>&1; then
             log err "Fallback copy failed."
-            log debug "Fallback copy failed to '$dst'."
             return 1
         fi
 
         if [ -z "$(find "$dst" -mindepth 1 -print -quit 2>/dev/null)" ]; then
             log warn "Target directory is empty after fallback copy. Is that OK? Proceed anyway? (yes/no): "
-            log debug "Target directory '$dst' is empty after fallback copy."
+            if [[ "$DEBUG" == "true" ]]; then
+                log debug "Prompting user: Empty target dir after cp -a"
+            fi
             if ! read -t 60 response; then
                 log warn "No response within 60 seconds. Operation aborted."
                 return 1
@@ -498,32 +501,32 @@ safe_move() {
             fi
         fi
 
-        log debug "Cleaning source directory '$src' after copy (output suppressed)."
+        log debug "Cleaning source '$src' via find+rm"
         if ! find "$src" -mindepth 1 -exec rm -rf {} + 2> >(while read -r line; do
             [[ "$DEBUG" == "true" ]] && log debug "$line"
         done); then
             log err "Failed to clean source directory '$src' after copy."
 
             if command -v lsattr >/dev/null && lsattr -d "$src" 2>/dev/null | grep -q 'i'; then
-                log warn "Directory is immutable (chattr +i). Consider run 'sudo chattr -i $src'."
+                log warn "Directory is immutable (chattr +i). Consider: sudo chattr -i '$src'"
             fi
 
             if command -v lsof >/dev/null && lsof +D "$src" 2>/dev/null | grep -q .; then
-                log warn "There are open file handles in '$src'. Consider stopping webserver or PHP-FPM temporarily."
+                log warn "Open file handles detected in '$src'. Consider stopping PHP-FPM or Webserver."
             fi
 
             if [ ! -w "$src" ]; then
-                log warn "Write permission is missing for '$src'. Check permissions and ownership."
+                log warn "Missing write permission for '$src'."
             fi
 
             src_owner=$(stat -c '%U' "$src" 2>/dev/null)
             if [[ -n "$INM_ENFORCED_USER" && "$src_owner" != "$INM_ENFORCED_USER" ]]; then
-                log warn "Directory '$src' is owned by '$src_owner' but script runs as '$INM_ENFORCED_USER'."
+                log warn "Owner of '$src' is '$src_owner' but script expects '$INM_ENFORCED_USER'."
             fi
 
             if command -v getfacl >/dev/null; then
                 acl_info=$(getfacl -p "$src" 2>/dev/null | grep -E '(^user:|^group:)' | grep -v '::')
-                [[ -n "$acl_info" ]] && log warn "ACLs are defined for '$src'. They may override Unix permissions. Use 'getfacl $src'."
+                [[ -n "$acl_info" ]] && log warn "ACLs override permissions on '$src'. Use: getfacl '$src'"
             fi
 
             return 1
@@ -533,6 +536,7 @@ safe_move() {
         return 0
     fi
 }
+
 
 download_ninja() {
     [ -d "$INM_TEMP_DOWNLOAD_DIRECTORY" ] && rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
