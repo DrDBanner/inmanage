@@ -442,105 +442,111 @@ get_latest_version() {
     echo "$version"
 }
 
-
-
 safe_move() {
 
-    # safe_move <source> <target> [mode] [rsync_opts]
-    #
-    # Performs a safe move operation from <source> to <target>.
-    # Tries a fast mv first. If that fails (e.g. cross-device, bind mounts),
-    # falls back to cp or rsync depending on the mode:
-    # - mode "new": creates <target> and copies data
-    # - mode "existing": assumes <target> exists, uses rsync
-    # Optionally accepts extra rsync arguments as $4 (e.g. "--exclude='*.log'")
-    #
-    # Cleans the source directory after successful copy using rsync --delete (if available),
-    # or find+rm as fallback.
-
+    # safe_move(): Safely move or copy a directory from SRC to DST
+    # with fallback using rsync or cp -a, and optional cleanup.
+    # Supports "new" (DST must not exist) and "existing" (DST must exist) modes.
+    # Parameters:
+    #   $1 = src (source path)
+    #   $2 = dst (destination path)
+    #   $3 = mode (optional: "new" or "existing")
+    #   $4 = rsync_opts (optional: extra rsync options as string)
     local src="$1"
     local dst="$2"
-    local mode="$3"  # "new", "existing" or empty
+    local mode="$3"
     local rsync_opts="$4"
 
     if [ -z "$mode" ]; then
-        [ -d "$dst" ] && mode="existing" || mode="new"
+        if [ -d "$dst" ]; then
+            mode="existing"
+        else
+            mode="new"
+        fi
     fi
 
-    log debug "Trying mv '$src' → '$dst' (mode=$mode)"
-    if mv "$src" "$dst" > /dev/null 2>&1; then
-        log ok "Data moved successfully."
+    log debug "Operation mode: $mode"
+    log debug "Attempting mv '$src' → '$dst'"
+
+    # Only try mv if dst does not already exist (mode=new)
+    if [ "$mode" = "new" ] && mv "$src" "$dst" > /dev/null 2>&1; then
+        log ok "Data moved successfully via mv."
         log debug "mv succeeded: '$src' → '$dst'"
         return 0
     fi
 
-    log warn "Fallback mode initiated. Task will take longer, but should work in most cases."
-    log debug "mv failed: '$src' → '$dst'"
+    log warn "Fallback initiated. Using copy strategy."
+    log debug "mv failed or not suitable. Fallback mode: $mode"
 
     if [ "$mode" = "new" ]; then
         mkdir -p "$dst" > /dev/null 2>&1 || {
-            log err "Failed to create target directory '$dst'"
+            log err "Failed to create target directory."
+            log debug "mkdir -p failed for '$dst'"
             return 1
         }
-        log debug "Created new directory: $dst"
-        log debug "Copying '$src' → '$dst' via cp -a"
-        if ! cp -a "$src"/. "$dst"/ > /dev/null 2>&1; then
-            log err "Fallback copy failed."
-            return 1
-        fi
-    elif [ "$mode" = "existing" ]; then
-        [ -d "$dst" ] || {
-            log err "Expected existing directory at '$dst', but it does not exist"
-            return 1
-        }
-        log debug "Syncing '$src' → '$dst' via rsync -a $rsync_opts"
-        if ! rsync -a $rsync_opts "$src"/ "$dst"/ > /dev/null 2>&1; then
-            log err "Fallback rsync failed."
-            return 1
-        fi
-    else
-        log err "Unknown mode '$mode' – must be 'new', 'existing', or empty"
+        log debug "Created new directory '$dst'"
+    elif [ "$mode" = "existing" ] && [ ! -d "$dst" ]; then
+        log err "Expected existing directory at '$dst', but it does not exist"
         return 1
     fi
 
-    if [ -z "$(find "$dst" -mindepth 1 -print -quit 2>/dev/null)" ]; then
-        log warn "Target directory is empty after fallback. Proceed anyway? (yes/no): "
-        [[ "$DEBUG" == "true" ]] && log debug "Prompting user: empty target dir"
-        if ! read -t 60 response || [[ ! "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-            log info "Operation aborted by user or timeout."
-            return 1
-        fi
-    fi
-
-    # Clean source
+    # Prefer rsync
     if command -v rsync >/dev/null; then
-        log debug "Cleaning source '$src' via rsync --delete from empty dir"
-        tmp_empty="$(mktemp -d)"
-        if rsync -a --delete "$tmp_empty"/ "$src"/ > /dev/null 2>&1; then
-            rmdir "$tmp_empty"
-            log ok "Source cleaned via rsync (empty sync)."
-        else
-            log err "rsync-based clean failed for '$src'"
-            rmdir "$tmp_empty"
+        log debug "Using rsync for fallback copy"
+        log debug "rsync options: $rsync_opts"
+        if ! rsync -a --delete $rsync_opts "$src"/ "$dst"/ > /dev/null 2>&1; then
+            log err "rsync fallback copy failed."
             return 1
         fi
     else
-        log debug "Cleaning source '$src' via find+rm"
-        if ! find "$src" -mindepth 1 -exec rm -rf {} + 2> >(while read -r line; do
-            [[ "$DEBUG" == "true" ]] && log debug "$line"
-        done); then
-            log err "Failed to clean source directory '$src' after copy."
+        log debug "Using cp -a for fallback copy (rsync not available)"
+        if ! cp -a "$src"/. "$dst"/ > /dev/null 2>&1; then
+            log err "cp fallback copy failed."
             return 1
         fi
     fi
 
-    log ok "Fallback completed successfully to '$dst'"
+    # Sanity check
+    if [ -z "$(find "$dst" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+        log warn "Target directory appears empty after copy. Proceed anyway? (yes/no): "
+        log debug "Target directory '$dst' is empty after copy."
+        if [[ "$DEBUG" == "true" ]]; then
+            log debug "Prompting user: Empty target dir after copy"
+        fi
+        if ! read -t 60 response; then
+            log warn "No response within 60 seconds. Operation aborted."
+            return 1
+        fi
+        if [[ ! "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+            log info "Operation aborted by user."
+            return 1
+        fi
+    fi
+
+    # Clean source directory by syncing to empty tempdir
+    log debug "Cleaning source directory: '$src' via rsync to empty"
+    if command -v rsync >/dev/null; then
+        local tmp_empty="/tmp/.inm_emptydir"
+        mkdir -p "$tmp_empty"
+        rsync -a --delete "$tmp_empty"/ "$src"/ > /dev/null 2>&1 || {
+            log err "Failed to clean source directory."
+            log debug "rsync failed to clean '$src' via empty dir '$tmp_empty'"
+            return 1
+        }
+    else
+        log debug "Fallback cleaning via find+rm"
+        if ! find "$src" -mindepth 1 -exec rm -rf {} + 2> >(while read -r line; do
+            [[ "$DEBUG" == "true" ]] && log debug "$line"
+        done); then
+            log err "Failed to clean source directory."
+            log debug "find+rm failed to clean '$src'"
+            return 1
+        fi
+    fi
+
+    log ok "Fallback copy+clean completed successfully."
     return 0
 }
-
-
-
-
 
 download_ninja() {
     [ -d "$INM_TEMP_DOWNLOAD_DIRECTORY" ] && rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
