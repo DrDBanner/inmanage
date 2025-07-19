@@ -391,7 +391,7 @@ check_missing_settings() {
 }
 
 check_commands() {
-    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "touch" "sed" "sudo" "tee")
+    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "touch" "sed" "sudo" "tee" "rsync")
     local missing_commands=()
 
     for cmd in "${commands[@]}"; do
@@ -442,113 +442,104 @@ get_latest_version() {
     echo "$version"
 }
 
+
 safe_move() {
+
+    # Robust data move or sync function with fallback and permission diagnostics.
+    #
+    # Parameters:
+    #   $1 = Source directory path (must exist)
+    #   $2 = Destination directory path
+    #   $3 = Mode (optional): "new" (default, if $dst doesn't exist) or "existing" (if $dst already exists)
+    #   $@ = Optional: additional rsync arguments passed when mode is "existing"
+    #
+    # Behavior:
+    # - In mode "new", it attempts a fast 'mv', falls back to 'cp -a' + clean source on failure.
+    # - In mode "existing", uses 'rsync -a' with any additional flags passed by the caller.
+    # - On fallback errors, performs permission and ownership diagnostics to aid debugging.
+    #
     local src="$1"
     local dst="$2"
-    local mode="$3"  # optional: "new" or "existing"
+    local mode="$3"
+    shift 3
+    local rsync_opts=("$@")
 
     if [ -z "$mode" ]; then
-        mode=$([ -d "$dst" ] && echo "existing" || echo "new")
+        if [ -d "$dst" ]; then
+            mode="existing"
+        else
+            mode="new"
+        fi
     fi
 
-    log debug "Trying mv '$src' → '$dst' (mode=$mode)"
-    if mv "$src" "$dst" > /dev/null 2>&1; then
-        log ok "Data moved successfully."
-        log debug "mv succeeded: '$src' → '$dst'"
-        return 0
-    fi
-
-    log warn "Fallback mode initiated. Task will take longer, but should work in most cases."
-    log debug "mv failed: '$src' → '$dst'"
+    log debug "safe_move(): src='$src', dst='$dst', mode='$mode', rsync_opts='${rsync_opts[*]}'"
 
     if [ "$mode" = "new" ]; then
-        mkdir -p "$dst" > /dev/null 2>&1 || {
-            log err "Failed to create target directory '$dst'"
-            return 1
-        }
-        log debug "Created new directory: $dst"
-    elif [ "$mode" = "existing" ]; then
-        if [ ! -d "$dst" ]; then
-            log err "Expected existing directory at '$dst', but it does not exist"
-            return 1
-        fi
-
-        # fast mv-fallback: move contents only
-        log debug "Trying fast mv-fallback of contents to existing directory"
-        if mv "$src"/.[!.]* "$src"/* "$dst"/ 2>/dev/null; then
-            log ok "Fast fallback: content moved to existing directory '$dst'"
-            log debug "mv (contents only) succeeded: '$src' → '$dst'"
-
-            if [ -z "$(ls -A "$src" 2>/dev/null)" ]; then
-                rmdir "$src" 2>/dev/null
-                log debug "Source '$src' was empty and removed."
-            else
-                log debug "Source '$src' not empty after fast fallback mv."
-            fi
-
+        log debug "Trying mv '$src' → '$dst'"
+        if mv "$src" "$dst" > /dev/null 2>&1; then
+            log ok "Data moved successfully via mv."
             return 0
         else
-            log debug "Fast mv-fallback failed, continuing with cp -a fallback."
+            log warn "mv failed, fallback to cp -a"
+            mkdir -p "$dst" > /dev/null 2>&1 || {
+                log err "Failed to create destination '$dst'"
+                return 1
+            }
+            cp -a "$src"/. "$dst"/ > /dev/null 2>&1 || {
+                log err "cp -a fallback failed"
+                return 1
+            }
+
+            log debug "cp -a succeeded, cleaning source '$src'"
+            if ! find "$src" -mindepth 1 -exec rm -rf {} + 2> >(while read -r line; do
+                [[ "$DEBUG" == "true" ]] && log debug "$line"
+            done); then
+                log err "Failed to clean source directory '$src' after cp"
+
+                if command -v lsattr >/dev/null && lsattr -d "$src" 2>/dev/null | grep -q 'i'; then
+                    log warn "Directory is immutable (chattr +i). Consider: sudo chattr -i '$src'"
+                fi
+
+                if command -v lsof >/dev/null && lsof +D "$src" 2>/dev/null | grep -q .; then
+                    log warn "Open file handles in '$src'. Consider stopping PHP-FPM or Webserver."
+                fi
+
+                if [ ! -w "$src" ]; then
+                    log warn "Missing write permission for '$src'."
+                fi
+
+                src_owner=$(stat -c '%U' "$src" 2>/dev/null)
+                if [[ -n "$INM_ENFORCED_USER" && "$src_owner" != "$INM_ENFORCED_USER" ]]; then
+                    log warn "Directory owner is '$src_owner', expected '$INM_ENFORCED_USER'"
+                fi
+
+                if command -v getfacl >/dev/null; then
+                    acl_info=$(getfacl -p "$src" 2>/dev/null | grep -E '(^user:|^group:)' | grep -v '::')
+                    [[ -n "$acl_info" ]] && log warn "ACLs override permissions on '$src'. Use: getfacl '$src'"
+                fi
+
+                return 1
+            fi
+
+            log ok "Fallback cp+rm completed successfully."
+            return 0
         fi
+
+    elif [ "$mode" = "existing" ]; then
+        log debug "Using rsync fallback into existing destination"
+        rsync -a "${rsync_opts[@]}" "$src"/ "$dst"/ > /dev/null 2>&1 || {
+            log err "rsync failed from '$src' to '$dst'"
+            return 1
+        }
+        log ok "Data synced to existing destination via rsync."
+        return 0
+
     else
-        log err "Unknown mode '$mode' – must be 'new', 'existing', or empty"
+        log err "Unknown mode '$mode'. Must be 'new' or 'existing'."
         return 1
     fi
-
-    # Fallback: cp -a
-    log debug "Copying '$src' → '$dst' via cp -a"
-    if ! cp -a "$src"/. "$dst"/ > /dev/null 2>&1; then
-        log err "Fallback copy failed."
-        return 1
-    fi
-
-    if [ -z "$(find "$dst" -mindepth 1 -print -quit 2>/dev/null)" ]; then
-        log warn "Target directory is empty after fallback copy. Is that OK? Proceed anyway? (yes/no): "
-        [[ "$DEBUG" == "true" ]] && log debug "Prompting user: Empty target dir after cp -a"
-        if ! read -t 60 response; then
-            log warn "No response within 60 seconds. Operation aborted."
-            return 1
-        fi
-        if [[ ! "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-            log info "Operation aborted by user."
-            return 1
-        fi
-    fi
-
-    log debug "Cleaning source '$src' via find+rm"
-    if ! find "$src" -depth -mindepth 1 -exec rm -rf {} + 2> >(while read -r line; do
-        [[ "$DEBUG" == "true" ]] && log debug "$line"
-    done); then
-        log err "Failed to clean source directory '$src' after copy."
-
-        if command -v lsattr >/dev/null && lsattr -d "$src" 2>/dev/null | grep -q 'i'; then
-            log warn "Directory is immutable (chattr +i). Consider: sudo chattr -i '$src'"
-        fi
-
-        if command -v lsof >/dev/null && lsof +D "$src" 2>/dev/null | grep -q .; then
-            log warn "Open file handles detected in '$src'. Consider stopping PHP-FPM or Webserver."
-        fi
-
-        if [ ! -w "$src" ]; then
-            log warn "Missing write permission for '$src'."
-        fi
-
-        src_owner=$(stat -c '%U' "$src" 2>/dev/null)
-        if [[ -n "$INM_ENFORCED_USER" && "$src_owner" != "$INM_ENFORCED_USER" ]]; then
-            log warn "Owner of '$src' is '$src_owner' but script expects '$INM_ENFORCED_USER'."
-        fi
-
-        if command -v getfacl >/dev/null; then
-            acl_info=$(getfacl -p "$src" 2>/dev/null | grep -E '(^user:|^group:)' | grep -v '::')
-            [[ -n "$acl_info" ]] && log warn "ACLs override permissions on '$src'. Use: getfacl '$src'"
-        fi
-
-        return 1
-    fi
-
-    log ok "Fallback copy+delete completed to '$dst'"
-    return 0
 }
+
 
 
 
