@@ -587,6 +587,46 @@ safe_move() {
     return 0
 }
 
+do_snappdf() {
+    . "$INM_ENV_FILE"
+
+    if [ -z "$PDF_GENERATOR" ]; then
+        log err "PDF_GENERATOR is not set in .env file. Please set it to 'snappdf' / 'phantom' or 'hosted_ninja'."
+        exit 1
+    fi
+
+    if [ "$PDF_GENERATOR" = "snappdf" ]; then
+        log info "Snappdf configuration detected."
+
+        if [ -n "$SNAPPDF_CHROMIUM_PATH" ]; then
+            log info "Chromium path is set to '$SNAPPDF_CHROMIUM_PATH'. Skipping ungoogled chrome download via SNAPPDF_SKIP_DOWNLOAD."
+            export SNAPPDF_SKIP_DOWNLOAD=true
+        fi
+
+        local path="${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}"
+        cd "$path" || {
+            log err "Failed to change directory to $path"
+            return 1
+        }
+
+        if [ ! -f "./vendor/bin/snappdf" ]; then
+            log err "Snappdf binary './vendor/bin/snappdf' not found."
+            return 1
+        fi
+
+        if [ ! -x "./vendor/bin/snappdf" ]; then
+            log debug "The file ./vendor/bin/snappdf is not executable. Adding executable flag."
+            chmod +x ./vendor/bin/snappdf
+        fi
+
+        log debug "Download and install Chromium if needed."
+        $INM_PHP_EXECUTABLE ./vendor/bin/snappdf download
+
+    else
+        log info "PDF generation is set to '$PDF_GENERATOR'"
+    fi
+}
+
 
 download_ninja() {
     [ -d "$INM_TEMP_DOWNLOAD_DIRECTORY" ] && rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
@@ -716,6 +756,10 @@ install_tar() {
     }
     $INM_ARTISAN_STRING ninja:translations || {
         log err "Failed to run translations"
+        exit 1
+    }
+    do_snappdf || {
+        log err "Failed to configure snappdf"
         exit 1
     }
     if [ "$mode" == "Provisioned" ]; then
@@ -891,22 +935,10 @@ run_update() {
 
     . "$INM_ENV_FILE"
 
-    if [ "$PDF_GENERATOR" = "snappdf" ]; then
-        log info "Snappdf configuration detected."
-        if [ -n "$SNAPPDF_CHROMIUM_PATH" ]; then
-            log info "Chromium path is set to '$SNAPPDF_CHROMIUM_PATH'. Skipping ungoogled chrome download via SNAPPDF_SKIP_DOWNLOAD."
-            export SNAPPDF_SKIP_DOWNLOAD=true
-        fi
-        cd "${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}"
-        if [ ! -x "./vendor/bin/snappdf" ]; then
-            log debug "The file ./vendor/bin/snappdf is not executable. Adding executable flag."
-            chmod +x ./vendor/bin/snappdf
-        fi
-        log debug "Download and install Chromium if needed."
-        $INM_PHP_EXECUTABLE ./vendor/bin/snappdf download
-    else
-        log info "PDF generation is set to '$PDF_GENERATOR'"
-    fi
+    do_snappdf || {
+        log err "Failed to configure snappdf"
+        exit 1
+    }
     cleanup_old_versions
     log ok "Update completed successfully!"
 }
