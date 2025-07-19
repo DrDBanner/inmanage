@@ -391,6 +391,7 @@ check_missing_settings() {
 }
 
 check_commands() {
+    log debug "Check required commands and shell builtins."
     local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "touch" "sed" "sudo" "tee" "rsync")
     local missing_commands=()
 
@@ -420,6 +421,7 @@ check_commands() {
 }
 
 get_installed_version() {
+    log debug "Retrieving installed version from VERSION.txt"
     local version
     if [ -f "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/VERSION.txt" ]; then
         version=$(cat "$INM_BASE_DIRECTORY$INM_INSTALLATION_DIRECTORY/VERSION.txt") || {
@@ -434,6 +436,7 @@ get_installed_version() {
 }
 
 get_latest_version() {
+    log debug "Retrieving latest version from GitHub API"
     local version
     version=$(curl -s ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} https://api.github.com/repos/invoiceninja/invoiceninja/releases/latest | grep tag_name | cut -d '"' -f 4 | sed 's/v//') || {
         log err "Failed to retrieve latest version"
@@ -627,8 +630,8 @@ do_snappdf() {
     fi
 }
 
-
 download_ninja() {
+    log debug "Download Ninja starts."
     [ -d "$INM_TEMP_DOWNLOAD_DIRECTORY" ] && rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
     mkdir -p "$INM_TEMP_DOWNLOAD_DIRECTORY" || {
         log err "Failed to create temp directory."
