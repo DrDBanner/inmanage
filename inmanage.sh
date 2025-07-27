@@ -23,6 +23,8 @@ INM_PROVISION_ENV_FILE=".inmanage/.env.provision"
 CURL_AUTH_FLAG=""
 
 # ===== Color Setup: only if output is a terminal =====
+export TERM=${TERM:-dumb}
+
 if [[ -t 1 ]]; then
     GREEN='\033[0;32m'
     RED='\033[0;31m'
