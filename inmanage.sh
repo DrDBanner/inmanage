@@ -1,42 +1,70 @@
 #!/usr/bin/env bash
-
 set -e
 
-[[ -n "$BASH_VERSION" ]] || {
-    log err "This script requires Bash."
+# ===== Universal Environment Setup =====
+# This ensures the script runs under cron, FreeBSD, Linux, or macOS without missing commands.
 
-    if [ -f ".inmanage/.env.inmanage" ]; then
-        user=$(grep '^INM_ENFORCED_USER=' .inmanage/.env.inmanage | cut -d= -f2 | tr -d '"')
-        log info "Try: sudo -u ${user:-{your-user}} bash ./inmanage.sh"
+setup_environment() {
+    local original_path="$PATH"
+    local clean_path=""
+
+    local default_paths=(
+        /usr/local/sbin
+        /usr/local/bin
+        /usr/sbin
+        /usr/bin
+        /sbin
+        /bin
+    )
+
+    local extra_paths=(
+        /usr/iports/bin
+        /usr/iports/sbin
+        /usr/iports/mysql84/bin
+        /usr/local/mysql/bin
+    )
+
+    IFS=':' read -ra path_parts <<< "$PATH"
+    for dir in "${path_parts[@]}"; do
+        [[ -d "$dir" ]] && case ":$clean_path:" in
+            *":$dir:"*) : ;;  # already present → skip
+            *) clean_path="${clean_path:+$clean_path:}$dir" ;;
+        esac
+    done
+
+    for p in "${default_paths[@]}" "${extra_paths[@]}"; do
+        [[ -d "$p" ]] && case ":$clean_path:" in
+            *":$p:"*) : ;;    # already present → skip
+            *) clean_path="$clean_path:$p" ;;
+        esac
+    done
+
+    export PATH="$clean_path"
+    export TERM="${TERM:-dumb}"
+
+    if [[ -t 1 ]]; then
+        GREEN='\033[0;32m'
+        RED='\033[0;31m'
+        CYAN='\033[0;36m'
+        YELLOW='\033[1;33m'
+        BLUE='\033[0;34m'
+        WHITE='\033[1;37m'
+        BOLD='\033[1m'
+        RESET='\033[0m'
     else
-        log info "Try: sudo -u {your-user} bash ./inmanage.sh"
+        GREEN=''; RED=''; CYAN=''; YELLOW=''; BLUE=''; WHITE=''; BOLD=''; RESET=''
     fi
 
-    exit 1
+   
+    #if [[ "$DEBUG" == true ]]; then
+    #    echo "[DEBUG] Original PATH: $original_path"
+    #    echo "[DEBUG] Final PATH:    $PATH"
+    #fi
 }
 
-## Self configuration
-INM_SELF_ENV_FILE=".inmanage/.env.inmanage"
-INM_PROVISION_ENV_FILE=".inmanage/.env.provision"
+# Call the environment setup before doing anything else
+setup_environment
 
-## Globals
-CURL_AUTH_FLAG=""
-
-# ===== Color Setup: only if output is a terminal =====
-export TERM=${TERM:-dumb}
-
-if [[ -t 1 ]]; then
-    GREEN='\033[0;32m'
-    RED='\033[0;31m'
-    CYAN='\033[0;36m'
-    YELLOW='\033[1;33m'
-    BLUE='\033[0;34m'
-    WHITE='\033[1;37m'
-    BOLD='\033[1m'
-    RESET='\033[0m'
-else
-    GREEN=''; RED=''; CYAN=''; YELLOW=''; BLUE=''; WHITE=''; BOLD=''; RESET=''
-fi
 
 # ====== Logging ======
 log() {
