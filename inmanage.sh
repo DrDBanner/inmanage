@@ -62,6 +62,11 @@ setup_environment() {
     #fi
 }
 
+safe_clear() {
+    if [[ -t 1 && "$TERM" != "dumb" ]]; then
+        clear
+    fi
+}
 # Call the environment setup before doing anything else
 setup_environment
 
@@ -895,7 +900,7 @@ force_update=false
 DEBUG=false
 command=""
 
-clear
+safe_clear
 print_logo
 parse_options "$@"
 
