@@ -321,6 +321,10 @@ Update the apt database and install the package sudo. Afterwards you add the use
 *Keep in mind to replace `user` with your corresponding username.*
 
 ```bash
+
+## reminder: You need to be root for this. Like this: su - 
+## if not, You may face usermod command not found errors.
+
 apt update
 apt install sudo
 usermod -aG sudo user
@@ -337,7 +341,7 @@ If you wish to have a different domain than `billing.debian12vm.local` you need 
 In order to ensure `https://` connections with the webserver you need a certificate to do so. Paste this code to create a self-signed certificate within the VM:
 
 ```bash
-sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+sudo apt install openssl && sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 -keyout /etc/ssl/private/billing.debian12vm.local.key \
 -out /etc/ssl/certs/billing.debian12vm.local.crt \
 -subj "/C=US/ST=State/L=City/O=Local/OU=Dev/CN=billing.debian12vm.local"
@@ -513,6 +517,8 @@ else
   grep -q 'php8.4-fpm' ~/.bashrc || echo "pgrep php-fpm8.4 >/dev/null || sudo /etc/init.d/php8.4-fpm start" >> ~/.bashrc
   grep -q 'pgrep nginx' ~/.bashrc || echo 'pgrep nginx >/dev/null || sudo service nginx start' >> ~/.bashrc
 fi
+
+## If any error occour, fix them and rerun this code block.
 ```
 
 ## 7. Database

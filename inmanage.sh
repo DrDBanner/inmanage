@@ -1,8 +1,65 @@
 #!/usr/bin/env bash
-
 set -e
 
-# todo#: auf neue .env.project.inmanage locations prüfen, nicht mehr hart codiert.
+# =====================================================
+# Universal Environment Setup 
+# =====================================================
+
+setup_environment() {
+    local original_path="$PATH"
+    local clean_path=""
+
+    local default_paths=(
+        /usr/local/sbin
+        /usr/local/bin
+        /usr/sbin
+        /usr/bin
+        /sbin
+        /bin
+    )
+
+    # Extra paths for BSD Ports, MySQL, etc.
+    local extra_paths=(
+        /usr/iports/bin
+        /usr/iports/sbin
+        /usr/iports/mysql84/bin
+        /usr/local/mysql/bin
+    )
+
+    IFS=':' read -ra path_parts <<< "$PATH"
+    for dir in "${path_parts[@]}"; do
+        [[ -d "$dir" ]] && case ":$clean_path:" in
+            *":$dir:"*) : ;; # skip duplicate
+            *) clean_path="${clean_path:+$clean_path:}$dir" ;;
+        esac
+    done
+
+    for p in "${default_paths[@]}" "${extra_paths[@]}"; do
+        [[ -d "$p" ]] && case ":$clean_path:" in
+            *":$p:"*) : ;;   # skip duplicate
+            *) clean_path="$clean_path:$p" ;;
+        esac
+    done
+
+    export PATH="$clean_path"
+    export TERM="${TERM:-dumb}"
+  
+    if [[ "$DEBUG" == true ]]; then
+        echo "[DEBUG] Original PATH: $original_path"
+        echo "[DEBUG] Final PATH:    $PATH"
+    fi
+}
+
+
+safe_clear() {
+    if [[ -t 1 && "$TERM" != "dumb" ]]; then
+        clear
+    fi
+}
+
+setup_environment
+
+
 [[ -n "$BASH_VERSION" ]] || {
     log err "[shell] This script requires Bash."
 
@@ -16,7 +73,7 @@ set -e
     exit 1
 }
 
-## Self configuration
+
 INM_SELF_ENV_FILE=""
 INM_PROVISION_ENV_FILE=""
 INM_ENV_EXAMPLE_FILE=""
@@ -25,7 +82,6 @@ SCRIPT_PATH="$0"
 SCRIPT_NAME=$(basename "$0")
 
 
-## Bling Bling
 if [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
     RED=$(tput setaf 1)
     GREEN=$(tput setaf 2)
@@ -34,7 +90,7 @@ if [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
     MAGENTA=$(tput setaf 5)
     CYAN=$(tput setaf 6)
     WHITE=$(tput setaf 7)
-    GRAY=$(tput setaf 8)  # meist hellgrau, abhängig vom Terminal
+    GRAY=$(tput setaf 8)  # often light gray, depends on terminal
     BOLD=$(tput bold)
     RESET=$(tput sgr0)
 else
@@ -2604,7 +2660,7 @@ parse_options() {
     done
 }
 
-clear
+safe_clear
 print_logo
 
 parse_options "$@"
