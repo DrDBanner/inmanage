@@ -54,6 +54,26 @@ setup_environment() {
     else
         GREEN=''; RED=''; CYAN=''; YELLOW=''; BLUE=''; WHITE=''; BOLD=''; RESET=''
     fi
+    
+    [[ -n "$BASH_VERSION" ]] || {
+        log err "This script requires Bash."
+
+        if [ -f ".inmanage/.env.inmanage" ]; then
+            user=$(grep '^INM_ENFORCED_USER=' .inmanage/.env.inmanage | cut -d= -f2 | tr -d '"')
+            log info "Try: sudo -u ${user:-{your-user}} bash ./inmanage.sh"
+        else
+            log info "Try: sudo -u {your-user} bash ./inmanage.sh"
+        fi
+
+        exit 1
+    }
+
+    ## Self configuration
+    INM_SELF_ENV_FILE=".inmanage/.env.inmanage"
+    INM_PROVISION_ENV_FILE=".inmanage/.env.provision"
+
+    ## Globals
+    CURL_AUTH_FLAG=""
 
    
     #if [[ "$DEBUG" == true ]]; then
