@@ -2598,7 +2598,11 @@ show_help() {
     printf "\n"
 }
 
-
+# todo: infinite and dedicated initial user creation from .env file IM_USER_NAME_01 IM_USER_PASS_01 IM_USER_EMAIL_01
+# todo: my.cnf on the fly
+# todo: WIzard select candidates?
+# todo: Backup remote 2ways bauen SOURCE-TARGET push<->pull
+# todo: Add new users easily from cli: check artisan function; maybe just list ninja related commmands from laravel;
 # todo: thik about it
 #| Context | Action | Syntax                                                                       | Description                                                                                                                                                            | Flags                              |
 #|---------|--------|------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------|
