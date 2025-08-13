@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
-# =====================================================
-# Universal Environment Setup 
-# =====================================================
+# ===== Universal Environment Setup =====
+# This ensures the script runs under cron, FreeBSD, Linux, or macOS without missing commands.
 
 setup_environment() {
     local original_path="$PATH"
@@ -18,7 +17,6 @@ setup_environment() {
         /bin
     )
 
-    # Extra paths for BSD Ports, MySQL, etc.
     local extra_paths=(
         /usr/iports/bin
         /usr/iports/sbin
@@ -29,73 +27,69 @@ setup_environment() {
     IFS=':' read -ra path_parts <<< "$PATH"
     for dir in "${path_parts[@]}"; do
         [[ -d "$dir" ]] && case ":$clean_path:" in
-            *":$dir:"*) : ;; # skip duplicate
+            *":$dir:"*) : ;;  # already present → skip
             *) clean_path="${clean_path:+$clean_path:}$dir" ;;
         esac
     done
 
     for p in "${default_paths[@]}" "${extra_paths[@]}"; do
         [[ -d "$p" ]] && case ":$clean_path:" in
-            *":$p:"*) : ;;   # skip duplicate
+            *":$p:"*) : ;;    # already present → skip
             *) clean_path="$clean_path:$p" ;;
         esac
     done
 
     export PATH="$clean_path"
     export TERM="${TERM:-dumb}"
-  
-    if [[ "$DEBUG" == true ]]; then
-        echo "[DEBUG] Original PATH: $original_path"
-        echo "[DEBUG] Final PATH:    $PATH"
-    fi
-}
 
+    if [[ -t 1 ]]; then
+        GREEN='\033[0;32m'
+        RED='\033[0;31m'
+        CYAN='\033[0;36m'
+        YELLOW='\033[1;33m'
+        BLUE='\033[0;34m'
+        WHITE='\033[1;37m'
+        BOLD='\033[1m'
+        RESET='\033[0m'
+    else
+        GREEN=''; RED=''; CYAN=''; YELLOW=''; BLUE=''; WHITE=''; BOLD=''; RESET=''
+    fi
+    
+    [[ -n "$BASH_VERSION" ]] || {
+        log err "This script requires Bash."
+
+        if [ -f ".inmanage/.env.inmanage" ]; then
+            user=$(grep '^INM_ENFORCED_USER=' .inmanage/.env.inmanage | cut -d= -f2 | tr -d '"')
+            log info "Try: sudo -u ${user:-{your-user}} bash ./inmanage.sh"
+        else
+            log info "Try: sudo -u {your-user} bash ./inmanage.sh"
+        fi
+
+        exit 1
+    }
+
+    ## Self configuration
+    INM_SELF_ENV_FILE=".inmanage/.env.inmanage"
+    INM_PROVISION_ENV_FILE=".inmanage/.env.provision"
+
+    ## Globals
+    CURL_AUTH_FLAG=""
+
+   
+    #if [[ "$DEBUG" == true ]]; then
+    #    echo "[DEBUG] Original PATH: $original_path"
+    #    echo "[DEBUG] Final PATH:    $PATH"
+    #fi
+}
 
 safe_clear() {
     if [[ -t 1 && "$TERM" != "dumb" ]]; then
         clear
     fi
 }
-
+# Call the environment setup before doing anything else
 setup_environment
 
-
-[[ -n "$BASH_VERSION" ]] || {
-    log err "[shell] This script requires Bash."
-
-    if [ -f ".inmanage/.env.inmanage" ]; then
-        user=$(grep '^INM_ENFORCED_USER=' .inmanage/.env.inmanage | cut -d= -f2 | tr -d '"')
-        log info "[shell] Try: sudo -u ${user:-{your-user}} bash ./inmanage.sh"
-    else
-        log info "[shell] Try: sudo -u {your-user} bash ./inmanage.sh"
-    fi
-
-    exit 1
-}
-
-
-INM_SELF_ENV_FILE=""
-INM_PROVISION_ENV_FILE=""
-INM_ENV_EXAMPLE_FILE=""
-CURL_AUTH_FLAG=""
-SCRIPT_PATH="$0"
-SCRIPT_NAME=$(basename "$0")
-
-
-if [[ -t 1 ]] && command -v tput >/dev/null 2>&1; then
-    RED=$(tput setaf 1)
-    GREEN=$(tput setaf 2)
-    YELLOW=$(tput setaf 3)
-    BLUE=$(tput setaf 4)
-    MAGENTA=$(tput setaf 5)
-    CYAN=$(tput setaf 6)
-    WHITE=$(tput setaf 7)
-    GRAY=$(tput setaf 8)  # often light gray, depends on terminal
-    BOLD=$(tput bold)
-    RESET=$(tput sgr0)
-else
-    RED=''; GREEN=''; YELLOW=''; BLUE=''; MAGENTA=''; CYAN=''; WHITE=''; GRAY=''; BOLD=''; RESET=''
-fi
 
 log() {
     local type="$1"; shift
@@ -2504,165 +2498,104 @@ spawn_provision_file() {
         exit 1
     }
 
-    chmod 600 "$target" || {
-        log warn "[SPF] Could not set 600 permissions on provision file"
-    }
-
-    log ok "[SPF] Provision file created at $target"
-
-    for key in APP_URL DB_HOST DB_DATABASE DB_USERNAME DB_PASSWORD; do
-        if grep -q "^$key=" "$target"; then
-            sed -i -E "s|^($key=.*?)(\s*(#.*)?)?\$|\1\t\t# MANDATORY|" "$target"
-        fi
-    done
-
-    for key in DB_ELEVATED_USERNAME DB_ELEVATED_PASSWORD; do
-        if grep -q "^$key=" "$target"; then
-            sed -i -E "s|^($key=.*?)(\s*(#.*)?)?\$|\1\t\t# OPTIONAL for DB creation|" "$target"
-        fi
-    done
-
-    if command -v nano >/dev/null; then
-        log info "[SPF] Opening provision file in nano: $target"
-        nano "$target"
-    elif command -v vi >/dev/null; then
-        log info "[SPF] Opening provision file in vi: $target"
-        vi "$target"
-    elif [ -n "$EDITOR" ] && command -v "$EDITOR" >/dev/null; then
-        log info "[SPF] Opening provision file using \$EDITOR: $EDITOR"
-        "$EDITOR" "$target"
+    if [ "$INM_FORCE_READ_DB_PW" == "Y" ]; then
+        log info "Dumping database..."
+        mysqldump $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE" | tee "${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" > /dev/null || {
+            log err "Failed to dump database."
+            exit 1
+        }
+        log ok "Database dump done."
     else
-        log warn "[SPF] No suitable text editor found – please edit manually: $target"
+        log info "Using .my.cnf file for database selection and access."
+        log info "Dumping database..."
+        mysqldump $INM_DUMP_OPTIONS -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_DATABASE" | tee "${DB_DATABASE}_$(date +'%Y%m%d_%H%M%S').sql" > /dev/null || {
+            log err "Failed to dump database."
+            exit 1
+        }
+        log ok "Database dump done."
     fi
 
-    log important "[SPF] After editing, rerun the script with:"
-    log bold "             $SCRIPT_NAME --provision-file=\"$target\" --ninja-install-target=/var/www/your.domain/invoiceninja"
-    exit 0
+    cd "$INM_BASE_DIRECTORY" || {
+        log err "Failed to change to base-directory."
+        exit 1
+    }
+    log info "Compressing Data. This may take a while. Hang on..."
+    tar -czf "${INM_PROGRAM_NAME}_$(date +'%Y%m%d_%H%M%S').tar.gz" "$INM_BACKUP_DIRECTORY"/*.sql -C "$INM_INSTALLATION_DIRECTORY" . || {
+        log err "Failed to create backup."
+        exit 1
+    }
+    rm "$INM_BACKUP_DIRECTORY"/*.sql || {
+        log err "Failed to remove SQL files."
+        exit 1
+    }
+    mv ${INM_PROGRAM_NAME}_*.tar.gz "$INM_BACKUP_DIRECTORY" || {
+        log err "Failed to move backup."
+        exit 1
+    }
+
+    cleanup_old_backups
+    log ok "Backup completed successfully!"
 }
-show_function_help() {
-    local fn="$1"
-    local file="$0"
-    # shellcheck disable=SC2034
-    local in_func=0 in_comment=0
 
-    log debug "[SFH] Showing help for function: $fn"
-    log debug "[SFH] Using source file: $file"
+cleanup_old_versions() {
+    log info "Cleaning up old update directory versions."
+    local update_dirs
+    update_dirs=$(find "$INM_BASE_DIRECTORY" -maxdepth 1 -type d -name "$(basename "$INM_INSTALLATION_DIRECTORY")_*" | sort -r | tail -n +$((INM_KEEP_BACKUPS + 1)))
 
-    awk -v fn="$fn" '
-        $0 ~ "^"fn"[[:space:]]*\\(\\)[[:space:]]*\\{" {
-            in_func = 1; next
+    if [ -n "$update_dirs" ]; then
+        echo "$update_dirs" | xargs -r rm -rf || {
+            log err "Failed to clean up old versions."
+            exit 1
         }
+    fi
+    rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
+    ls -la "$INM_BASE_DIRECTORY"
+}
 
-        in_func {
-            if ($0 ~ /^[[:space:]]*#[[:space:]]*-{3,}/) { in_comment = 1; next }
+cleanup_old_backups() {
+    log info "Cleaning up old backups."
+    local backup_files
+    backup_files=$(find "$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY" -maxdepth 1 -type f -name "*.tar.gz" | sort -r | tail -n +$((INM_KEEP_BACKUPS + 1)))
 
-            if (in_comment && $0 ~ /^[[:space:]]*#/) {
-                sub(/^[[:space:]]*#[[:space:]]?/, "")
-                print
-                next
-            }
-
-            if (in_comment) { exit }
+    if [ -n "$backup_files" ]; then
+        echo "$backup_files" | xargs -r rm -f || {
+            log err "Failed to clean up old backups."
+            exit 1
         }
-    ' "$file" | while IFS= read -r line; do
-        case "$line" in
-            "$fn()"*)     printf "\n${BOLD}${BLUE}%s${RESET}\n" "$line" ;;
-            Behavior:|Parameters:|Globals:|Example:)
-                         printf "\n${BOLD}${GREEN}%s${RESET}\n" "$line" ;;
-            "")           printf "\n" ;;
-            *)            printf "  %s\n" "$line" ;;
-        esac
-    done
-    printf "\n\n"
-}
-show_help() {
-    printf "Usage: %s <command> [args] [options] \n\n" "$0"
-    printf "Docs:  https://github.com/DrDBanner/inmanage/#readme\n\n"
-
-    printf "%bCommands:%b\n" "$BLUE" "$RESET"
-    printf "  %-20s %s\n" "update"            "Update Invoice Ninja"
-    printf "  %-20s %s\n" "backup"            "Backup Invoice Ninja DB and/or files (versioned)"
-    printf "  %-20s %s\n" "install"           "Start Invoice Ninja setup (Wizard)"
-    printf "  %-20s %s\n" "create_db"         "Create a fresh database with new user (elevated credentials)"
-    printf "  %-20s %s\n" "import_db"         "Import SQL dump into Invoice Ninja DB"
-    printf "  %-20s %s\n" "clean_install"     "Install clean from scratch (manual setup)"
-    printf "  %-20s %s\n" "cleanup"           "Housekeeping: remove old atomic snapshots, backups and caches"
-    printf "  %-20s %s\n" "install_cronjob"   "Install artisan/backup cronjobs"
-    printf "  %-20s %s\n" "create_config"     "Create a new custom config file for a new inmanage + Invoice Ninja installation"
-    printf "  %-20s %s\n" "reg_on_cli"        "Register this script on the CLI as 'inmanage' and 'inm' command"
-
-    printf "\n%bOptions:%b\n" "$BLUE" "$RESET"
-    printf "  %-20s %s\n" "--force"           "Force action even if up-to-date"
-    printf "  %-20s %s\n" "--debug"           "Enable debug logging"
-    printf "  %-20s %s\n" "-h, --help"        "Show global or command help. ${RED}Each command has its own help.${RESET}"
-    printf "\n"
+    fi
+    rm -Rf "$INM_TEMP_DOWNLOAD_DIRECTORY"
+    ls -la "$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY"
 }
 
-# todo: infinite and dedicated initial user creation from .env file IM_USER_NAME_01 IM_USER_PASS_01 IM_USER_EMAIL_01
-# todo: my.cnf on the fly
-# todo: WIzard select candidates?
-# todo: Backup remote 2ways bauen SOURCE-TARGET push<->pull
-# todo: Add new users easily from cli: check artisan function; maybe just list ninja related commmands from laravel;
-# todo: thik about it
-#| Context | Action | Syntax                                                                       | Description                                                                                                                                                            | Flags                              |
-#|---------|--------|------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------|
-#| core    | clear-cache  | `inm core clear-cache <environment>`                                | Clears all caches (Redis, file-cache, views, config).                                                                   | –                                  |
-#| core    | install      | `inm core install <environment> [--version=<version>] [--force]`    | Installs or reinstalls Invoice-Ninja; latest if no version given.                                                        | `--version`, `--force`             |
-#| core    | provision    | `inm core provision <environment> [--version=<version>] [--force]`  | Installs Invoice-Ninja with a preconfigured .env file. If no version is given, latest is used.                                                                               | `--version`, `--force`             |
-#| core    | info         | `inm core info <environment> [--verbose]`                           | Shows server-environment details: OS, kernel, CPU, memory, disk usage (quota), PHP version & settings, PHP extensions, DB type & version, webserver & PHP-FPM status, current user, application .env values., indicate dependencies met and give advice `--format`, `--filter` Performs health checks (DB connection, permissions, cron jobs). | `--verbose`                        |
-#| core    | update       | `inm core update <environment> [--force] [--no-downtime]`           | Fetches latest release, runs migrations, atomic switch.                                                                    | `--force`, `--no-downtime`         |
-#| core    | version      | `inm core version <environment>`                                    | Shows the installed Invoice-Ninja version.                                                                                 | –                                  |
-#| db      | backup       | `inm db backup <environment> [--out=<file>] [--gzip]`               | Dumps the database to `<file>`, optionally compressing.                                                                    | `--out`, `--gzip`                  |
-#| db      | prune        | `inm db prune <environment> [--keep=<count>]`                       | Deletes old backups, keeping at most `<count>`.                                                                            | `--keep`                           |
-#| db      | restore      | `inm db restore <environment> --input=<file> [--dry-run]`           | Restores the database from `<file>`.                                                                                        | `--input`, `--dry-run`             |
-#| files   | backup       | `inm files backup <environment> [--out=<dir>] [--archive]`          | Archives `storage/` & `public/uploads` into `<dir>`. Maybe it should diff compare to clean install folder. Should have a switch to copy over symlinked content as static copy.                                                                         | `--out`, `--archive`               |
-#| files   | prune        | `inm files prune <environment> [--keep=<count>]`                    | Deletes old file backups, keeping at most `<count>`.                                                                         | `--keep`                           |
-#| files   | restore      | `inm files restore <environment> --input=<archive> [--dry-run]`     | Restores files from `<archive>`.                                                                                            | `--input`, `--dry-run`             |
-#| env     | set          | `inm env set <environment> <key>=<value>`                           | Sets or updates a key-value pair in the application .env file. If the key already exists, it will be updated.                                                                | –                                  |
-#| env     | unset        | `inm env unset <environment> <key>`                                 | Removes a key-value pair from the application .env file. If the key does not exist, it will be ignored.                                                                        | –                                  |
-
-# dispatcher
-parse_options() {
-    force_update=false
-    DEBUG=false
-    DRY_RUN=false
-    command=""
-    SHOW_FUNCTION_HELP=false
-
-    declare -gA NAMED_ARGS
-
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            create_config)       command="create_own_config" ;;
-            reg_on_cli)          command="reg_on_cli" ;;
-            clean_install)       command="run_installation" ;;
-            install)             command="spawn_provision_file" ;;
-            update)              command="run_update" ;;
-            backup)              command="run_backup" ;;
-            create_db)           command="create_database" ;;
-            import_db)           command="import_database" ;;
-            cleanup)             command="cleanup" ;;
-            cleanup_versions)    command="cleanup_versions" ;;
-            cleanup_backups)     command="cleanup_backups" ;;
-            install_cronjob)     command="install_cronjob" ;;
-            --force)             force_update=true ;;
-            --debug)             DEBUG=true ;;
-            --dry-run)           DRY_RUN=true ;;
-            -h|--help)           SHOW_FUNCTION_HELP=true ;;
-            *=*)
-                key="${1%%=*}"
-                value="${1#*=}"
-                NAMED_ARGS["$key"]="$value"
-                ;;
-            *)
-                log err "Unknown option or command: $1"
-                show_help
-                exit 1
-                ;;
-        esac
-        shift
-    done
+function_caller() {
+    case "$1" in
+    clean_install)
+        install_tar
+        ;;
+    update)
+        run_update
+        ;;
+    backup)
+        run_backup
+        ;;
+    create_db)
+        create_database
+        ;;
+    cleanup_versions)
+        cleanup_old_versions
+        ;;
+    cleanup_backups)
+        cleanup_old_backups
+        ;;
+    *)
+        return 1
+        ;;
+    esac
 }
+
+force_update=false
+DEBUG=false
+command=""
 
 safe_clear
 print_logo
