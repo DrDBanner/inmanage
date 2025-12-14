@@ -188,12 +188,12 @@ download_ninja() {
             ;;
         token:*)
             log debug "[DN] Using GitHub token for download."
-            CURL_AUTH_FLAG="-H 'Authorization: token ${INM_GH_API_CREDENTIALS#token:}'"
+            CURL_AUTH_FLAG=("-H" "Authorization: token ${INM_GH_API_CREDENTIALS#token:}")
             ;;
         *:*)
             log debug "[DN] Using GitHub user/password for download."
             USERNAME_PASSWORD="${INM_GH_API_CREDENTIALS//:/ }"
-            CURL_AUTH_FLAG="-u ${USERNAME_PASSWORD}"
+            CURL_AUTH_FLAG=("-u" "$USERNAME_PASSWORD")
             ;;
         *)
             log warn "[DN] Invalid INM_GH_API_CREDENTIALS format, skipping authentication"
@@ -211,9 +211,8 @@ download_ninja() {
         curl_opts+=(--silent)
         log info "[DN] Download in progress (quiet mode, use --debug to see progress)..."
     fi
-    if [[ -n "$CURL_AUTH_FLAG" ]]; then
-        # shellcheck disable=SC2206
-        curl_opts+=($CURL_AUTH_FLAG)
+    if [[ -n "${CURL_AUTH_FLAG[*]}" ]]; then
+        curl_opts+=("${CURL_AUTH_FLAG[@]}")
     fi
 
     log info "[DN] Downloading from: $download_url"

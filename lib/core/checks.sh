@@ -314,6 +314,12 @@ check_provision_file() {
         return 0
     fi
 
+    # Only run provisioning when explicitly requested
+    if [[ "${NAMED_ARGS[provision]:-false}" != true ]]; then
+        log debug "[PVF] Provision file present but --provision not set; skipping."
+        return 0
+    fi
+
     log ok "[PVF] Provision file found. Loading..."
     load_env_file_raw "$INM_PROVISION_ENV_FILE" || {
         log err "[PVF] Failed to load DB variables from $INM_PROVISION_ENV_FILE"

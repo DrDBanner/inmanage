@@ -70,7 +70,7 @@ Direct flags: `--provision`, `--install-mode=system|user|project`, `--provision-
   - Verify release digest from GitHub (if available).
   - Resume partial downloads (`.part` files).
   - Use `--bypass-check-sha=true` to skip digest checks if needed.
-  - Provide `INM_GH_API_CREDENTIALS=token:<PAT>` to avoid rate limits and speed up GitHub requests.
+  - Provide `INM_GH_API_CREDENTIALS=token:<PAT>` (format required) to avoid rate limits and speed up GitHub requests.
 
 ## Self Commands
 - `inmanage self install` (mode prompts) – installs CLI.
