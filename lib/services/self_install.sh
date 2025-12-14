@@ -183,3 +183,27 @@ install_self() {
     log info "[SELF] Tip: Run 'inmanage create_config' to get started."
   fi
 }
+
+# ---------------------------------------------------------------------
+# self_update()
+# Updates the CLI in-place (git pull) if installed from a git checkout.
+# ---------------------------------------------------------------------
+self_update() {
+  local root
+  root="$(cd "$(dirname "$0")" && pwd)"
+  if [[ ! -d "$root/.git" ]]; then
+    log warn "[SELF] No git metadata found at $root; re-run installer to update."
+    return 1
+  fi
+  if [[ "${DRY_RUN:-false}" == true ]]; then
+    log info "[DRY-RUN] Would run git pull in $root"
+    return 0
+  fi
+  log info "[SELF] Updating CLI in $root (git pull)"
+  if git -C "$root" pull --ff-only; then
+    log ok "[SELF] Update completed."
+  else
+    log err "[SELF] git pull failed; resolve manually."
+    return 1
+  fi
+}

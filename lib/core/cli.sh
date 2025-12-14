@@ -49,6 +49,7 @@ Contexts & Actions:
 
   self:
     install          Install this CLI (global/local/project)
+    update           Update this CLI (git pull if checkout)
   env:
     set|get|unset|show  Manage application .env keys
 

@@ -316,10 +316,21 @@ run_preflight() {
     # ---- Snappdf presence ----
     if [ "$fast" != true ] && [ "$skip_snappdf" != true ]; then
         local snap_dir="${INM_INSTALLATION_PATH%/}/vendor/beganovich/snappdf"
-        if [ -d "$snap_dir" ]; then
-            add_result OK "SNAP" "Present"
+        local tmp_pdf="${INM_CACHE_LOCAL_DIRECTORY:-/tmp}/snappdf_probe.pdf"
+        if [ ! -d "$snap_dir" ]; then
+            add_result WARN "SNAPPDF" "Not present; run do_snappdf/update"
+        elif [ -z "${INM_INSTALLATION_PATH:-}" ] || [ ! -f "${INM_INSTALLATION_PATH%/}/vendor/autoload.php" ]; then
+            add_result WARN "SNAPPDF" "Vendor/autoload missing; cannot test snappdf"
         else
-            add_result WARN "SNAP" "Not present; run do_snappdf/update"
+            # Try to render a tiny PDF
+            local php_probe
+            php_probe=$(php -r "require '${INM_INSTALLATION_PATH%/}/vendor/autoload.php'; if (class_exists('Beganovich\\Snappdf\\Snappdf')) { try { (new Beganovich\\Snappdf\\Snappdf)->generate('<h1>probe</h1>', '${tmp_pdf}'); echo 'OK'; } catch (Throwable \$e) { echo 'ERR:' . \$e->getMessage(); } }" 2>/dev/null || true)
+            if echo "$php_probe" | grep -q "^OK"; then
+                add_result OK "SNAPPDF" "Render ok (${tmp_pdf})"
+                rm -f "$tmp_pdf"
+            else
+                add_result WARN "SNAPPDF" "Render failed (${php_probe:-unknown}); run do_snappdf/update"
+            fi
         fi
     fi
 
@@ -379,7 +390,7 @@ run_preflight() {
     # Summary table (grouped)
     log info "[PREFLIGHT] Completed: OK=$ok WARN=$warn ERR=$err"
     printf "\n"
-    local groups=("CLI" "SYS" "CMD" "NET" "WEB" "PHP" "EXT" "WEBPHP" "FS" "DB" "CRON" "SNAP")
+    local groups=("CLI" "SYS" "CMD" "NET" "WEB" "PHP" "EXT" "WEBPHP" "FS" "DB" "CRON" "SNAPPDF")
     local idx g printed
     local green="${GREEN:-}"
     local yellow="${YELLOW:-}"

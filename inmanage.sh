@@ -445,6 +445,10 @@ dispatch_command() {
                     if skip_if_dry_run "self install"; then return 0; fi
                     call_with_named_args install_self
                     ;;
+                update)
+                    if skip_if_dry_run "self update"; then return 0; fi
+                    call_with_named_args self_update
+                    ;;
                 *)
                     log err "[self] Unknown action: $action"
                     return 1
