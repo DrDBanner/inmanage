@@ -77,14 +77,17 @@ Update by rerunning the installer for your mode; it will git-pull and refresh sy
 |         | `restore --file=path [--force] [--include-app=true|false] [--target=...]` | Restore from bundle (pick latest if omitted)                      |
 |         | `health` \| `info`                                        | Preflight/health check                                            |
 |         | `version`                                                 | Show installed/latest/cached version                              |
-|         | `clean` \| `clean-versions` \| `clean-backups`            | Remove old versions/backups/cache                                 |
+|         | `prune` \| `prune-versions` \| `prune-backups`            | Remove old versions/backups/cache                                 |
 |         | `clear-cache`                                             | Clear app cache via artisan                                       |
 | db      | `backup [--compress=tar.gz|zip|false] [--name=...]`       | DB-only backup                                                    |
 |         | `restore --file=path [--force] [--purge=true]`            | Import/restore database                                           |
 |         | `create`                                                  | Create database and user                                          |
+|         | `prune`                                                   | Prune old DB backups (alias to core prune-backups)                |
 | files   | `backup [--compress=tar.gz|zip|false] [--name=...]`       | Files-only backup (storage/uploads)                               |
+|         | `prune`                                                   | Cleanup old file backups                                          |
 | cron    | `install`                                                 | Install cronjobs                                                  |
 | self    | `install`                                                 | Install this CLI (global/local/project)                           |
+| env     | `set|get|unset|show`                                      | Manage application .env entries                                   |
 | provision | `spawn`                                                 | Create provision file for unattended install                      |
 
 Legacy single-word commands (`install`, `clean_install`, `backup`, `update`, etc.) still work but are no longer documented; prefer the new context/action format. All commands support `-h` for usage.

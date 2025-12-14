@@ -26,12 +26,13 @@ Contexts & Actions:
                      Options: --file=<bundle> --force --include-app=true|false --target=<path>
     health (info)    Preflight/health check
     version          Show installed/latest/cached version
-    clean            Cleanup versions/backups/cache
-    clean-versions   Cleanup old versions only
-    clean-backups    Cleanup old backups only
+    prune            Prune versions/backups/cache
+    prune-versions   Prune old versions only
+    prune-backups    Prune old backups only
     clear-cache      Clear app cache (artisan)
     cron install     Install cronjobs
     provision spawn  Create provision file for unattended install
+    env set|get|unset|show  Manage application .env entries
 
   db:
     backup           DB-only backup
@@ -39,14 +40,17 @@ Contexts & Actions:
     restore          Import/restore DB
                      Options: --file=<path> --force --purge=true
     create           Create database/user
+    prune            Prune old DB backups (alias to core prune-backups)
 
   files:
     backup           Files-only backup (storage/uploads)
                      Options: --compress=tar.gz|zip|false --name=<label>
-    cleanup_backups  Cleanup old file backups
+    prune            Cleanup old file backups
 
   self:
     install          Install this CLI (global/local/project)
+  env:
+    set|get|unset|show  Manage application .env keys
 
 Legacy commands (kept, not recommended):
   Supported for compatibility; not listed here.
@@ -78,7 +82,7 @@ core actions:
   restore --file=... [--force] [--include-app=true|false] [--target=...]
   health | info
   version
-  clean | clean_versions | clean_backups
+  prune | prune_versions | prune_backups
   clear-cache
 EOF
             ;;
@@ -94,14 +98,14 @@ EOF
             cat <<'EOF'
 files actions:
   backup [--compress=tar.gz|zip|false] [--name=...]
-  cleanup_backups
+  prune
 EOF
             ;;
         self)
             echo "self actions: install"
             ;;
-        core)
-            echo "core extras: cron install | provision spawn"
+        env)
+            echo "env actions: set KEY=VAL | get KEY | unset KEY | show"
             ;;
         *)
             show_help

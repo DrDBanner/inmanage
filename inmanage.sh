@@ -141,6 +141,11 @@ if [ -f "${LIB_DIR}/services/restore.sh" ]; then
     source "${LIB_DIR}/services/restore.sh"
 fi
 
+if [ -f "${LIB_DIR}/services/env.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/services/env.sh"
+fi
+
 if [ -f "${LIB_DIR}/services/update.sh" ]; then
     # shellcheck source=/dev/null
     source "${LIB_DIR}/services/update.sh"
@@ -342,9 +347,6 @@ dispatch_command() {
                 if skip_if_dry_run "core restore"; then return 0; fi
                 call_with_named_args run_restore
                 ;;
-            info)
-                call_with_named_args run_preflight
-                ;;
             cron)
                 local sub="${extra[0]:-install}"
                 if [[ "$sub" == "install" ]]; then
@@ -365,15 +367,15 @@ dispatch_command() {
                     return 1
                 fi
                 ;;
-            clean)
+            prune)
                 if skip_if_dry_run "core cleanup"; then return 0; fi
                 call_with_named_args cleanup
                 ;;
-            clean_versions|clean-versions)
+            prune_versions|prune-versions|clean_versions|clean-versions)
                     if skip_if_dry_run "core cleanup_versions"; then return 0; fi
                     call_with_named_args cleanup_old_versions
                     ;;
-                clean_backups|clean-backups)
+                prune_backups|prune-backups|clean_backups|clean-backups)
                     if skip_if_dry_run "core cleanup_backups"; then return 0; fi
                     call_with_named_args cleanup_old_backups
                     ;;
@@ -407,6 +409,10 @@ dispatch_command() {
                     if skip_if_dry_run "db create"; then return 0; fi
                     call_with_named_args create_database
                     ;;
+                prune|cleanup)
+                    if skip_if_dry_run "db prune"; then return 0; fi
+                    call_with_named_args cleanup_old_backups
+                    ;;
                 *)
                     log err "[db] Unknown action: $action"
                     return 1
@@ -423,8 +429,8 @@ dispatch_command() {
                     if skip_if_dry_run "files backup"; then return 0; fi
                     call_with_named_args run_backup
                     ;;
-                cleanup_backups)
-                    if skip_if_dry_run "files cleanup_backups"; then return 0; fi
+                prune|prune_backups|cleanup_backups)
+                    if skip_if_dry_run "files prune_backups"; then return 0; fi
                     call_with_named_args cleanup_old_backups
                     ;;
                 *)
@@ -441,6 +447,26 @@ dispatch_command() {
                     ;;
                 *)
                     log err "[self] Unknown action: $action"
+                    return 1
+                    ;;
+            esac
+            ;;
+        env)
+            case "$action" in
+                show)
+                    call_with_named_args env_show
+                    ;;
+                get)
+                    call_with_named_args env_get "${extra[0]:-}"
+                    ;;
+                set)
+                    call_with_named_args env_set "${extra[0]:-}"
+                    ;;
+                unset)
+                    call_with_named_args env_unset "${extra[0]:-}"
+                    ;;
+                *)
+                    log err "[env] Unknown action: $action"
                     return 1
                     ;;
             esac
@@ -480,9 +506,9 @@ elif [[ -n "$LEGACY_CMD" ]]; then
         version) CMD_CONTEXT="core"; CMD_ACTION="version";;
         clear-cache|clear_cache) CMD_CONTEXT="core"; CMD_ACTION="clear-cache";;
         backup) CMD_CONTEXT="core"; CMD_ACTION="backup";;
-        cleanup) CMD_CONTEXT="core"; CMD_ACTION="clean";;
-        cleanup_versions) CMD_CONTEXT="core"; CMD_ACTION="clean_versions";;
-        cleanup_backups) CMD_CONTEXT="core"; CMD_ACTION="clean_backups";;
+        cleanup|prune) CMD_CONTEXT="core"; CMD_ACTION="prune";;
+        cleanup_versions|prune_versions) CMD_CONTEXT="core"; CMD_ACTION="prune_versions";;
+        cleanup_backups|prune_backups) CMD_CONTEXT="core"; CMD_ACTION="prune_backups";;
         *) ;;
     esac
     if [[ -n "$CMD_CONTEXT" && -n "$CMD_ACTION" ]]; then
