@@ -169,7 +169,7 @@ Backup cron:
   inmanage core restore --force                   # pick latest
   inmanage core restore --file=./_in_backups/<bundle>.tar.gz --target=/var/www/invoiceninja
   ```
-  Use `--include-app=false` to restore only DB/storage/uploads. `--force` overwrites an existing app dir.
+  Use `--include-app=false` to restore only DB/storage/uploads. `--force` will replace an existing app dir (backup first; we prefer renaming/move-over).
 
 ---
 

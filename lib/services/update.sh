@@ -94,14 +94,14 @@ run_update() {
     log info "[UPD] Moving previous installation to backup directory"
     local backup_dir="${install_parent}/${install_name}_backup_${timestamp}"
     if [ -d "$install_path" ]; then
-        mv "$install_path" "$backup_dir" || {
+        safe_move_or_copy_and_clean "$install_path" "$backup_dir" move || {
             log err "[UPD] Could not move current installation to backup."
             return 1
         }
     fi
 
     log info "[UPD] Activating new version"
-    mv "$new_dir" "$install_path" || {
+    safe_move_or_copy_and_clean "$new_dir" "$install_path" move || {
         log err "[UPD] Failed to activate new version."
         return 1
     }
