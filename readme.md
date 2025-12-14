@@ -2,70 +2,92 @@
 
 **Backup. Update. Install. Done.**
 
-Manage your self-hosted Invoice Ninja instance from the command line. Fast, scriptable, safe. Includes backup, update, install, provisioning, and cron setup. All in one file.
-
-**Takes ~2 minutes to set up. Saves hours later.**
-
-Run `./inmanage.sh -h` for all commands and exhaustive options.
+inmanage steuert deine self-hosted Invoice Ninja Installation per CLI: installieren, updaten, sichern, wiederherstellen, Cron setzen – alles skriptbar. Ruf es als `inmanage <context> <action> [--options]` auf (Legacy `./inmanage.sh` geht auch).
 
 ## Highlights
 
-- Update Ninja with rollback, detached from GUI. Saves you resources.
-- Backup DB and/or files with automatic retention.
-- Install from scratch or provisioned `.env`
-- Wizard for provisioned install (`install -h`)
-- Snappdf auto-installer and auto updater.
-- Smart mount-aware deployment. Atomic first, then fallback to copy strategy.
-- Automatic Cleanup of old backups & versions.
-- Import SQL dumps (`import_db -h`)
-- Cron install helper (`install_cronjob -h`)
-- Debug logging with `--debug`
+- Installation (Wizard oder Provision) getrennt von der GUI.
+- Backups für DB und Files (Storage/Uploads) mit Aufbewahrung & Restore.
+- Updates mit Rollback (alte Versionen werden gesichert).
+- Snappdf-Setup inklusive.
+- Cron-Installer für Artisan/Backups.
+- Debug-Logging mit `--debug`, Dry-Run mit `--dry-run`.
+- Backups mit Checksums (SHA-256) für Integrität.
 
 
 ---
 
 ## Quick Setup
 
-```bash
-cd /var/www/billing.example.com
-sudo -u www-data git clone https://github.com/DrDBanner/inmanage.git .inmanage
-sudo -u www-data .inmanage/inmanage.sh
+Three steps: pick a mode, install, then run the wizard in your Invoice Ninja base directory.
+
+1) Choose a mode (see below).  
+2) Run the installer command for that mode.  
+3) `cd` into your Invoice Ninja base directory, then run: `inmanage core install` (or `--provision`). In project mode use `./inmanage.sh core install`.
+
+### System mode (recommended, sudo)
+Use when you want `inmanage` globally available; good for servers and team access.
+```
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash
+```
+Installs to `/usr/local/share/inmanage`, symlinks `/usr/local/bin/{inmanage,inm}`. Result: callable everywhere; config stays with your Invoice Ninja base.
+
+### User mode (no sudo)
+Use on shared hosts or when you can’t escalate; keeps everything in your home.
+```
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | MODE=user bash
+```
+Installs to `~/.inmanage_app`, symlinks `~/.local/bin/{inmanage,inm}`. Result: callable for your user; isolated from system.
+
+### Project mode (keep it with your repo)
+Use when you want the CLI alongside a project checkout; ideal for per-project versioning.
+```
+git clone https://github.com/DrDBanner/inmanage.git .inmanage
+cd .inmanage
+MODE=project ./install_inmanage.sh
+```
+CLI goes to `../.inmanage_app`, config stays in `../.inmanage/`, local symlinks created (`./inmanage`, `./inm`).
+
+After install (all modes):  
+```
+cd /path/to/your/invoiceninja/base
+inmanage core install          # or: inmanage core install --provision
 ```
 
-
-
-**Folder layout:**
-
-```plaintext
-/var/www/billing.example.com/ #base directory
-├── .inmanage/         # script
-├── inmanage.sh        # symlink to script
-├── invoiceninja/      # actual Invoice Ninja install
-│   └── public/        # web root
-```
-
-Do **not** install the script inside the Ninja folder.
+Where things live & how to update:
+- System: `/usr/local/share/inmanage` + symlinks `/usr/local/bin/{inmanage,inm}`.
+- User: `~/.inmanage_app` + symlinks `~/.local/bin/{inmanage,inm}`.
+- Project: `.inmanage_app` + config `.inmanage/` in the project tree.
+Default config: `.inmanage/.env.inmanage`. Do not install inside the `invoiceninja/` app folder.
+Update by rerunning the installer for your mode; it will git-pull and refresh symlinks. Use `--dry-run` on commands to see intended actions without changes.
 
 ---
 
-## Commands
+## Commands (new structure)
 
 ```bash
-./inmanage.sh <command> [--options]
+./inmanage.sh <context> <action> [--options]
 ```
 
-| Command            | Description                                                   |
-|--------------------|---------------------------------------------------------------|
-| `update`           | Update Invoice Ninja to latest version                        |
-| `backup`           | Backup DB and/or files (versioned)                            |
-| `install`          | Create install config for unattended setup (Wizard)           |
-| `create_db`        | Create a fresh database with user                             |
-| `import_db`        | Import SQL dump into Invoice Ninja DB                         |
-| `clean_install`    | Install from scratch (manual setup)                           |
-| `cleanup`          | Removes old app version copies, clears old backups & caches   |
-| `install_cronjob`  | Install artisan/backup cronjobs (see `install_cronjob -h`)    |
+| Context | Action / Example                                          | Description                                                       |
+|---------|-----------------------------------------------------------|-------------------------------------------------------------------|
+| core    | `install [--clean] [--provision] [--version=v]`           | Install Invoice Ninja (provision file if present, flags optional) |
+|         | `update [--version=v] [--force]`                          | Update to specific/latest version                                 |
+|         | `backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false] [--extra-paths=a,b]` | Full backup (db+files; optional app and extra paths) |
+|         | `restore --file=path [--force] [--include-app=true|false] [--target=...]` | Restore from bundle (pick latest if omitted)                      |
+|         | `health` \| `info`                                        | Preflight/health check                                            |
+|         | `version`                                                 | Show installed/latest/cached version                              |
+|         | `clean` \| `clean-versions` \| `clean-backups`            | Remove old versions/backups/cache                                 |
+|         | `clear-cache`                                             | Clear app cache via artisan                                       |
+| db      | `backup [--compress=tar.gz|zip|false] [--name=...]`       | DB-only backup                                                    |
+|         | `restore --file=path [--force] [--purge=true]`            | Import/restore database                                           |
+|         | `create`                                                  | Create database and user                                          |
+| files   | `backup [--compress=tar.gz|zip|false] [--name=...]`       | Files-only backup (storage/uploads)                               |
+| cron    | `install`                                                 | Install cronjobs                                                  |
+| self    | `install`                                                 | Install this CLI (global/local/project)                           |
+| provision | `spawn`                                                 | Create provision file for unattended install                      |
 
-All commands support `-h` for detailed usage and arguments.
+Legacy single-word commands (`install`, `clean_install`, `backup`, `update`, etc.) still work but are no longer documented; prefer the new context/action format. All commands support `-h` for usage.
 
 ---
 
@@ -89,16 +111,17 @@ INM_KEEP_BACKUPS="2"
 ## Invoice Ninja Installation Wizard - CLI
 
 ```bash
-./inmanage.sh install
+inmanage core install                  # default install
+inmanage core install --provision      # use .inmanage/.env.provision + seed defaults
+inmanage core install --clean          # force fresh deploy (legacy clean_install)
 ```
 
-Runs an interactive wizard:
+What happens:
 
-- Generates `.env`
-- Downloads and installs latest version
-- Creates DB/user (if configured)
-- Runs setup & migrations
-- Prompts for cron install & backup
+- Generates/uses `.inmanage/.env.inmanage` for settings (keeps config outside the app).
+- Downloads and installs latest (or `--version`) Invoice Ninja.
+- Creates DB/user (if configured), runs setup & migrations.
+- Prompts for cron install & backup (or use `cron install` separately).
 
 Use `.env.provision` for prefilled config. Fields like `DB_ELEVATED_USERNAME` are removed after successful setup.
 
@@ -107,7 +130,7 @@ Use `.env.provision` for prefilled config. Fields like `DB_ELEVATED_USERNAME` ar
 ## Cron Setup
 
 ```bash
-./inmanage.sh install_cronjob -h
+./inmanage.sh cron install -h
 ```
 
 Manual alternative:
@@ -127,8 +150,23 @@ echo '* * * * * www-data /usr/bin/php /path/to/artisan schedule:run >> /dev/null
 Backup cron:
 
 ```bash
-0 2 * * * www-data /path/to/inmanage.sh backup >> /dev/null 2>&1
+0 2 * * * www-data /path/to/inmanage.sh core backup >> /dev/null 2>&1
 ```
+
+---
+
+## Backup & Restore
+
+- Create a full bundle (db + storage + uploads; optional app and extra paths):
+  ```bash
+  inmanage core backup --name=pre_migration --compress=tar.gz --include-app=true --extra-paths=custom1,custom2
+  ```
+- Restore (picks latest bundle if `--file` is omitted):
+  ```bash
+  inmanage core restore --force                   # pick latest
+  inmanage core restore --file=./_in_backups/<bundle>.tar.gz --target=/var/www/invoiceninja
+  ```
+  Use `--include-app=false` to restore only DB/storage/uploads. `--force` overwrites an existing app dir.
 
 ---
 
@@ -160,20 +198,7 @@ tar -xf InvoiceNinja_*.tar.gz --wildcards '*.sql' --strip-components=6
 
 ## Register Global Command - Example
 
-This sets up a shell function that changes into your Invoice Ninja base directory and executes the script as the designated user. If no corresponding passwordless sudo rule exists, the user will be prompted to enter their password.
-
-Copy, customize, and paste the ✨ magic code ✨ below into the shell terminal to add a line to your `~/.bashrc` and make it available instant:
-
-```bash
-echo 'inmanage() { cd /your/base-directory && sudo -u www-data ./inmanage.sh "$@"; }' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Then call from anywhere:
-
-```bash
-inmanage -h
-```
+Not needed anymore: symlinks `inmanage`/`inm` are created by the installer (system/user/project). Call `inmanage …` directly.
 
 ## Update the Script
 
@@ -194,12 +219,14 @@ cd .inmanage && git pull
 Naturally, you may want to store your backups on your local machine or on a remote backup server.
 
 **Solution:**  
-Run `inmanage backup --create-backup-script`
+Run `inmanage core backup --create-backup-script [--script_path=/target/path.sh] [--force]`
 
-*A script named `backup_remote_job.sh` will be created in the current directory. Open it with the text editor of your choice and customize it as needed. A detailed explanation is included directly within the file.*
+- Creates a `backup_remote_job.sh` template (or your chosen path), marked executable.
+- Includes inline instructions for SSH keys, rsync/scp usage, pre/post hooks.
+- Example pre-hook: set `REMOTE_PRE_HOOK="inmanage core backup --db=true --storage=false --uploads=false --bundle=false --name=remote_db_only"` on the remote and include `/path/to/.inmanage/_backups/` in REMOTE_PATHS so the DB dump is pulled.
+- Requires rsync and SSH key access from the pull side; existing files are only overwritten with `--force`.
 
-This command creates a template script that you can customize to securely collect files and folders from any machine with SSH access.  
-It requires `rsync` and passwordless SSH access (via SSH key) to the remote server (e.g. your Invoice Ninja server).
+This helper is designed to be run **from the destination machine** to pull backups from the Ninja server without opening extra ports.
 
 **Endless possibilities:**  
 Back up to your NAS, a remote server, or even your local machine.  
