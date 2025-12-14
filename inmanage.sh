@@ -185,6 +185,10 @@ else
     echo "[ERR] Missing preflight service module: ${LIB_DIR}/services/preflight.sh" >&2
     exit 1
 fi
+if [ -f "${LIB_DIR}/services/pdf.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/services/pdf.sh"
+fi
 
 # Call the environment setup before doing anything else
 setup_environment
@@ -274,9 +278,23 @@ check_commands
 check_envs "$@"
 check_gh_credentials
 
-safe_clear
-if [[ -z "${INM_CHILD_REEXEC:-}" ]]; then
-    print_logo
+# contexts/actions that should not clear or print logo
+skip_clear_logo=false
+if [[ "$CMD_CONTEXT" == "env" ]]; then
+    skip_clear_logo=true
+fi
+if [[ "$CMD_CONTEXT" == "core" && "$CMD_ACTION" == "version" ]]; then
+    skip_clear_logo=true
+fi
+if [[ "$SHOW_FUNCTION_HELP" == true || "$CMD_ACTION" == "help" || "$CMD_CONTEXT" == "help" ]]; then
+    skip_clear_logo=true
+fi
+
+if [[ "$skip_clear_logo" != true ]]; then
+    safe_clear
+    if [[ -z "${INM_CHILD_REEXEC:-}" ]]; then
+        print_logo
+    fi
 fi
 
 log debug "Context: ${CMD_CONTEXT:-<none>} Action: ${CMD_ACTION:-<none>} Legacy: ${LEGACY_CMD:-<none>} Force: $force_update | Debug: $DEBUG | Dry-Run (not implemented): $DRY_RUN"

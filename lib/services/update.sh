@@ -21,6 +21,27 @@ run_update() {
 
     installed_version=$(get_installed_version)
     latest_version="${args[version]:-$(get_latest_version)}"
+    if [[ -z "$latest_version" || "$latest_version" == "null" ]]; then
+        local cache_dir
+        cache_dir="$(resolve_cache_directory)"
+        local cached_ver
+        cached_ver="$(find "$cache_dir" -maxdepth 1 -type f -name 'invoiceninja_v*.tar.gz' 2>/dev/null \
+            | sed -n 's|.*invoiceninja_v\\(.*\\)\\.tar\\.gz|\\1|p' | sort -V | tail -n1)"
+        if [[ -n "$cached_ver" && -z "${args[version]:-}" ]]; then
+            log warn "[UPD] Latest version could not be determined. Cached package found: $cached_ver"
+            log info "[UPD] Use cached version $cached_ver? (y/N):"
+            read -r -t 30 response || response=""
+            if [[ "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+                latest_version="$cached_ver"
+            else
+                log err "[UPD] Aborting update (no latest version and cached version declined)."
+                return 1
+            fi
+        else
+            log err "[UPD] Aborting update; no latest version and no cached fallback."
+            return 1
+        fi
+    fi
     log info "[UPD] Installed: ${installed_version:-<unknown>} | Latest: ${latest_version:-<unknown>}"
 
     # expand any placeholders in INM_ENV_FILE before use (without eval)
@@ -61,10 +82,26 @@ run_update() {
 
     log info "[UPD] Fetching Invoice Ninja $latest_version"
 
-    source_dir="$(download_ninja "$latest_version")" || {
+    local cache_dir
+    cache_dir="$(download_ninja "$latest_version")" || {
         log err "[UPD] Download failed."
         return 1
     }
+    # Extract from cache tarball
+    local extracted
+    extracted="$(mktemp -d)"
+    if ! tar -xzf "$cache_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
+        log err "[UPD] Failed to extract Invoice Ninja archive."
+        return 1
+    fi
+    source_dir="$extracted"
+    # If archive contains a single top-level directory, use it as the source root
+    mapfile -t top_entries < <(find "$extracted" -mindepth 1 -maxdepth 1 -print)
+    if [[ ${#top_entries[@]} -eq 1 && -d "${top_entries[0]}" ]]; then
+        source_dir="${top_entries[0]}"
+    fi
+
+    chmod -R u+rwX,go+rX "$source_dir" 2>/dev/null || true
 
     local install_path="${INM_INSTALLATION_PATH%/}"
     local install_parent
@@ -76,11 +113,11 @@ run_update() {
     log info "[UPD] Preparing new version directory: $new_dir"
 
     rm -rf "$new_dir"
-    mkdir -p "$new_dir"
+    mkdir -p "$(dirname "$new_dir")"
 
-    log info "[UPD] Copying from cache to $new_dir"
-    cp -a "$source_dir/." "$new_dir/" || {
-        log err "[UPD] Failed to copy files to new directory"
+    log info "[UPD] Moving from extracted cache to $new_dir"
+    safe_move_or_copy_and_clean "$source_dir" "$new_dir" move || {
+        log err "[UPD] Failed to move/copy files to new directory"
         return 1
     }
 
@@ -89,12 +126,6 @@ run_update() {
         log err "[UPD] Failed to copy .env"
         return 1
     }
-
-    log info "[UPD] Running artisan migrations and optimize tasks in new version"
-    if ! run_artisan_in "$new_dir" migrate --force || ! run_artisan_in "$new_dir" optimize; then
-        log err "[UPD] Artisan migrate/optimize failed in new version."
-        return 1
-    fi
 
     log info "[UPD] Moving previous installation to backup directory"
     local backup_dir="${install_parent}/${install_name}_backup_${timestamp}"
@@ -110,10 +141,11 @@ run_update() {
         log err "[UPD] Failed to activate new version."
         return 1
     }
+    enforce_ownership "$install_path"
 
-    log info "[UPD] Running post-update artisan tasks"
-    run_artisan optimize || log warn "[UPD] artisan optimize failed"
+    log info "[UPD] Running post-activation artisan tasks"
     run_artisan migrate --force || log warn "[UPD] artisan migrate failed"
+    run_artisan optimize || log warn "[UPD] artisan optimize failed"
     run_artisan ninja:post-update || log warn "[UPD] artisan post-update failed"
     run_artisan ninja:check-data || log warn "[UPD] artisan check-data failed"
     run_artisan ninja:translations || log warn "[UPD] artisan translations failed"

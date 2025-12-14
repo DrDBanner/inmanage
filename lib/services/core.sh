@@ -39,7 +39,10 @@ get_latest_version() {
     }
 
     if [[ -z "$version" || "$version" == "null" ]]; then
+        local head_resp
+        head_resp=$(curl -sI https://api.github.com/repos/invoiceninja/invoiceninja/releases/latest | head -n1)
         log err "[GLV] Could not determine latest version. API response empty."
+        log err "[GLV] GitHub reachable? HEAD returned: ${head_resp:-<no response>}"
         return 1
     fi
 
@@ -351,37 +354,6 @@ show_versions_summary() {
     else
         log info "[VER] Cached: <none>"
     fi
-}
-
-# ---------------------------------------------------------------------
-# do_snappdf()
-# ---------------------------------------------------------------------
-do_snappdf() {
-    local pdf_gen="${PDF_GENERATOR:-}"
-    if [ -z "$pdf_gen" ] && [ -f "${INM_ENV_FILE:-}" ]; then
-        pdf_gen=$(grep -E '^PDF_GENERATOR=' "$INM_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
-    fi
-    if [[ "${pdf_gen,,}" != "snappdf" ]]; then
-        log info "[SNAP] PDF_GENERATOR is not 'snappdf'; skipping snappdf install."
-        return 0
-    fi
-
-    log info "[SNAP] Installing/Updating Snappdf (headless Chromium) …"
-
-    local snappdf_dir="${INM_INSTALLATION_PATH%/}/vendor/beganovich/snappdf"
-    local snappdf_bin="$snappdf_dir/versions/Chromium.app/Contents/MacOS/Chromium"
-
-    if [ -x "$snappdf_bin" ]; then
-        log debug "[SNAP] Snappdf already present."
-        return 0
-    fi
-
-    (cd "$snappdf_dir" && run_artisan snappdf:install) || {
-        log warn "[SNAP] Snappdf install failed."
-        return 1
-    }
-
-    log ok "[SNAP] Snappdf install finished."
 }
 
 # ---------------------------------------------------------------------

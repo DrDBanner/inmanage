@@ -130,7 +130,7 @@ resolve_env_paths() {
 
     if [ -n "${INM_ENV_FILE:-}" ]; then
         if command -v realpath >/dev/null 2>&1; then
-            INM_ENV_FILE="$(realpath "$INM_ENV_FILE")"
+            INM_ENV_FILE="$(realpath "$INM_ENV_FILE" 2>/dev/null || echo "$INM_ENV_FILE")"
         fi
         INM_BASE_DIRECTORY="$(dirname "$(dirname "$INM_ENV_FILE")")/"
         INM_INSTALLATION_DIRECTORY="$(basename "$(dirname "$INM_ENV_FILE")")"
