@@ -87,7 +87,7 @@ download_ninja() {
 
     if curl -sL ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} -w "%{http_code}" "$download_url" -o "$temp_file" | grep -q "200"; then
         if [ "$(wc -c < "$temp_file")" -gt 1048576 ]; then
-            mv "$temp_file" "$target_file"
+            safe_move_or_copy_and_clean "$temp_file" "$target_file" move
             log ok "[DN] Download successful."
         else
             log err "[DN] Download failed: File is too small. Please check network."
