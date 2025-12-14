@@ -304,9 +304,9 @@ skip_if_dry_run() {
     local msg="$1"
     if [[ "${DRY_RUN:-false}" == true ]]; then
         log info "[DRY-RUN] Would: $msg"
-        return 1  # keep executing caller; caller must guard writes
+        return 0  # signal caller to skip execution
     fi
-    return 1
+    return 1      # execute normally
 }
 
 dispatch_command() {
@@ -448,6 +448,14 @@ dispatch_command() {
                 update)
                     if skip_if_dry_run "self update"; then return 0; fi
                     call_with_named_args self_update
+                    ;;
+                switch-mode|switch)
+                    if skip_if_dry_run "self switch-mode"; then return 0; fi
+                    call_with_named_args self_switch_mode
+                    ;;
+                uninstall|remove)
+                    if skip_if_dry_run "self uninstall"; then return 0; fi
+                    call_with_named_args self_uninstall
                     ;;
                 *)
                     log err "[self] Unknown action: $action"

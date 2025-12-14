@@ -183,7 +183,7 @@ run_preflight() {
     fi
 
     # ---- Command availability ----
-    local req_cmds=(php mysql mysqldump git curl tar rsync zip unzip composer jq awk sed find xargs touch tee)
+    local req_cmds=(php mysql mysqldump git curl tar rsync zip unzip composer jq awk sed find xargs touch tee sha256sum)
     for cmd in "${req_cmds[@]}"; do
         if command -v "$cmd" >/dev/null 2>&1; then
             add_result OK "CMD" "$cmd"
@@ -397,6 +397,7 @@ run_preflight() {
 
     # Summary table (grouped)
     log info "[PREFLIGHT] Completed: OK=$ok WARN=$warn ERR=$err"
+    log info "[PREFLIGHT] Aggregate status: $([ "$err" -gt 0 ] && echo ERR || { [ "$warn" -gt 0 ] && echo WARN || echo OK; })"
     printf "\n"
     local groups=("CLI" "SYS" "CMD" "NET" "WEB" "PHP" "EXT" "WEBPHP" "FS" "DB" "CRON" "SNAPPDF")
     local idx g printed

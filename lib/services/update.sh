@@ -21,6 +21,7 @@ run_update() {
 
     installed_version=$(get_installed_version)
     latest_version="${args[version]:-$(get_latest_version)}"
+    log info "[UPD] Installed: ${installed_version:-<unknown>} | Latest: ${latest_version:-<unknown>}"
 
     if [ ! -f "$INM_ENV_FILE" ]; then
         log warn "[UPD] No .env file found – the system is not provisioned or broken."

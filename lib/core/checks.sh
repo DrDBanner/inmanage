@@ -116,6 +116,42 @@ check_commands() {
 }
 
 # ---------------------------------------------------------------------
+# check_github_rate_limit()
+# Warns if GitHub API rate limit is low to encourage token usage.
+# ---------------------------------------------------------------------
+check_github_rate_limit() {
+    local auth_flag=()
+    case "${INM_GH_API_CREDENTIALS:-}" in
+        token:*)
+            auth_flag=(-H "Authorization: token ${INM_GH_API_CREDENTIALS#token:}")
+            ;;
+        *:*)
+            auth_flag=(-u "${INM_GH_API_CREDENTIALS//:/ }")
+            ;;
+    esac
+    local rl
+    rl=$(curl -s --fail "${auth_flag[@]}" https://api.github.com/rate_limit 2>/dev/null) || return
+    if ! command -v jq >/dev/null 2>&1; then
+        return
+    fi
+    local remaining limit reset
+    remaining=$(echo "$rl" | jq -r '.rate.remaining // empty')
+    limit=$(echo "$rl" | jq -r '.rate.limit // empty')
+    reset=$(echo "$rl" | jq -r '.rate.reset // empty')
+    if [[ -n "$remaining" && -n "$limit" ]]; then
+        if (( remaining <= 5 )); then
+            local reset_human=""
+            if [[ -n "$reset" ]] && command -v date >/dev/null 2>&1; then
+                reset_human=$(date -d @"$reset" +'%Y-%m-%d %H:%M:%S' 2>/dev/null || true)
+            fi
+            log warn "[DN] GitHub API rate low: ${remaining}/${limit} remaining${reset_human:+ (reset: $reset_human)}. Set INM_GH_API_CREDENTIALS=token:<PAT> to increase limits."
+        else
+            log debug "[DN] GitHub API rate: ${remaining}/${limit} remaining."
+        fi
+    fi
+}
+
+# ---------------------------------------------------------------------
 # check_envs()
 # Orchestrates base dir check, config presence/creation, user switch,
 # and provision handling.

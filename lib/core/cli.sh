@@ -25,6 +25,7 @@ Contexts & Actions:
     restore          Restore from bundle
                      Options: --file=<bundle> --force --include-app=true|false --target=<path>
     health (info)    Preflight/health check
+                     Options: --fast=true --skip-db=true --skip-github=true --skip-snappdf=true --skip-web-php=true
     version          Show installed/latest/cached version
     prune            Prune versions/backups/cache
     prune-versions   Prune old versions only
@@ -50,6 +51,8 @@ Contexts & Actions:
   self:
     install          Install this CLI (global/local/project)
     update           Update this CLI (git pull if checkout)
+    switch-mode      Reinstall in a different mode (optionally clean old)
+    uninstall        Remove CLI symlinks; optionally delete install dir
   env:
     set|get|unset|show  Manage application .env keys
 
@@ -103,7 +106,13 @@ files actions:
 EOF
             ;;
         self)
-            echo "self actions: install"
+            cat <<'EOF'
+self actions:
+  install
+  update
+  switch-mode    # reinstall in another mode; optionally clean old install/symlinks
+  uninstall      # remove symlinks; optionally delete install dir
+EOF
             ;;
         env)
             echo "env actions: set KEY=VAL | get KEY | unset KEY | show"

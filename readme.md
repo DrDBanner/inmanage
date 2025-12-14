@@ -2,11 +2,13 @@
 
 **Backup. Update. Install. Done.**
 
-Manage your self-hosted Invoice Ninja via CLI: install, update, back up, restore, set cron – fully scriptable. Call it as `inmanage <context> <action> [--options]` (legacy `./inmanage.sh` also works).
+Manage your self-hosted Invoice Ninja via CLI: validate environment, install, update, backup, restore, set cron.
+
+Full documentation: see `docs/index.md` (install, config, automation, troubleshooting).
 
 ## Highlights
 
-- Install (wizard or provision) separate from the GUI.
+- Install (provisioned/unattended recommended; bare install leaves GUI setup) separate from the GUI.
 - Backups for DB and files (storage/uploads) with retention & restore.
 - Updates with rollback (old versions kept).
 - Snappdf setup included.
@@ -14,56 +16,60 @@ Manage your self-hosted Invoice Ninja via CLI: install, update, back up, restore
 - Debug logging with `--debug`, dry-run with `--dry-run`.
 - Backups with checksums (SHA-256) for integrity.
 
-
 ---
 
-## Quick Setup
+## Setup
 
-Three steps: pick a mode, install, then run the wizard in your Invoice Ninja base directory.
+At a glance (3 steps):
 
-1) Choose a mode (see below).  
-2) Run the installer command for that mode.  
-3) `cd` into your Invoice Ninja base directory, then run: `inmanage core install` (or `--provision`). In project mode use `./inmanage.sh core install`.
+1) Install the CLI (mode prompt inside the installer)
+2) Go to your Invoice Ninja base directory
+3) Run Invoice Ninja App installer
 
-### System mode (recommended, sudo)
-Use when you want `inmanage` globally available; good for servers and team access.
-```
-curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash
-```
-Installs to `/usr/local/share/inmanage`, symlinks `/usr/local/bin/{inmanage,inm}`. Result: callable everywhere; config stays with your Invoice Ninja base.
+Step 1 — Install the CLI (prompts for mode; asks for sudo only if you pick system)
 
-### User mode (no sudo)
-Use on shared hosts or when you can’t escalate; keeps everything in your home.
+```bash
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | bash
 ```
-curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | MODE=user bash
-```
-Installs to `~/.inmanage_app`, symlinks `~/.local/bin/{inmanage,inm}`. Result: callable for your user; isolated from system.
 
-### Project mode (keep it with your repo)
-Use when you want the CLI alongside a project checkout; ideal for per-project versioning.
-```
-git clone https://github.com/DrDBanner/inmanage.git .inmanage
-cd .inmanage
-MODE=project ./install_inmanage.sh
-```
-CLI goes to `../.inmanage_app`, config stays in `../.inmanage/`, local symlinks created (`./inmanage`, `./inm`).
+Result: CLI installed per chosen mode (system/user/project), symlinks created (`inmanage`, `inm`).
 
-After install (all modes):  
-```
+Step 2 — Go to your Invoice Ninja base directory
+
+```bash
 cd /path/to/your/invoiceninja/base
-inmanage core install          # or: inmanage core install --provision
 ```
 
-Where things live & how to update:
-- System: `/usr/local/share/inmanage` + symlinks `/usr/local/bin/{inmanage,inm}`.
-- User: `~/.inmanage_app` + symlinks `~/.local/bin/{inmanage,inm}`.
-- Project: `.inmanage_app` + config `.inmanage/` in the project tree.
-Default config: `.inmanage/.env.inmanage`. Do not install inside the `invoiceninja/` app folder.
-Update the CLI with `inmanage self update` (git checkout required), or rerun the installer for your mode; it will git-pull and refresh symlinks. Use `--dry-run` on commands to see intended actions without changes.
+Step 3 — Install Invoice Ninja
+
+```bash
+inmanage core install
+```
+
+- Prompts for install type: **provisioned (recommended)** vs **clean GUI setup**.  
+- If provisioned: you'll be offered to create/edit `.inmanage/.env.provision`, then it runs unattended.  
+- If clean: a vanilla app is deployed; finish setup in the browser. You can also drop in an existing `.env` and a pre-imported database to reuse prior data.
+
+Direct switches (skip prompts):
+
+- Force provisioned: `inmanage core install --provision`
+- Pick mode upfront: `--install-mode=system|user|project`
+- Point to provision file: `--provision-env=.inmanage/.env.provision`
+
+Where things live & updates:
+
+| Mode    | CLI path                     | Symlinks                   | Config location          |
+|---------|------------------------------|----------------------------|--------------------------|
+| System  | `/usr/local/share/inmanage`  | `/usr/local/bin/{inmanage,inm}` | In your Ninja base: `.inmanage/` |
+| User    | `~/.inmanage_app`            | `~/.local/bin/{inmanage,inm}`   | In your Ninja base: `.inmanage/` |
+| Project | `../.inmanage_app`           | Local: `./inmanage`, `./inm`    | `../.inmanage/`          |
+
+Default config: `.inmanage/.env.inmanage`. Do not install inside the `invoiceninja/` app folder.  
+Update the CLI with `inmanage self update` (git checkout) or rerun the installer for your mode. Use `--dry-run` to see intended actions without changes.
 
 ---
 
-## Commands (new structure)
+## Commands
 
 ```bash
 ./inmanage.sh <context> <action> [--options]
@@ -87,6 +93,9 @@ Update the CLI with `inmanage self update` (git checkout required), or rerun the
 |         | `prune`                                                   | Cleanup old file backups                                          |
 | cron    | `install`                                                 | Install cronjobs                                                  |
 | self    | `install`                                                 | Install this CLI (global/local/project)                           |
+|         | `update`                                                  | Update this CLI (git pull if checkout)                            |
+|         | `switch-mode`                                             | Reinstall CLI in another mode (optional cleanup)                  |
+|         | `uninstall`                                               | Remove CLI symlinks; optional delete of install dir               |
 | env     | `set|get|unset|show`                                      | Manage application .env entries                                   |
 | provision | `spawn`                                                 | Create provision file for unattended install                      |
 
@@ -160,9 +169,17 @@ Backup cron:
 
 ## Provisioned (unattended) install
 
-1) Prepare `.inmanage/.env.provision` with your settings (DB/app URL/user/etc.).
-2) From the Invoice Ninja base: `inmanage core install --provision`.
-3) Optional: `inmanage core health` to verify.
+1) Generate a template from your current config: `inmanage core provision spawn` (or `inm core provision spawn`). This writes `.inmanage/.env.provision`.
+2) Edit `.inmanage/.env.provision` for the target host (DB creds, APP_URL, etc.). If you copy an existing config, keep mandatory keys like `INM_ENFORCED_USER`, `INM_ENFORCED_SHELL`, `INM_BASE_DIRECTORY`, `INM_INSTALLATION_DIRECTORY`, `INM_ENV_FILE`, and backup/cache paths intact.
+3) From the Invoice Ninja base: `inmanage core install --provision`.
+4) Optional: `inmanage core health` to verify.
+
+Why provisioned is recommended vs GUI:
+
+- Repeatable: reuse the same provision file for staging/production; no manual clicks.
+- Auditable: values live in `.inmanage/.env.provision`, so changes are trackable.
+- Automation-friendly: no prompts; safe for CI, recovery, and rollbacks.
+- Safer layout: config stays outside the app tree, so app updates won’t overwrite it.
 
 ## Updating Invoice Ninja & CLI
 
@@ -173,14 +190,18 @@ Backup cron:
 ## Backup & Restore
 
 - Create a full bundle (db + storage + uploads; optional app and extra paths):
+
   ```bash
   inmanage core backup --name=pre_migration --compress=tar.gz --include-app=true --extra-paths=custom1,custom2
   ```
+
 - Restore (picks latest bundle if `--file` is omitted):
+
   ```bash
   inmanage core restore --force                   # pick latest
   inmanage core restore --file=./_in_backups/<bundle>.tar.gz --target=/var/www/invoiceninja
   ```
+
   Use `--include-app=false` to restore only DB/storage/uploads. `--force` will replace an existing app dir (backup first; we prefer renaming/move-over).
 
 ---
@@ -248,7 +269,6 @@ Back up to your NAS, a remote server, or even your local machine.
 
 The script is designed to be run **from the destination machine**, so you can easily pull backups from your Invoice Ninja server — even to your desktop — without fiddling around with router ports or VPN settings.
 
-
 ## FAQ
 
 ### Can I use this script if Invoice Ninja is already installed manually?
@@ -271,9 +291,9 @@ Yes. Add a cronjob `./inmanage.sh install_cronjob -h` to automate backups.
 
 Yes. Add a cronjob `./inmanage.sh install_cronjob -h` to do that.
 
-### What if I made a mistake during the installation wizard?
+### What if my inmanage config is wrong or outdated?
 
-Edit or delete `.inmanage/.env.inmanage`. The script will regenerate it's if missing.
+Edit or delete `.inmanage/.env.inmanage`. It will be regenerated if missing; otherwise, adjust values and re-run your command.
 
 ### What about Docker and write permissions?
 

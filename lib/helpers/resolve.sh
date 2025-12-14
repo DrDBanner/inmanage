@@ -129,6 +129,9 @@ resolve_env_paths() {
     fi
 
     if [ -n "${INM_ENV_FILE:-}" ]; then
+        if command -v realpath >/dev/null 2>&1; then
+            INM_ENV_FILE="$(realpath "$INM_ENV_FILE")"
+        fi
         INM_BASE_DIRECTORY="$(dirname "$(dirname "$INM_ENV_FILE")")/"
         INM_INSTALLATION_DIRECTORY="$(basename "$(dirname "$INM_ENV_FILE")")"
         INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
@@ -191,6 +194,26 @@ compute_installation_path() {
 }
 
 # ---------------------------------------------------------------------
+# version_compare v1 (gt|lt|eq) v2
+# Simple semantic-ish compare for dot-separated numbers.
+# ---------------------------------------------------------------------
+version_compare() {
+    local v1="$1" op="$2" v2="$3"
+    local IFS=.
+    local a=($v1) b=($v2) i comp="eq"
+    local len=${#a[@]}
+    (( ${#b[@]} > len )) && len=${#b[@]}
+    for ((i=${#a[@]}; i<len; i++)); do a[i]=0; done
+    for ((i=${#b[@]}; i<len; i++)); do b[i]=0; done
+    for ((i=0; i<len; i++)); do
+        if ((10#${a[i]} > 10#${b[i]})); then comp="gt"; break
+        elif ((10#${a[i]} < 10#${b[i]})); then comp="lt"; break
+        fi
+    done
+    [[ "$comp" == "$op" ]]
+}
+
+# ---------------------------------------------------------------------
 # resolve_cache_directory()
 # Chooses between global or local cache based on permissions.
 # ---------------------------------------------------------------------
@@ -246,7 +269,19 @@ check_global_cache_permissions() {
         return 0
     elif [ ! -e "$dir" ]; then
         log note "[CACHE] Global cache does not exist. Attempting to create: $dir"
-        timeout 20s sudo mkdir -p "$dir" && sudo chmod 755 "$dir" && return 0
+        # Try without sudo first
+        if mkdir -p "$dir" 2>/dev/null && chmod 777 "$dir" 2>/dev/null; then
+            return 0
+        fi
+        # Avoid interactive sudo; only attempt if non-interactive is available
+        if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            if timeout 20s sudo mkdir -p "$dir" && timeout 20s sudo chmod 777 "$dir"; then
+                return 0
+            fi
+            log warn "[CACHE] sudo creation failed for $dir; falling back to local cache"
+        else
+            log warn "[CACHE] Cannot create global cache (no perms). Will use local cache."
+        fi
     else
         log warn "[CACHE] Global cache is not writable: $dir"
     fi

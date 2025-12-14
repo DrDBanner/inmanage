@@ -48,6 +48,40 @@ get_latest_version() {
 }
 
 # ---------------------------------------------------------------------
+# fetch_release_digest()
+# Fetches the sha256 digest for a given asset from the GitHub release API.
+# Returns empty string if not found/available.
+# ---------------------------------------------------------------------
+fetch_release_digest() {
+    local version="$1"
+    local asset_name="$2"
+    local api_url="https://api.github.com/repos/invoiceninja/invoiceninja/releases/tags/v${version}"
+    local digest
+    digest=$(curl -s "$api_url" | jq -r --arg name "$asset_name" '.assets[]? | select(.name==$name) | .digest // empty' 2>/dev/null | head -n1)
+    # Try fallback asset name if nothing found
+    if [[ -z "$digest" && "$asset_name" != "invoiceninja.tar" ]]; then
+        digest=$(curl -s "$api_url" | jq -r '.assets[]? | select(.name=="invoiceninja.tar") | .digest // empty' 2>/dev/null | head -n1)
+        asset_name="invoiceninja.tar"
+    fi
+    # Strip prefix if present (sha256:...)
+    if [[ "$digest" == sha256:* ]]; then
+        digest="${digest#sha256:}"
+    fi
+    if [ -n "$digest" ]; then
+        log debug "[DN] Release digest found for $asset_name: $digest"
+        echo "$digest"
+    fi
+}
+
+# ---------------------------------------------------------------------
+# compute_sha256()
+# ---------------------------------------------------------------------
+compute_sha256() {
+    local file="$1"
+    sha256sum "$file" | awk '{print $1}'
+}
+
+# ---------------------------------------------------------------------
 # download_ninja()
 # ---------------------------------------------------------------------
 download_ninja() {
@@ -56,47 +90,161 @@ download_ninja() {
     local target_file
     local temp_file
 
-    temp_file=$(mktemp)
     cache_dir=$(resolve_cache_directory)
     target_file="$cache_dir/invoiceninja_v$version.tar.gz"
+    temp_file="${target_file}.part"
+    log info "[DN] Cache directory: $cache_dir"
+    # ensure cache dir exists and writable
+    if ! mkdir -p "$cache_dir" 2>/dev/null; then
+        log err "[DN] Cannot create cache directory: $cache_dir"
+        exit 1
+    fi
+    # try to enforce world-writable cache (hosted/shared use-cases)
+    if ! chmod 777 "$cache_dir" 2>/dev/null; then
+        if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            sudo chmod 777 "$cache_dir" 2>/dev/null || log warn "[DN] Could not chmod 777 on cache dir: $cache_dir"
+        else
+            log warn "[DN] Could not chmod 777 on cache dir: $cache_dir (no sudo/non-interactive)."
+        fi
+    fi
+    if [ ! -w "$cache_dir" ]; then
+        log err "[DN] Cache directory not writable: $cache_dir"
+        exit 1
+    fi
     local force="${NAMED_ARGS[force]:-false}"
     local debug_keep_tmp="${NAMED_ARGS[debug_keep_tmp]:-false}"
+    local checksum_file="${target_file}.sha256"
+    local expected_digest=""
+    if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" != true ]]; then
+        expected_digest="$(fetch_release_digest "$version" "$(basename "$target_file")")"
+    else
+        log warn "[DN] SHA check bypassed via --bypass-check-sha."
+    fi
+    if declare -f check_github_rate_limit >/dev/null; then
+        check_github_rate_limit
+    fi
+
+    # Quick write test to cache dir
+    if ! touch "$cache_dir/.inm_cache_test" 2>/dev/null; then
+        log err "[DN] Cache directory not writable (touch failed): $cache_dir"
+        exit 1
+    fi
+    rm -f "$cache_dir/.inm_cache_test" >/dev/null 2>&1
 
     if [ -f "$target_file" ]; then
         log debug "[DN] Using cached version for $version at $target_file"
-        dirname "$target_file"
-        return 0
+        if [ -f "$checksum_file" ]; then
+            local stored sum
+            stored="$(cut -d' ' -f1 "$checksum_file" 2>/dev/null)"
+            sum="$(compute_sha256 "$target_file")"
+            # Prefer expected_digest if available
+            local reference="${expected_digest:-$stored}"
+            if [[ -n "$reference" && "$reference" != "$sum" ]]; then
+                if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" == true ]]; then
+                    log warn "[DN] Cached checksum mismatch but bypass enabled; using cached file."
+                    dirname "$target_file"
+                    return 0
+                fi
+                log warn "[DN] Cached file checksum mismatch; re-downloading."
+                rm -f "$target_file" "$checksum_file"
+            else
+                log debug "[DN] Cached checksum verified."
+                dirname "$target_file"
+                return 0
+            fi
+        else
+            log debug "[DN] No checksum file; verifying cache now."
+            local sum
+            sum="$(compute_sha256 "$target_file")"
+            if [[ -n "$expected_digest" && "$expected_digest" != "$sum" ]]; then
+                if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" == true ]]; then
+                    log warn "[DN] Cached file does not match release digest but bypass enabled; using cached file."
+                    echo "$sum  $target_file" > "$checksum_file"
+                    dirname "$target_file"
+                    return 0
+                fi
+                log warn "[DN] Cached file does not match release digest; re-downloading."
+                rm -f "$target_file"
+            else
+                echo "$sum  $target_file" > "$checksum_file"
+                dirname "$target_file"
+                return 0
+            fi
+        fi
     fi
 
     log info "[DN] Downloading Invoice Ninja $version..."
 
-    if [ -n "$INM_GH_API_CREDENTIALS" ]; then
-        log debug "[DN] Using GitHub API credentials for download."
-        if [[ "$INM_GH_API_CREDENTIALS" =~ ^token: ]]; then
+    case "${INM_GH_API_CREDENTIALS:-}" in
+        ""|"0"|"false"|"no"|"none")
+            CURL_AUTH_FLAG=""
+            log debug "[DN] No GitHub credentials provided; continuing unauthenticated."
+            ;;
+        token:*)
+            log debug "[DN] Using GitHub token for download."
             CURL_AUTH_FLAG="-H 'Authorization: token ${INM_GH_API_CREDENTIALS#token:}'"
-        elif [[ "$INM_GH_API_CREDENTIALS" =~ ^[^:]*: ]]; then
+            ;;
+        *:*)
+            log debug "[DN] Using GitHub user/password for download."
             USERNAME_PASSWORD="${INM_GH_API_CREDENTIALS//:/ }"
             CURL_AUTH_FLAG="-u ${USERNAME_PASSWORD}"
-        else
+            ;;
+        *)
             log warn "[DN] Invalid INM_GH_API_CREDENTIALS format, skipping authentication"
             CURL_AUTH_FLAG=""
-        fi
-    fi
+            ;;
+    esac
 
     local download_url="https://github.com/invoiceninja/invoiceninja/releases/download/v$version/invoiceninja.tar.gz"
+    # Show progress when interactive or in debug; otherwise stay quiet
+    local curl_opts=(--fail --location --connect-timeout 20 --max-time 600 --retry 2 --show-error)
+    if [ -t 1 ] || [[ "${DEBUG:-false}" == true ]]; then
+        curl_opts+=(--progress-bar)
+        log info "[DN] Download in progress..."
+    else
+        curl_opts+=(--silent)
+        log info "[DN] Download in progress (quiet mode, use --debug to see progress)..."
+    fi
+    if [[ -n "$CURL_AUTH_FLAG" ]]; then
+        # shellcheck disable=SC2206
+        curl_opts+=($CURL_AUTH_FLAG)
+    fi
 
-    if curl -sL ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} -w "%{http_code}" "$download_url" -o "$temp_file" | grep -q "200"; then
+    log info "[DN] Downloading from: $download_url"
+    # Resume partial download if .part exists
+    local resume_flag=()
+    if [ -f "$temp_file" ]; then
+        resume_flag=(--continue-at -)
+        log info "[DN] Resuming download (partial file found)."
+    fi
+    if curl "${curl_opts[@]}" "${resume_flag[@]}" "$download_url" -o "$temp_file"; then
         if [ "$(wc -c < "$temp_file")" -gt 1048576 ]; then
             safe_move_or_copy_and_clean "$temp_file" "$target_file" move
+            # Store checksum for future verification
+            local sum_dl
+            sum_dl="$(compute_sha256 "$target_file")"
+            if [[ -n "$expected_digest" && "$expected_digest" != "$sum_dl" ]]; then
+                if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" == true ]]; then
+                    log warn "[DN] Downloaded file digest mismatch but bypass enabled; continuing."
+                else
+                    log err "[DN] Downloaded file digest mismatch (expected $expected_digest, got $sum_dl)."
+                    rm -f "$target_file" "$checksum_file"
+                    exit 1
+                fi
+            fi
+            echo "$sum_dl  $target_file" > "$checksum_file" 2>/dev/null || true
             log ok "[DN] Download successful."
         else
             log err "[DN] Download failed: File is too small. Please check network."
-            rm "$temp_file"
+            rm -f "$temp_file"
             exit 1
         fi
     else
-        log err "[DN] Download failed: HTTP-Statuscode not 200. Please check network. Maybe you need GitHub credentials."
-        rm "$temp_file"
+        local curl_rc=$?
+        log err "[DN] Download failed via curl (exit $curl_rc). Please check network. Maybe you need GitHub credentials or --ipv4/--proxy."
+        if [ -f "$temp_file" ]; then
+            log warn "[DN] Partial file kept for resume: $temp_file"
+        fi
         exit 1
     fi
 

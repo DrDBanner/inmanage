@@ -207,3 +207,82 @@ self_update() {
     return 1
   fi
 }
+
+# ---------------------------------------------------------------------
+# self_switch_mode()
+# Reinstall CLI in a different mode; optionally cleans old symlinks/dir.
+# ---------------------------------------------------------------------
+self_switch_mode() {
+  local old_root
+  old_root="$(cd "$(dirname "$0")" && pwd)"
+  local force_clean="${NAMED_ARGS[force_clean]:-${NAMED_ARGS[--force-clean-old]:-false}}"
+
+  log info "[SELF] Switching mode; current install: $old_root"
+  # Reuse install_self with provided args (may prompt if none given)
+  if [[ "${DRY_RUN:-false}" == true ]]; then
+    log info "[DRY-RUN] Would switch mode (call install_self) and clean old symlinks/dir=${force_clean}"
+    return 0
+  fi
+
+  install_self || {
+    log err "[SELF] Mode switch failed during install."
+    return 1
+  }
+
+  # Clean old symlinks that point to previous root
+  local links=("/usr/local/bin/inmanage" "/usr/local/bin/inm" "$HOME/.local/bin/inmanage" "$HOME/.local/bin/inm" "$(pwd)/inmanage" "$(pwd)/inm")
+  for link in "${links[@]}"; do
+    if [[ -L "$link" ]]; then
+      local target
+      target="$(readlink "$link")"
+      if [[ "$target" == "$old_root/inmanage.sh" || "$target" == "$old_root/./inmanage.sh" ]]; then
+        log info "[SELF] Removing old symlink: $link"
+        rm -f "$link"
+      fi
+    fi
+  done
+
+  if [[ "$force_clean" == true ]]; then
+    log info "[SELF] Removing old install at $old_root"
+    rm -rf "$old_root"
+  else
+    log info "[SELF] Old install left at $old_root (use --force-clean-old to remove)."
+  fi
+}
+
+# ---------------------------------------------------------------------
+# self_uninstall()
+# Removes symlinks pointing to this install and optionally deletes it.
+# ---------------------------------------------------------------------
+self_uninstall() {
+  local root
+  root="$(cd "$(dirname "$0")" && pwd)"
+  local force_delete="${NAMED_ARGS[force]:-${NAMED_ARGS[--force]:-false}}"
+
+  if [[ "${DRY_RUN:-false}" == true ]]; then
+    log info "[DRY-RUN] Would uninstall CLI at $root (force delete=$force_delete)"
+    return 0
+  fi
+
+  log info "[SELF] Uninstalling CLI from $root"
+  local links=("/usr/local/bin/inmanage" "/usr/local/bin/inm" "$HOME/.local/bin/inmanage" "$HOME/.local/bin/inm" "$(pwd)/inmanage" "$(pwd)/inm")
+  for link in "${links[@]}"; do
+    if [[ -L "$link" ]]; then
+      local target
+      target="$(readlink "$link")"
+      if [[ "$target" == "$root/inmanage.sh" || "$target" == "$root/./inmanage.sh" ]]; then
+        log info "[SELF] Removing symlink: $link"
+        rm -f "$link"
+      fi
+    fi
+  done
+
+  if [[ "$force_delete" == true ]]; then
+    log info "[SELF] Removing install directory: $root"
+    rm -rf "$root"
+  else
+    log info "[SELF] Install directory left at $root (use --force to delete)."
+  fi
+
+  log ok "[SELF] Uninstall steps completed."
+}
