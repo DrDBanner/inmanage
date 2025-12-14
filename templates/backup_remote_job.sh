@@ -48,9 +48,14 @@ set -euo pipefail
 #
 #   2. Make the script executable:
 #        chmod +x backup_remote_projectname.sh
+#      macOS tip: if using /bin/bash 3.x, install newer bash via Homebrew (brew install bash)
+#                 or run with /usr/bin/env bash explicitly.
 #
 #   3. Run manually:
 #        ./backup_remote_projectname.sh
+#      macOS: works out of the box with rsync/ssh; ensure Xcode Command Line Tools are installed.
+#      Linux: works on common distros; ensure rsync/ssh are installed.
+#      Windows 10/11: run under WSL (Ubuntu/Debian) or Git Bash; you need ssh/rsync available.
 #
 #   4. Or add to crontab for automated execution (e.g. every night at 03:30):
 #        30 3 * * * /path/to/backup_remote_projectname.sh >> /var/log/remote_backup.log 2>&1
@@ -106,10 +111,17 @@ REMOTE_PATHS=(
 #  "/etc/nginx/"
 #  "/var/www/html/"
 #  "/path/to/your/backup/location/your/want/to/copy/to/your/local/machine"
+#  "/path/to/project/.inmanage/_backups/" 
 )
 
 # Optional remote scripts to execute before/after backup
-# e.g. REMOTE_PRE_HOOK="/usr/local/bin/dump_mysql.sh"
+# Example pre-hook using inmanage on the remote to dump DB (only) into the backup dir:
+#   (Requires inmanage installed on the remote server.)
+#   Set directly:
+#     REMOTE_PRE_HOOK="inmanage core backup --db=true --storage=false --uploads=false --bundle=false --name=remote_db_only"
+#   And add the backup directory (e.g. /path/to/.inmanage/_backups/) to REMOTE_PATHS so the new DB dump is pulled:
+#     REMOTE_PATHS=( "/path/to/project/.inmanage/_backups/" )
+#   Use SSH key auth; ensure the command runs as the correct user (web user) if needed.
 REMOTE_PRE_HOOK=""             # Path to script/command to run before backup
 REMOTE_PRE_HOOK_USER=""        # Optional override of user
 REMOTE_PRE_HOOK_HOST=""        # Optional override of host

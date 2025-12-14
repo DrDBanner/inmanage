@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+
+# Prevent double sourcing
+[[ -n ${__SERVICE_SELF_INSTALL_LOADED:-} ]] && return
+__SERVICE_SELF_INSTALL_LOADED=1
+
+# ---------------------------------------------------------------------
+# install_self()
+# Handles self-install (global/local/project) and symlinks.
+# ---------------------------------------------------------------------
+install_self() {
+  if [[ "${DRY_RUN:-false}" == true ]]; then
+    log info "[DRY-RUN] Skipping self install."
+    return 0
+  fi
+  log debug "[SELF] Checking CLI registration …"
+
+  local default_bin="/usr/local/bin"
+  local local_bin="$HOME/.local/bin"
+  local source_script
+  source_script="$(realpath "$0")"
+
+  local install_dir="${NAMED_ARGS[target_dir]:-${NAMED_ARGS[--target-dir]:-}}"
+  local install_mode="${NAMED_ARGS[install_mode]:-${NAMED_ARGS[--install-mode]:-}}"
+  local run_user
+  run_user="${INM_ENFORCED_USER:-$(whoami)}"
+
+  # Ask early which user should run inmanage
+  run_user="$(prompt_var "RUN_AS_USER" "$run_user" "Which user should run inmanage commands? (cron/artisan will use this)")"
+  if ! id -u "$run_user" >/dev/null 2>&1; then
+      log warn "[SELF] User '$run_user' does not exist on this system. Using current user: $(whoami)"
+      run_user="$(whoami)"
+  fi
+  log info "[SELF] Will target run-user: $run_user"
+
+  # Derive a base_dir for project mode defaults
+  local base_dir="${INM_BASE_DIRECTORY:-$PWD}"
+  if declare -F ensure_trailing_slash >/dev/null; then
+      base_dir="$(ensure_trailing_slash "$base_dir")"
+  fi
+
+  if [[ -z "$install_mode" ]]; then
+    echo
+    echo "Select installation mode:"
+    echo "  [1] Full Install     – system-wide (requires root)"
+    echo "  [2] Local Install    – user context (~/.local/bin)"
+    echo "  [3] Project Install  – only for this project"
+    echo
+    prompt_var "INSTALL_MODE" "Mode (1/2/3)" "3"
+    # shellcheck disable=SC2153
+    install_mode="$INSTALL_MODE"
+  fi
+
+  if [[ -z "$install_dir" ]]; then
+    case "$install_mode" in
+      1) install_dir="/usr/local/share/inmanage" ;;
+      2) install_dir="$HOME/.inmanage_app" ;;
+      3) install_dir="${base_dir%/}/.inmanage_app" ;;
+      *) log err "[SELF] Invalid mode: $install_mode" ; return 1 ;;
+    esac
+  fi
+
+  # Allow override of the computed install directory per mode
+  install_dir="$(prompt_var "INSTALL_DIR" "$install_dir" "Install directory for the inmanage app? (ENTER for default)")"
+
+  if [[ "$(realpath "$install_dir")" == "$(realpath "$(dirname "$source_script")")" ]]; then
+      log err "[SELF] Source and target install directory are the same. Choose a different target."
+      return 1
+  fi
+
+  if [[ "$install_mode" == "3" && -f "$(pwd)/.inmanage/inmanage.sh" && "$install_dir" != "$(pwd)/.inmanage" ]]; then
+      log warn "[SELF] Legacy project install detected at .inmanage/; new target is $install_dir"
+      log warn "[SELF] Consider migrating after this install if you want to keep config/data separate."
+  fi
+
+  log debug "[SELF] Installing to: $install_dir"
+  mkdir -p "$install_dir" || { log err "[SELF] Cannot create $install_dir"; return 1; }
+
+  safe_move_or_copy_and_clean "$(dirname "$source_script")" "$install_dir" --mode=copy --clean || {
+    log err "[SELF] Failed to copy files"; return 1;
+  }
+
+  local bin_source="$install_dir/inmanage.sh"
+  local targets=("inmanage" "inm")
+
+  case "$install_mode" in
+    1)
+      log info "[SELF] Global install selected; ensure enforced user '$run_user' exists and has needed perms for cron/artisan."
+      for name in "${targets[@]}"; do
+        if [[ -w "$default_bin" ]]; then
+          ln -sf "$bin_source" "$default_bin/$name"
+        elif command -v sudo &>/dev/null; then
+          prompt_var "ROOTPW" "Root password needed to install system-wide" "" silent=true timeout=15 || return 1
+          echo "$ROOTPW" | sudo -S ln -sf "$bin_source" "$default_bin/$name"
+        else
+          log err "[SELF] Cannot write to $default_bin and sudo not available"
+          return 1
+        fi
+      done
+      log ok "[SELF] Installed globally in $default_bin"
+      ;;
+    2)
+      if [[ "$run_user" != "$(whoami)" ]]; then
+          log warn "[SELF] User-mode install uses current user $(whoami); enforced run-user '$run_user' must still exist for cron/artisan."
+      fi
+      mkdir -p "$local_bin"
+      for name in "${targets[@]}"; do
+        ln -sf "$bin_source" "$local_bin/$name"
+      done
+      log ok "[SELF] Installed locally in $local_bin"
+      if [[ ":$PATH:" != *":$local_bin:"* ]]; then
+        log warn "[SELF] Add '$local_bin' to your PATH."
+      fi
+      ;;
+    3)
+      log info "[INSTALL] Mode: Project Install (only for this project)"
+
+      local project_root="${base_dir%/}"
+      if [[ ! -d "$project_root" ]]; then
+          log info "[INSTALL] Creating project root: $project_root"
+          mkdir -p "$project_root" || {
+              log err "[INSTALL] Failed to create project root: $project_root"
+              exit 1
+          }
+      fi
+
+      local app_dir="$install_dir"
+      local source_path
+      source_path="$(realpath "$0")"
+
+      mkdir -p "$app_dir" || {
+      log err "[INSTALL] Could not create project app directory: $app_dir"
+          exit 1
+      }
+
+      safe_move_or_copy_and_clean "$(dirname "$source_path")" "$app_dir" || {
+          log err "[INSTALL] Could not deploy to project directory."
+          exit 1
+      }
+
+      local app_source="$app_dir/inmanage.sh"
+      local legacy_app_dir="${project_root}/.inmanage"
+
+      # Symlinks in project root (update legacy if pointing to .inmanage)
+      for name in "inmanage" "inm"; do
+          local link="${project_root}/${name}"
+          if [[ -L "$link" ]]; then
+              local target
+              target="$(readlink "$link")"
+              if [[ "$target" == ".inmanage/inmanage.sh" || "$target" == "$legacy_app_dir/inmanage.sh" ]]; then
+                  log info "[INSTALL] Updating legacy symlink $link -> $app_source"
+              fi
+          fi
+          ln -sf "$app_source" "$link" || log err "[INSTALL] Failed to create symlink: $link"
+      done
+
+      log ok "[INSTALL] Project install completed in: $app_dir"
+      log info "[INSTALL] Run './inmanage core install' (or '--provision') from project root."
+      log info "[INSTALL] Config stays in ${project_root}/.inmanage/.env.inmanage (keep it outside the app)."
+
+      echo
+      log info "Tip: You can install globally anytime via 'inmanage self install --install-mode=1'"
+
+      echo
+      prompt_var "CREATE_CONFIG_NOW" "Would you like to create a project config now? [y/N]" "n"
+      if [[ "${CREATE_CONFIG_NOW,,}" =~ ^(y|yes)$ ]]; then
+          if command -v create_project_config &>/dev/null; then
+              create_project_config "$app_dir"
+          else
+              log warn "[INSTALL] Function 'create_project_config' not found. Skipping config creation."
+          fi
+      fi
+
+      return 0
+      ;;
+  esac
+
+  echo
+  prompt_var "CREATE_CONFIG" "Create project config now? [y/N]" "n"
+  if [[ "$CREATE_CONFIG" =~ ^[YyJj]$ ]]; then
+    create_own_config
+  else
+    log info "[SELF] Tip: Run 'inmanage create_config' to get started."
+  fi
+}
