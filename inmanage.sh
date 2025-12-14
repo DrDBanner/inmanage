@@ -191,13 +191,7 @@ setup_environment
 if [ "$DEBUG" = true ]; then
     log debug "[BOOT] Loaded modules from $LIB_DIR (env,args,prompt,selection,fs,user,resolve,cli,config,checks,services)"
 fi
-# TODO: Reintroduce a working parse_options/help system so documented commands are callable.
-# TODO: Keep backward compatibility with legacy .env.inmanage layouts; add a clean migration path when keys/paths change.
-# TODO: Support optional system-wide installation (symlink/bin drop) with automatic fallback to per-user install when perms lack.
-# TODO: Detect existing configuration files (legacy/new/provision) on start, load/migrate them safely without breaking setups.
-# TODO: Wire up spawn_provision_file (or successor) as a real command or remove it.
-# TODO: Deduplicate cleanup_* implementations so only one code path remains and retention naming is consistent.
-# TODO: Align README command list with actual commands in the script after fixes.
+# TODO: Align README command list with actual commands if they drift again.
 
 function_caller() {
     case "$1" in

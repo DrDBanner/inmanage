@@ -24,20 +24,40 @@ load_env_file_raw() {
     }
     chmod 600 "$tmpfile"
 
-    awk '
-        /^[[:space:]]*(DB_|ELEVATED_|NINJA_|PDF_|INM_)[A-Z_]*=/ {
-            key = substr($0, 1, index($0, "=") - 1)
-            val = substr($0, index($0, "=") + 1)
-            sub(/#.*/, "", val)                             # remove inline comment
-            gsub(/^[ \t]+|[ \t]+$/, "", val)                # trim whitespace
-            gsub(/^"+|"+$/, "", val)                        # remove surrounding quotes
-            printf("export %s=\"%s\"\n", key, val)
-        }
-    ' "$file" > "$tmpfile" || {
-        log err "[ENV] Failed to parse env vars from $file"
-        rm -f "$tmpfile"
-        return 1
-    }
+    # Parse line by line to keep complex passwords/characters intact.
+    # - Skip blank and full-line comments
+    # - Respect quotes: if quoted, do NOT strip inline #
+    # - Unquoted values: strip inline comment and trim, then quote for export
+    while IFS= read -r line || [ -n "$line" ]; do
+        # skip empty
+        [[ -z "${line//[[:space:]]/}" ]] && continue
+        # skip full-line comments
+        local trimmed="${line#"${line%%[![:space:]]*}"}"
+        [[ "$trimmed" =~ ^# ]] && continue
+
+        if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+            local key val raw
+            key="${BASH_REMATCH[1]}"
+            raw="${BASH_REMATCH[2]}"
+            # filter relevant prefixes only
+            if [[ ! "$key" =~ ^(DB_|ELEVATED_|NINJA_|PDF_|INM_)[A-Z_]*$ ]]; then
+                continue
+            fi
+            # trim leading spaces from val
+            val="${raw#"${raw%%[![:space:]]*}"}"
+            # quoted values: strip only outer quotes, keep inner content as-is
+            if [[ "$val" =~ ^\"(.*)\"$ ]]; then
+                val="${BASH_REMATCH[1]}"
+            elif [[ "$val" =~ ^\'(.*)\'$ ]]; then
+                val="${BASH_REMATCH[1]}"
+            else
+                # unquoted: drop inline comment, trim trailing spaces
+                val="${val%%#*}"
+                val="${val%"${val##*[![:space:]]}"}"
+            fi
+            printf 'export %s=%q\n' "$key" "$val" >> "$tmpfile"
+        fi
+    done < "$file"
 
     log debug "[ENV] Parsed data: $(tr "\n" " " < "$tmpfile")"
 
