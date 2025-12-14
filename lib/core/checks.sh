@@ -441,13 +441,11 @@ check_provision_file() {
 # Determines curl auth flag based on INM_GH_API_CREDENTIALS.
 # ---------------------------------------------------------------------
 check_gh_credentials() {
-
-    load_env_file_raw "$INM_SELF_ENV_FILE"
-    
+    # Only set CURL_AUTH_FLAG for commands that actually download; keep quiet otherwise.
     if [[ -n "$INM_GH_API_CREDENTIALS" && "$INM_GH_API_CREDENTIALS" == *:* ]]; then
         # shellcheck disable=SC2034
         CURL_AUTH_FLAG="-u $INM_GH_API_CREDENTIALS"
-        log info "[GH] Authentication detected. Curl commands will include credentials."
+        log debug "[GH] Authentication detected. Curl commands will include credentials."
     else
         # shellcheck disable=SC2034
         CURL_AUTH_FLAG=""
