@@ -460,16 +460,16 @@ dispatch_command() {
         env)
             case "$action" in
                 show)
-                    call_with_named_args env_show
+                    call_with_named_args env_show "${extra[@]}"
                     ;;
                 get)
-                    call_with_named_args env_get "${extra[0]:-}"
+                    call_with_named_args env_get "${extra[@]}"
                     ;;
                 set)
-                    call_with_named_args env_set "${extra[0]:-}"
+                    call_with_named_args env_set "${extra[@]}"
                     ;;
                 unset)
-                    call_with_named_args env_unset "${extra[0]:-}"
+                    call_with_named_args env_unset "${extra[@]}"
                     ;;
                 *)
                     log err "[env] Unknown action: $action"
