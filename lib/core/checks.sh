@@ -262,6 +262,26 @@ check_envs() {
         exit 1
     }
 
+    # Expand placeholders in key paths after all loads (allows ${INM_BASE_DIRECTORY} style) without eval
+    expand_placeholders() {
+        local input="$1"
+        # replace ${VAR} by value of VAR from current environment
+        local output="$input"
+        while [[ "$output" =~ (\$\{([^}]+)\}) ]]; do
+            local full="${BASH_REMATCH[1]}"
+            local var="${BASH_REMATCH[2]}"
+            local val="${!var}"
+            output="${output//$full/$val}"
+        done
+        printf "%s" "$output"
+    }
+    if [[ "${INM_ENV_FILE:-}" == *\${* ]]; then
+        INM_ENV_FILE="$(expand_placeholders "$INM_ENV_FILE")"
+    fi
+    if [[ "${INM_ARTISAN_STRING:-}" == *\${* ]]; then
+        INM_ARTISAN_STRING="$(expand_placeholders "$INM_ARTISAN_STRING")"
+    fi
+
     # Normalize base dir to always carry a trailing slash for consistent concatenation.
     if declare -F ensure_trailing_slash >/dev/null && [ -n "${INM_BASE_DIRECTORY:-}" ]; then
         INM_BASE_DIRECTORY="$(ensure_trailing_slash "$INM_BASE_DIRECTORY")"

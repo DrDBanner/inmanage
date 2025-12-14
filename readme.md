@@ -142,7 +142,7 @@ Use `.env.provision` for prefilled config. Fields like `DB_ELEVATED_USERNAME` ar
 ## Cron Setup
 
 ```bash
-./inmanage.sh cron install -h
+inmanage cron install -h
 ```
 
 Manual alternative:
@@ -162,7 +162,7 @@ echo '* * * * * www-data /usr/bin/php /path/to/artisan schedule:run >> /dev/null
 Backup cron:
 
 ```bash
-0 2 * * * www-data /path/to/inmanage.sh core backup >> /dev/null 2>&1
+0 2 * * * www-data /usr/local/bin/inmanage core backup >> /dev/null 2>&1
 ```
 
 ---
@@ -238,13 +238,13 @@ Not needed anymore: symlinks `inmanage`/`inm` are created by the installer (syst
 
 ## Update the Script
 
-Update via sudo:
+Recommended: use the CLI self-update (respects your install mode):
 
 ```bash
-cd .inmanage && sudo -u www-data git pull
+inmanage self update
 ```
 
-Or:
+Fallback (git checkout installs):
 
 ```bash
 cd .inmanage && git pull
@@ -271,51 +271,35 @@ The script is designed to be run **from the destination machine**, so you can ea
 
 ## FAQ
 
-### Can I use this script if Invoice Ninja is already installed manually?
+### Can I use this if Ninja is already installed manually?
+Yes. Install inmanage, run a backup, dann `inmanage core update`. Es wird nichts kommentarlos gelöscht; alte Versionen werden gesichert.
 
-Yes. Install the script as described, run a backup, then run a forced update. Nothing is deleted or overwritten unexpectedly.
+### Was tun bei kaputter Installation oder Rechten?
+Das Skript zieht eine frische Version, migriert Config/DB und versucht Rechte zu reparieren. Notfalls alte Version aus dem Backup-Verzeichnis zurückrollen.
 
-### Can I use this script if my installation is broken or has permission issues?
+### Kann ich weiter über die GUI updaten?
+Ja. inmanage ist unabhängig, bietet aber versionierte Backups vor Updates.
 
-Yes. The script will move your old installation, pull a fresh version, and reapply the configuration. If needed, it will attempt to fix permission issues.
+### Automatisierte Backups?
+Ja. `inmanage cron install` richtet Artisan- und Backup-Crons ein (prüfe Benutzer/Pfade). Alternativ manuell per crontab/cron.d.
 
-### Can I continue using the Invoice Ninja GUI for updates?
+### Config falsch/alt?
+`.inmanage/.env.inmanage` anpassen oder löschen; wird bei Bedarf neu erstellt. Provisionierte Installs nutzen `.inmanage/.env.provision`.
 
-Yes. The script works independently. However, the script allows you to perform versioned backups before any update.
+### Docker?
+Im Container mit korrekten Mounts/Shell für `www-data` ausführen. Rechte im Projektpfad setzen (775/owned by root:www-data o. ä.).
 
-### Can I use this script for automated backups?
+### Löscht eine Clean-Install mein altes Setup?
+Nein. Alte App wird umbenannt, bevor eine neue abgelegt wird (nur mit Bestätigung/force).
 
-Yes. Add a cronjob `./inmanage.sh install_cronjob -h` to automate backups.
-
-### How do I install the Invoice Ninja artisan scheduler cronjob?
-
-Yes. Add a cronjob `./inmanage.sh install_cronjob -h` to do that.
-
-### What if my inmanage config is wrong or outdated?
-
-Edit or delete `.inmanage/.env.inmanage`. It will be regenerated if missing; otherwise, adjust values and re-run your command.
-
-### What about Docker and write permissions?
-
-Ensure the script runs inside the correct container with appropriate mount settings. Grant `www-data` a shell and file write permissions.
-
-### Does the script delete my old setup when I run a clean install?
-
-No. It renames the old folder before creating a new one. Manual confirmation is required.
-
-### How do I extract just the database SQL file from a backup?
-
-Go to your backup directory and run:
-
+### SQL aus Backup ziehen?
+Im Backup-Verzeichnis:
 ```bash
 tar -xf *YYYYMMDD*.tar.gz --wildcards '*.sql' --strip-components=6
 ```
 
-Replace `YYYYMMDD` with the desired date.
-
-### What about non-standard .env files?
-
-The `.env.provision` file is based on a standard `.env`, but includes elevated DB user credentials. These fields are removed after provisioning.
+### Nicht-standard .env?
+`.env.provision` basiert auf einer Standard-.env, enthält aber temporär Elevated-DB-User. Nach Provisionierung werden diese Felder entfernt.
 
 ## Docker Notes
 

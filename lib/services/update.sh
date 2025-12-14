@@ -23,6 +23,10 @@ run_update() {
     latest_version="${args[version]:-$(get_latest_version)}"
     log info "[UPD] Installed: ${installed_version:-<unknown>} | Latest: ${latest_version:-<unknown>}"
 
+    # expand any placeholders in INM_ENV_FILE before use (without eval)
+    if [[ "${INM_ENV_FILE:-}" == *\${* ]] && declare -F expand_placeholders >/dev/null; then
+        INM_ENV_FILE="$(expand_placeholders "$INM_ENV_FILE")"
+    fi
     if [ ! -f "$INM_ENV_FILE" ]; then
         log warn "[UPD] No .env file found – the system is not provisioned or broken."
         log debug "[UPD] Please check the .env file location at $INM_ENV_FILE"
