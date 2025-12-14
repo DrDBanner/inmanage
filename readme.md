@@ -59,7 +59,7 @@ Where things live & how to update:
 - User: `~/.inmanage_app` + symlinks `~/.local/bin/{inmanage,inm}`.
 - Project: `.inmanage_app` + config `.inmanage/` in the project tree.
 Default config: `.inmanage/.env.inmanage`. Do not install inside the `invoiceninja/` app folder.
-Update by rerunning the installer for your mode; it will git-pull and refresh symlinks. Use `--dry-run` on commands to see intended actions without changes.
+Update the CLI with `inmanage self update` (git checkout required), or rerun the installer for your mode; it will git-pull and refresh symlinks. Use `--dry-run` on commands to see intended actions without changes.
 
 ---
 
@@ -157,6 +157,18 @@ Backup cron:
 ```
 
 ---
+
+## Provisioned (unattended) install
+
+1) Prepare `.inmanage/.env.provision` with your settings (DB/app URL/user/etc.).
+2) From the Invoice Ninja base: `inmanage core install --provision`.
+3) Optional: `inmanage core health` to verify.
+
+## Updating Invoice Ninja & CLI
+
+- App update: `inmanage core update` (safe move/copy, keeps a backup directory).
+- CLI update: `inmanage self update` (git checkout) or rerun the installer for your mode.
+- Snappdf is installed/tested only if `PDF_GENERATOR=snappdf` in your app `.env`.
 
 ## Backup & Restore
 
