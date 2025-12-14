@@ -126,7 +126,7 @@ show_function_help() {
 # ---------------------------------------------------------------------
 parse_options() {
     # shellcheck disable=SC2034
-    NAMED_ARGS=()
+    declare -g -A NAMED_ARGS=()
     parse_named_args NAMED_ARGS "$@"
 
     SHOW_FUNCTION_HELP=false

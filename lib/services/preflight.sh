@@ -39,11 +39,13 @@ run_preflight() {
         esac
     }
 
-    local fast="${ARGS[fast]:-false}"
-    local skip_db="${ARGS[skip_db]:-false}"
-    local skip_github="${ARGS[skip_github]:-false}"
-    local skip_snappdf="${ARGS[skip_snappdf]:-false}"
-    local skip_web_php="${ARGS[skip_web_php]:-false}"
+    # prefer globally parsed NAMED_ARGS to survive re-exec user switches
+    local fast="${NAMED_ARGS[fast]:-${ARGS[fast]:-false}}"
+    local skip_db="${NAMED_ARGS[skip_db]:-${ARGS[skip_db]:-false}}"
+    local skip_github="${NAMED_ARGS[skip_github]:-${ARGS[skip_github]:-false}}"
+    local skip_snappdf="${NAMED_ARGS[skip_snappdf]:-${ARGS[skip_snappdf]:-false}}"
+    local skip_web_php="${NAMED_ARGS[skip_web_php]:-${ARGS[skip_web_php]:-false}}"
+    log debug "[PREFLIGHT] Flags resolved: fast=$fast skip_db=$skip_db skip_github=$skip_github skip_snappdf=$skip_snappdf skip_web_php=$skip_web_php"
 
     local ok=0 warn=0 err=0
     log info "[PREFLIGHT] Starting system checks (fast=$fast)"
@@ -123,6 +125,20 @@ run_preflight() {
     fi
     add_result INFO "SYS" "Host: ${host:-unknown} | OS: ${os:-unknown}"
     add_result INFO "SYS" "Kernel: ${kernel:-?} | Arch: ${arch:-?} | CPU cores: ${cpu:-?}"
+    # Container/virt hint
+    local virt=""
+    if command -v systemd-detect-virt >/dev/null 2>&1; then
+        virt=$(systemd-detect-virt --container 2>/dev/null)
+        [[ "$virt" == "none" ]] && virt=""
+    fi
+    if [ -z "$virt" ] && [ -f /proc/1/cgroup ]; then
+        grep -qiE 'docker|lxc|podman' /proc/1/cgroup && virt="container"
+    fi
+    if [ -n "$virt" ]; then
+        add_result INFO "SYS" "Container detected: ${virt}"
+    else
+        add_result INFO "SYS" "Container: not detected"
+    fi
     # Disk info for base dir
     if [ -n "${INM_BASE_DIRECTORY:-}" ] && df -h "$INM_BASE_DIRECTORY" >/dev/null 2>&1; then
         local diskline
@@ -331,18 +347,31 @@ run_preflight() {
 
     # ---- Network reachability for APP_URL ----
     if [ -n "${APP_URL:-}" ]; then
-        local host_only
-        host_only=$(echo "$APP_URL" | sed -E 's@https?://([^/]+).*@\1@')
+        local host_only scheme app_url_trim
+        app_url_trim="${APP_URL%/}"
+        host_only=$(echo "$app_url_trim" | sed -E 's@https?://([^/]+).*@\1@')
+        scheme=$(echo "$app_url_trim" | sed -E 's@^(https?)://.*@\1@')
         if [ -n "$host_only" ]; then
             if getent hosts "$host_only" >/dev/null 2>&1 || host "$host_only" >/dev/null 2>&1; then
                 add_result INFO "NET" "DNS resolves: $host_only"
             else
                 add_result WARN "NET" "DNS failed: $host_only"
             fi
-            if curl -Is --connect-timeout 5 "${APP_URL%/}" >/dev/null 2>&1; then
-                add_result INFO "NET" "APP_URL reachable: ${APP_URL%/}"
-            else
-                add_result WARN "NET" "APP_URL not reachable: ${APP_URL%/}"
+            local curl_ok=false
+            if curl -Is --connect-timeout 5 "$app_url_trim" >/dev/null 2>&1; then
+                add_result INFO "NET" "APP_URL reachable: $app_url_trim"
+                curl_ok=true
+            elif [ "$scheme" = "https" ] && curl -Is -k --connect-timeout 5 "$app_url_trim" >/dev/null 2>&1; then
+                add_result WARN "NET" "APP_URL reachable with -k (self-signed/invalid cert): $app_url_trim"
+                curl_ok=true
+            fi
+            if [ "$curl_ok" != true ]; then
+                local http_fallback="${app_url_trim/https:\/\//http://}"
+                if curl -Is --connect-timeout 5 "$http_fallback" >/dev/null 2>&1; then
+                    add_result WARN "NET" "HTTPS failed; reachable via HTTP: $http_fallback"
+                else
+                    add_result WARN "NET" "APP_URL not reachable: $app_url_trim"
+                fi
             fi
         fi
     fi
@@ -455,13 +484,24 @@ echo "USER_INI=" . get_cfg_var('user_ini.filename') . "\n";
 echo "MEMORY_LIMIT=" . ini_get('memory_limit') . "\n";
 echo "OPCACHE=" . ((extension_loaded('Zend OPcache') && ini_get('opcache.enable')) ? 'enabled' : 'disabled') . "\n";
 echo "INPUT_VARS=" . ini_get('max_input_vars') . "\n";
+echo "MAX_EXEC=" . ini_get('max_execution_time') . "\n";
+echo "POST_MAX=" . ini_get('post_max_size') . "\n";
+echo "UPLOAD_MAX=" . ini_get('upload_max_filesize') . "\n";
 PHP
 
     local web_php_out=""
     if command -v curl >/dev/null 2>&1; then
-        web_php_out=$(curl -s "${url%/}/$tmpfile")
+        web_php_out=$(curl -s "${url%/}/$tmpfile" 2>/dev/null)
+        # If https fails, try -k; if still empty and was https, try http fallback.
+        if [ -z "$web_php_out" ] && echo "$url" | grep -q '^https://'; then
+            web_php_out=$(curl -s -k "${url%/}/$tmpfile" 2>/dev/null)
+            if [ -z "$web_php_out" ]; then
+                local http_fallback="${url/https:\/\//http://}"
+                web_php_out=$(curl -s "${http_fallback%/}/$tmpfile" 2>/dev/null)
+            fi
+        fi
     elif command -v wget >/dev/null 2>&1; then
-        web_php_out=$(wget -qO- "${url%/}/$tmpfile")
+        web_php_out=$(wget -qO- "${url%/}/$tmpfile" 2>/dev/null)
     fi
 
     rm -f "$webroot/$tmpfile"
@@ -471,20 +511,44 @@ PHP
         return 1
     fi
 
-    local web_php_ver web_php_ini web_mem web_opc web_input
+    local web_php_ver web_php_ini web_mem web_opc web_input web_max_exec web_post_max web_upload_max
     web_php_ver=$(echo "$web_php_out" | grep '^PHP_VERSION=' | cut -d= -f2)
     web_php_ini=$(echo "$web_php_out" | grep '^PHP_INI=' | cut -d= -f2)
     web_user_ini=$(echo "$web_php_out" | grep '^USER_INI=' | cut -d= -f2)
     web_mem=$(echo "$web_php_out" | grep '^MEMORY_LIMIT=' | cut -d= -f2)
     web_opc=$(echo "$web_php_out" | grep '^OPCACHE=' | cut -d= -f2)
     web_input=$(echo "$web_php_out" | grep '^INPUT_VARS=' | cut -d= -f2)
+    web_max_exec=$(echo "$web_php_out" | grep '^MAX_EXEC=' | cut -d= -f2)
+    web_post_max=$(echo "$web_php_out" | grep '^POST_MAX=' | cut -d= -f2)
+    web_upload_max=$(echo "$web_php_out" | grep '^UPLOAD_MAX=' | cut -d= -f2)
 
     ${add_fn:-log info} INFO "WEBPHP" "Version $web_php_ver (CLI ${php_cli_version:-unknown})"
     ${add_fn:-log info} INFO "WEBPHP" "php.ini $web_php_ini"
     ${add_fn:-log info} INFO "WEBPHP" ".user.ini ${web_user_ini:-<none>}"
-    ${add_fn:-log info} INFO "WEBPHP" "memory_limit $web_mem"
-    ${add_fn:-log info} INFO "WEBPHP" "OPcache $web_opc"
-    ${add_fn:-log info} INFO "WEBPHP" "max_input_vars $web_input"
+
+    # Evaluate memory_limit / input_vars similar to CLI thresholds
+    if [ -n "$web_mem" ] && { [ "$web_mem" = "-1" ] || [ "${web_mem%%M}" -ge 256 ] 2>/dev/null; }; then
+        ${add_fn:-log info} INFO "WEBPHP" "memory_limit $web_mem"
+    else
+        ${add_fn:-log warn} WARN "WEBPHP" "memory_limit too low (${web_mem:-unset})"
+    fi
+
+    if [ -n "$web_input" ] && [ "$web_input" -ge 2000 ] 2>/dev/null; then
+        ${add_fn:-log info} INFO "WEBPHP" "max_input_vars $web_input"
+    else
+        ${add_fn:-log warn} WARN "WEBPHP" "max_input_vars <2000 (${web_input:-unset})"
+    fi
+
+    if [ "$web_opc" = "enabled" ]; then
+        ${add_fn:-log info} INFO "WEBPHP" "OPcache enabled"
+    else
+        ${add_fn:-log warn} WARN "WEBPHP" "OPcache disabled"
+    fi
+
+    # Additional useful limits
+    [[ -n "$web_max_exec" ]] && ${add_fn:-log info} INFO "WEBPHP" "max_execution_time ${web_max_exec}"
+    [[ -n "$web_post_max" ]] && ${add_fn:-log info} INFO "WEBPHP" "post_max_size ${web_post_max}"
+    [[ -n "$web_upload_max" ]] && ${add_fn:-log info} INFO "WEBPHP" "upload_max_filesize ${web_upload_max}"
 
     if [ -n "$php_cli_version" ] && [ -n "$web_php_ver" ] && [ "$php_cli_version" != "$web_php_ver" ]; then
         ${add_fn:-log warn} WARN "WEBPHP" "CLI $php_cli_version differs from Web $web_php_ver"

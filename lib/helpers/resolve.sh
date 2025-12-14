@@ -83,6 +83,8 @@ resolve_env_paths() {
             if [ -f "$INM_ENV_FILE" ]; then
                 log debug "[RES] Using .env from existing project config, skipping discovery."
                 return 0
+            else
+                log warn "[RES] .env not found at $INM_ENV_FILE (from config); continuing discovery."
             fi
         fi
     fi
@@ -104,9 +106,16 @@ resolve_env_paths() {
     done
 
     if [ ${#candidates[@]} -eq 0 ]; then
-        if [ -z "${INM_ENV_FILE:-}" ] || [ ! -f "$INM_ENV_FILE" ]; then
-            log err "[RES] Could not find a usable .env file. Please specify --ninja-location=…"
-            exit 1
+        if [ -z "${INM_ENV_FILE:-}" ]; then
+            # Last resort: derive from base/install if set, otherwise warn only
+            if [ -n "${INM_BASE_DIRECTORY:-}" ] && [ -n "${INM_INSTALLATION_DIRECTORY:-}" ]; then
+                INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
+                INM_ENV_FILE="${INM_INSTALLATION_PATH%/}/.env"
+                log warn "[RES] No .env found; deriving path: $INM_ENV_FILE"
+            else
+                log warn "[RES] Could not find a usable .env file. Please specify --ninja-location=…"
+                return 0
+            fi
         fi
     elif [ ${#candidates[@]} -eq 1 ]; then
         INM_ENV_FILE="${candidates[0]}"
