@@ -200,6 +200,15 @@ show_versions_summary() {
 # do_snappdf()
 # ---------------------------------------------------------------------
 do_snappdf() {
+    local pdf_gen="${PDF_GENERATOR:-}"
+    if [ -z "$pdf_gen" ] && [ -f "${INM_ENV_FILE:-}" ]; then
+        pdf_gen=$(grep -E '^PDF_GENERATOR=' "$INM_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
+    fi
+    if [[ "${pdf_gen,,}" != "snappdf" ]]; then
+        log info "[SNAP] PDF_GENERATOR is not 'snappdf'; skipping snappdf install."
+        return 0
+    fi
+
     log info "[SNAP] Installing/Updating Snappdf (headless Chromium) …"
 
     local snappdf_dir="${INM_INSTALLATION_PATH%/}/vendor/beganovich/snappdf"

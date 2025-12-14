@@ -313,23 +313,31 @@ run_preflight() {
         add_result WARN "CRON" "artisan schedule missing; run core cron install"
     fi
 
-    # ---- Snappdf presence ----
+    # ---- Snappdf presence (only if enabled) ----
     if [ "$fast" != true ] && [ "$skip_snappdf" != true ]; then
-        local snap_dir="${INM_INSTALLATION_PATH%/}/vendor/beganovich/snappdf"
-        local tmp_pdf="${INM_CACHE_LOCAL_DIRECTORY:-/tmp}/snappdf_probe.pdf"
-        if [ ! -d "$snap_dir" ]; then
-            add_result WARN "SNAPPDF" "Not present; run do_snappdf/update"
-        elif [ -z "${INM_INSTALLATION_PATH:-}" ] || [ ! -f "${INM_INSTALLATION_PATH%/}/vendor/autoload.php" ]; then
-            add_result WARN "SNAPPDF" "Vendor/autoload missing; cannot test snappdf"
+        local pdf_gen="${PDF_GENERATOR:-}"
+        if [ -z "$pdf_gen" ] && [ -f "${INM_ENV_FILE:-}" ]; then
+            pdf_gen=$(grep -E '^PDF_GENERATOR=' "$INM_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
+        fi
+        if [[ "${pdf_gen,,}" != "snappdf" ]]; then
+            add_result INFO "SNAPPDF" "PDF_GENERATOR not 'snappdf' (current: ${pdf_gen:-unset}); check skipped"
         else
-            # Try to render a tiny PDF
-            local php_probe
-            php_probe=$(php -r "require '${INM_INSTALLATION_PATH%/}/vendor/autoload.php'; if (class_exists('Beganovich\\Snappdf\\Snappdf')) { try { \$pdf=new Beganovich\\Snappdf\\Snappdf; \$pdf->generate('<h1>probe</h1>', '${tmp_pdf}'); echo 'OK'; } catch (Throwable \$e) { echo 'ERR:' . \$e->getMessage(); } }" 2>/dev/null || true)
-            if echo "$php_probe" | grep -q "^OK" && [ -s "$tmp_pdf" ]; then
-                add_result OK "SNAPPDF" "Render ok (${tmp_pdf})"
-                rm -f "$tmp_pdf"
+            local snap_dir="${INM_INSTALLATION_PATH%/}/vendor/beganovich/snappdf"
+            local tmp_pdf="${INM_CACHE_LOCAL_DIRECTORY:-/tmp}/snappdf_probe.pdf"
+            if [ ! -d "$snap_dir" ]; then
+                add_result WARN "SNAPPDF" "Not present; run do_snappdf/update"
+            elif [ -z "${INM_INSTALLATION_PATH:-}" ] || [ ! -f "${INM_INSTALLATION_PATH%/}/vendor/autoload.php" ]; then
+                add_result WARN "SNAPPDF" "Vendor/autoload missing; cannot test snappdf"
             else
-                add_result WARN "SNAPPDF" "Render failed (${php_probe:-unknown}); run do_snappdf/update"
+                # Try to render a tiny PDF
+                local php_probe
+                php_probe=$(php -r "require '${INM_INSTALLATION_PATH%/}/vendor/autoload.php'; if (class_exists('Beganovich\\Snappdf\\Snappdf')) { try { \$pdf=new Beganovich\\Snappdf\\Snappdf; \$pdf->generate('<h1>probe</h1>', '${tmp_pdf}'); echo 'OK'; } catch (Throwable \$e) { echo 'ERR:' . \$e->getMessage(); } }" 2>/dev/null || true)
+                if echo "$php_probe" | grep -q "^OK" && [ -s "$tmp_pdf" ]; then
+                    add_result OK "SNAPPDF" "Render ok (${tmp_pdf})"
+                    rm -f "$tmp_pdf"
+                else
+                    add_result WARN "SNAPPDF" "Render failed (${php_probe:-unknown}); run do_snappdf/update"
+                fi
             fi
         fi
     fi

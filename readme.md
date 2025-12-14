@@ -2,17 +2,17 @@
 
 **Backup. Update. Install. Done.**
 
-inmanage steuert deine self-hosted Invoice Ninja Installation per CLI: installieren, updaten, sichern, wiederherstellen, Cron setzen – alles skriptbar. Ruf es als `inmanage <context> <action> [--options]` auf (Legacy `./inmanage.sh` geht auch).
+Manage your self-hosted Invoice Ninja via CLI: install, update, back up, restore, set cron – fully scriptable. Call it as `inmanage <context> <action> [--options]` (legacy `./inmanage.sh` also works).
 
 ## Highlights
 
-- Installation (Wizard oder Provision) getrennt von der GUI.
-- Backups für DB und Files (Storage/Uploads) mit Aufbewahrung & Restore.
-- Updates mit Rollback (alte Versionen werden gesichert).
-- Snappdf-Setup inklusive.
-- Cron-Installer für Artisan/Backups.
-- Debug-Logging mit `--debug`, Dry-Run mit `--dry-run`.
-- Backups mit Checksums (SHA-256) für Integrität.
+- Install (wizard or provision) separate from the GUI.
+- Backups for DB and files (storage/uploads) with retention & restore.
+- Updates with rollback (old versions kept).
+- Snappdf setup included.
+- Cron installer for artisan/backups.
+- Debug logging with `--debug`, dry-run with `--dry-run`.
+- Backups with checksums (SHA-256) for integrity.
 
 
 ---
