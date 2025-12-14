@@ -324,8 +324,8 @@ run_preflight() {
         else
             # Try to render a tiny PDF
             local php_probe
-            php_probe=$(php -r "require '${INM_INSTALLATION_PATH%/}/vendor/autoload.php'; if (class_exists('Beganovich\\Snappdf\\Snappdf')) { try { (new Beganovich\\Snappdf\\Snappdf)->generate('<h1>probe</h1>', '${tmp_pdf}'); echo 'OK'; } catch (Throwable \$e) { echo 'ERR:' . \$e->getMessage(); } }" 2>/dev/null || true)
-            if echo "$php_probe" | grep -q "^OK"; then
+            php_probe=$(php -r "require '${INM_INSTALLATION_PATH%/}/vendor/autoload.php'; if (class_exists('Beganovich\\Snappdf\\Snappdf')) { try { \$pdf=new Beganovich\\Snappdf\\Snappdf; \$pdf->generate('<h1>probe</h1>', '${tmp_pdf}'); echo 'OK'; } catch (Throwable \$e) { echo 'ERR:' . \$e->getMessage(); } }" 2>/dev/null || true)
+            if echo "$php_probe" | grep -q "^OK" && [ -s "$tmp_pdf" ]; then
                 add_result OK "SNAPPDF" "Render ok (${tmp_pdf})"
                 rm -f "$tmp_pdf"
             else
