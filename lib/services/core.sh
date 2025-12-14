@@ -94,22 +94,28 @@ download_ninja() {
     target_file="$cache_dir/invoiceninja_v$version.tar.gz"
     temp_file="${target_file}.part"
     log info "[DN] Cache directory: $cache_dir"
-    # ensure cache dir exists and writable
+    # ensure cache dir exists and writable (prefer restricted perms; no sudo)
     if ! mkdir -p "$cache_dir" 2>/dev/null; then
         log err "[DN] Cannot create cache directory: $cache_dir"
         exit 1
     fi
-    # try to enforce world-writable cache (hosted/shared use-cases)
-    if ! chmod 777 "$cache_dir" 2>/dev/null; then
-        if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-            sudo chmod 777 "$cache_dir" 2>/dev/null || log warn "[DN] Could not chmod 777 on cache dir: $cache_dir"
-        else
-            log warn "[DN] Could not chmod 777 on cache dir: $cache_dir (no sudo/non-interactive)."
-        fi
-    fi
+    chmod u+rwX,g+rwX,o-rwx "$cache_dir" 2>/dev/null || log warn "[DN] Could not tighten cache permissions (trying to continue)"
     if [ ! -w "$cache_dir" ]; then
-        log err "[DN] Cache directory not writable: $cache_dir"
-        exit 1
+        # fallback to local cache within PWD if global not writable
+        local fallback="${PWD}/.cache/inmanage"
+        log warn "[DN] Cache directory not writable: $cache_dir. Falling back to local cache: $fallback"
+        if ! mkdir -p "$fallback" 2>/dev/null; then
+            log err "[DN] Cannot create local fallback cache: $fallback"
+            exit 1
+        fi
+        chmod u+rwX,g+rwX,o-rwx "$fallback" 2>/dev/null || true
+        if [ ! -w "$fallback" ]; then
+            log err "[DN] Neither global nor local cache is writable."
+            exit 1
+        fi
+        cache_dir="$fallback"
+        target_file="$cache_dir/invoiceninja_v$version.tar.gz"
+        temp_file="${target_file}.part"
     fi
     local force="${NAMED_ARGS[force]:-false}"
     local debug_keep_tmp="${NAMED_ARGS[debug_keep_tmp]:-false}"
