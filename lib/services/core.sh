@@ -203,7 +203,7 @@ download_ninja() {
 
     local download_url="https://github.com/invoiceninja/invoiceninja/releases/download/v$version/invoiceninja.tar.gz"
     # Show progress when interactive or in debug; otherwise stay quiet
-    local curl_opts=(--fail --location --connect-timeout 20 --max-time 600 --retry 2 --show-error)
+    local curl_opts=(--fail --location --connect-timeout 20 --max-time 600 --show-error)
     if [ -t 1 ] || [[ "${DEBUG:-false}" == true ]]; then
         curl_opts+=(--progress-bar)
         log info "[DN] Download in progress..."
@@ -247,7 +247,11 @@ download_ninja() {
         fi
     else
         local curl_rc=$?
-        log err "[DN] Download failed via curl (exit $curl_rc). Please check network. Maybe you need GitHub credentials or --ipv4/--proxy."
+        if [ "$curl_rc" -eq 28 ]; then
+            log err "[DN] Download timed out (curl exit 28). Re-run to resume from partial."
+        else
+            log err "[DN] Download failed via curl (exit $curl_rc). Please check network. Maybe you need GitHub credentials or --ipv4/--proxy."
+        fi
         if [ -f "$temp_file" ]; then
             log warn "[DN] Partial file kept for resume: $temp_file"
         fi
