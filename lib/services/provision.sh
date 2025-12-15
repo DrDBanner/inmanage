@@ -12,6 +12,7 @@ __SERVICE_PROVISION_LOADED=1
 # key:generate, migrate/seed, cache warm, create admin, cron/backup hints.
 # Goal: centralize provision helpers, support migration backup hints, avoid duplication.
 # Current helpers: spawn_provision_file, provision_post_install (migration restore happens in install flow).
+# Pending: ensure DB creation via elevated creds when DB is absent, tighten dry-run hooks.
 
 # ---------------------------------------------------------------------
 # spawn_provision_file()
@@ -19,6 +20,10 @@ __SERVICE_PROVISION_LOADED=1
 # Supports: --provision-file, --backup-file, --latest-backup, --force.
 # ---------------------------------------------------------------------
 spawn_provision_file() {
+    if [[ "${DRY_RUN:-false}" == true ]]; then
+        log info "[DRY-RUN] Would write provision file; skipping."
+        return 0
+    fi
     local target="${NAMED_ARGS[provision_file]:-${INM_PROVISION_ENV_FILE:-.inmanage/.env.provision}}"
     local force="${NAMED_ARGS[force]:-${force_update:-false}}"
     local migration_backup="${NAMED_ARGS[backup_file]:-${NAMED_ARGS[backup-file]:-${INM_MIGRATION_BACKUP:-}}}"
@@ -100,4 +105,60 @@ provision_post_install() {
         return 1
     fi
     return 0
+}
+
+# ---------------------------------------------------------------------
+# provision_prepare_database()
+# Ensures target DB exists before migration/restore in provisioned installs.
+# Uses DB_ELEVATED_* if present; prompts otherwise.
+# ---------------------------------------------------------------------
+provision_prepare_database() {
+    if [[ "${DRY_RUN:-false}" == true ]]; then
+        log info "[DRY-RUN] Would prepare/create database; skipping."
+        return 0
+    fi
+    # Load app env to hydrate DB_* vars if not already set
+    if [ -f "${INM_ENV_FILE:-}" ]; then
+        set -a
+        # shellcheck disable=SC1090
+        . "${INM_ENV_FILE}"
+        set +a
+    fi
+
+    local db_name="${DB_DATABASE:-}"
+    local db_user="${DB_USERNAME:-}"
+    local db_pass="${DB_PASSWORD:-}"
+    local db_host="${DB_HOST:-localhost}"
+    local db_port="${DB_PORT:-3306}"
+    local elev_user="${DB_ELEVATED_USERNAME:-}"
+    local elev_pass="${DB_ELEVATED_PASSWORD:-}"
+
+    if [[ -z "$db_name" || -z "$db_user" ]]; then
+        log warn "[PROV] Missing DB_DATABASE/DB_USERNAME; cannot auto-create DB."
+        return 0
+    fi
+
+    # Check if DB already exists
+    local check_cmd=("mysql" "-h" "$db_host" "-P" "$db_port" "-u" "${db_user}")
+    [[ -n "$db_pass" ]] && check_cmd+=("-p${db_pass}")
+    if "${check_cmd[@]}" -N -B -e "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='${db_name}'" >/dev/null 2>&1; then
+        log debug "[PROV] Database '${db_name}' already exists."
+        return 0
+    fi
+
+    # Need elevated creds to create DB/user
+    if [[ -z "$elev_user" ]]; then
+        elev_user=$(prompt_var "DB_ELEVATED_USERNAME" "root" "[PROV] Elevated MySQL user to create DB/user:" false 60) || return 1
+    fi
+    if [[ -z "$elev_pass" ]]; then
+        elev_pass=$(prompt_var "DB_ELEVATED_PASSWORD" "" "[PROV] Password for ${elev_user} (leave blank if none):" true 60) || return 1
+    fi
+
+    log info "[PROV] Creating database '${db_name}' and user '${db_user}' (host ${db_host}:${db_port})"
+    NAMED_ARGS[db_host]="$db_host"
+    NAMED_ARGS[db_port]="$db_port"
+    NAMED_ARGS[db_name]="$db_name"
+    NAMED_ARGS[db_user]="$db_user"
+    NAMED_ARGS[db_pass]="$db_pass"
+    create_database "$elev_user" "$elev_pass"
 }

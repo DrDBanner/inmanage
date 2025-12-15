@@ -268,6 +268,10 @@ download_ninja() {
 # cleanup_cache()
 # ---------------------------------------------------------------------
 cleanup_cache() {
+    if [[ "${DRY_RUN:-false}" == true ]]; then
+        log info "[DRY-RUN] Skipping cache cleanup."
+        return 0
+    fi
     log info "[CC] Cleaning up old cached Invoice Ninja versions..."
 
     local cache_dir

@@ -290,37 +290,18 @@ resolve_global_cache_dir() {
     log debug "[GC] Resolving global cache directory..."
 
     if [ -w "$home_parent" ]; then
-        # Try user/home cache first
         if [ -w "$home_cache" ] || (mkdir -p "$home_cache" 2>/dev/null && chmod 755 "$home_cache" 2>/dev/null); then
             INM_GLOBAL_CACHE="$home_cache"
             log ok "[GC] Using cache: $INM_GLOBAL_CACHE"
             return 0
         fi
 
-        # Try sudo non-interactively; if that fails, decide whether to prompt or fall back
-        if command -v sudo >/dev/null 2>&1; then
+        if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
             local cache_owner="${INM_ENFORCED_USER:-$USER}"
             if sudo_prepare_cache_dir "$home_cache" "$cache_owner" 755 false; then
                 INM_GLOBAL_CACHE="$home_cache"
                 log ok "[GC] Using cache via sudo: $INM_GLOBAL_CACHE"
                 return 0
-            fi
-            # Only prompt if sudo non-interactive succeeds; otherwise avoid trapping for password
-            if sudo -n true 2>/dev/null; then
-                log note "[GC] Home cache not writable: $home_cache. Attempt sudo to fix perms/create? (y/N)"
-                if prompt_confirm "GC_SUDO_CREATE_HOME" "no" "Create/fix cache at $home_cache with sudo?" false 20; then
-                    if sudo_prepare_cache_dir "$home_cache" "$cache_owner" 755 true; then
-                        INM_GLOBAL_CACHE="$home_cache"
-                        log ok "[GC] Using cache via sudo: $INM_GLOBAL_CACHE"
-                        return 0
-                    else
-                        log warn "[GC] Sudo creation failed for $home_cache."
-                    fi
-                else
-                    log warn "[GC] Sudo creation declined for $home_cache."
-                fi
-            else
-                log warn "[GC] Home cache not writable and sudo needs password; rerun with --override_enforced_user=true or pre-create $home_cache."
             fi
         fi
     else
@@ -343,41 +324,23 @@ check_global_cache_permissions() {
     dir="$(expand_path_vars "${INM_CACHE_GLOBAL_DIRECTORY:-$HOME/.cache/inmanage}")"
     local parent_dir
     parent_dir="$(dirname "$dir")"
-    if [ ! -w "$parent_dir" ]; then
-        log warn "[CACHE] Parent not writable for cache: $parent_dir (perms/owner). Set INM_CACHE_GLOBAL_DIRECTORY to accessible path or use --override_enforced_user=true."
-        return 1
-    fi
     if [ -w "$dir" ]; then
         return 0
     fi
-    if [ ! -e "$dir" ]; then
-        log note "[CACHE] Global cache missing or not accessible (perms?): $dir. Attempting to create/fix."
-    else
-        log warn "[CACHE] Global cache is not writable: $dir"
+
+    if [ -w "$parent_dir" ]; then
+        if mkdir -p "$dir" 2>/dev/null && chmod 755 "$dir" 2>/dev/null; then
+            return 0
+        fi
     fi
-    if mkdir -p "$dir" 2>/dev/null && chmod 755 "$dir" 2>/dev/null; then
-        return 0
-    fi
-    if command -v sudo >/dev/null 2>&1; then
+
+    if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
         local cache_owner="${INM_ENFORCED_USER:-$USER}"
         if sudo_prepare_cache_dir "$dir" "$cache_owner" 755 false; then
             return 0
         fi
-        if sudo -n true 2>/dev/null; then
-            log note "[CACHE] Cache not writable: $dir. Attempt sudo to fix perms/create? (y/N)"
-            if prompt_confirm "CACHE_SUDO_CREATE" "no" "Create/fix cache at $dir with sudo?" false 20; then
-                if sudo_prepare_cache_dir "$dir" "$cache_owner" 755 true; then
-                    return 0
-                fi
-                log warn "[CACHE] sudo creation failed for $dir; falling back to local cache"
-            else
-                log warn "[CACHE] Sudo creation declined for $dir; will use local cache."
-            fi
-        else
-            log warn "[CACHE] Cache not writable and sudo needs password; rerun with --override_enforced_user=true or pre-create $dir."
-        fi
-    else
-        log warn "[CACHE] Cannot create global cache (no perms). Will use local cache."
     fi
+
+    log warn "[CACHE] Global cache unavailable at $dir; using local cache."
     return 1
 }

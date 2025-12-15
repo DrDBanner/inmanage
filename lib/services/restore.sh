@@ -23,7 +23,11 @@ run_restore() {
     local purge="${ARGS[purge_db]:-${ARGS[purge]:-true}}"
     local simulate="${DRY_RUN:-false}"
 
-    mkdir -p "$INM_BACKUP_DIRECTORY" 2>/dev/null || true
+    if [[ "$simulate" != true ]]; then
+        mkdir -p "$INM_BACKUP_DIRECTORY" 2>/dev/null || true
+    else
+        log info "[DRY-RUN] Would ensure backup directory exists: $INM_BACKUP_DIRECTORY"
+    fi
 
     if [[ -z "$bundle" ]]; then
         local candidates=()
@@ -66,6 +70,11 @@ run_restore() {
     log info "[RESTORE] Target app dir: $target"
     log debug "[RESTORE] include_app=${include_app} force=${force} prebackup=${prebackup} purge=${purge}"
     [[ "$simulate" == true ]] && log info "[DRY-RUN] Restore simulation only (no changes)."
+
+    if [[ "$simulate" == true ]]; then
+        log info "[DRY-RUN] Would restore from: $bundle -> $target (include_app=$include_app, purge_db=$purge, prebackup=$prebackup)"
+        return 0
+    fi
 
     local tmpdir
     tmpdir="$(mktemp -d)"

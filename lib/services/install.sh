@@ -140,6 +140,7 @@ run_installation() {
 
     # shellcheck disable=SC2059
     if [ "$mode" = "Provisioned" ]; then
+        provision_prepare_database || return 1
         # Migration-aware: if INM_MIGRATION_BACKUP is set, attempt restore after deploy
         if [ -n "${INM_MIGRATION_BACKUP:-}" ]; then
             log info "[PROV] Migration backup detected: ${INM_MIGRATION_BACKUP}"

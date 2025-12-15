@@ -461,10 +461,10 @@ check_gh_credentials() {
     if [[ -n "$INM_GH_API_CREDENTIALS" && "$INM_GH_API_CREDENTIALS" == *:* ]]; then
         # shellcheck disable=SC2034
         CURL_AUTH_FLAG="-u $INM_GH_API_CREDENTIALS"
-        log debug "[GH] Authentication detected. Curl commands will include credentials."
+        log debug "[GH] Credentials detected. Curl commands will include them."
     else
         # shellcheck disable=SC2034
         CURL_AUTH_FLAG=""
-        log debug "[GH] No GH credentials set. If connection fails, try to add credentials."
+        log debug "[GH] No credentials set. If curl connections fail, try to add credentials."
     fi
 }
