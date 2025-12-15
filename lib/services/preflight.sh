@@ -114,18 +114,21 @@ run_preflight() {
     fi
 
     # ---- System details ----
-    local host os kernel arch cpu
+    local host os kernel arch cpu memtotal=""
     host="$(hostname 2>/dev/null || true)"
     kernel="$(uname -r 2>/dev/null || true)"
     arch="$(uname -m 2>/dev/null || true)"
     cpu="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || true)"
+    if [ -f /proc/meminfo ]; then
+        memtotal=$(awk '/MemTotal/ {printf "%.1fG", $2/1024/1024}' /proc/meminfo 2>/dev/null)
+    fi
     if [ -f /etc/os-release ]; then
         # shellcheck disable=SC1091
         . /etc/os-release
         os="${PRETTY_NAME:-$NAME $VERSION_ID}"
     fi
     add_result INFO "SYS" "Host: ${host:-unknown} | OS: ${os:-unknown}"
-    add_result INFO "SYS" "Kernel: ${kernel:-?} | Arch: ${arch:-?} | CPU cores: ${cpu:-?}"
+    add_result INFO "SYS" "Kernel: ${kernel:-?} | Arch: ${arch:-?} | CPU cores: ${cpu:-?} | RAM: ${memtotal:-unknown}"
     # Container/virt hint
     local virt=""
     if command -v systemd-detect-virt >/dev/null 2>&1; then
@@ -143,8 +146,8 @@ run_preflight() {
     # Disk info for base dir
     if [ -n "${INM_BASE_DIRECTORY:-}" ] && df -h "$INM_BASE_DIRECTORY" >/dev/null 2>&1; then
         local diskline
-        diskline=$(df -h "$INM_BASE_DIRECTORY" | awk 'NR==2{print $1" used:"$3"/"$2" avail:"$4" mount:"$6}')
-        add_result INFO "FS" "Disk @base: $diskline"
+        diskline=$(df -hP "$INM_BASE_DIRECTORY" | awk 'NR==2{print "avail:"$4" used:"$3" mount:"$6}')
+        add_result INFO "FS" "$diskline (Disk @base)"
     fi
 
     # Hydrate APP_URL from app .env if missing
@@ -153,16 +156,17 @@ run_preflight() {
         app_url=$(grep -E '^APP_URL=' "$INM_ENV_FILE" 2>/dev/null | head -n1 | sed -E 's/^APP_URL=//' | tr -d '"'\'' ')
         if [ -n "$app_url" ]; then
             APP_URL="$app_url"
-            add_result INFO "WEBPHP" "APP_URL from app env: ${APP_URL%/}"
         fi
     fi
 
     # ---- Webserver detection ----
+    local web_is_apache=false
     if pgrep -x apache2 >/dev/null 2>&1 || pgrep -x apache24 >/dev/null 2>&1 || pgrep -x httpd >/dev/null 2>&1; then
         local av
         av=$(apache2 -v 2>/dev/null | awk -F: '/Server version/{print $2}' | xargs)
         [ -z "$av" ] && av=$(httpd -v 2>/dev/null | awk -F: '/Server version/{print $2}' | xargs)
         add_result INFO "WEB" "Apache${av:+ $av}"
+        web_is_apache=true
     elif pgrep -x nginx >/dev/null 2>&1; then
         local nv
         nv=$(nginx -v 2>&1 | cut -d: -f2- | xargs)
@@ -173,6 +177,15 @@ run_preflight() {
     # php-fpm presence
     if pgrep -f "php-fpm" >/dev/null 2>&1; then
         add_result INFO "WEB" "php-fpm running"
+    fi
+    # Apache-specific: htaccess presence in public
+    if [ "$web_is_apache" = true ]; then
+        local public_htaccess="${INM_INSTALLATION_PATH%/}/public/.htaccess"
+        if [ -f "$public_htaccess" ]; then
+            add_result OK "WEB" ".htaccess present in public"
+        else
+            add_result WARN "WEB" ".htaccess missing in public (Apache detected)"
+        fi
     fi
     # Ports 80/443 listening (best-effort)
     if command -v ss >/dev/null 2>&1; then
@@ -283,20 +296,96 @@ run_preflight() {
     fi
 
     # ---- Filesystem perms ----
-    for dir in "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_PATH" "$INM_BACKUP_DIRECTORY" "$INM_CACHE_LOCAL_DIRECTORY"; do
+    # Base, app, backup directories
+    local fs_items=(
+        "$INM_BASE_DIRECTORY|Base dir"
+        "$INM_INSTALLATION_PATH|App dir"
+        "$INM_BACKUP_DIRECTORY|Backup dir"
+    )
+    for entry in "${fs_items[@]}"; do
+        local dir label
+        dir="${entry%%|*}"
+        label="${entry#*|}"
         [ -z "$dir" ] && continue
         mkdir -p "$dir" 2>/dev/null
+        local sz=""
+        if [ -d "$dir" ] && command -v du >/dev/null 2>&1; then
+            sz=$(du -sh "$dir" 2>/dev/null | awk '{print $1}')
+        fi
         if touch "$dir/.inm_perm_test" 2>/dev/null; then
             rm -f "$dir/.inm_perm_test"
-            add_result OK "FS" "Writable: $dir"
+            local detail="Writable: $dir ($label)"
+            [[ -n "$sz" ]] && detail+=" (Size: $sz)"
+            add_result OK "FS" "$detail"
         else
-            local hint="Not writable: $dir"
+            local hint="$label not writable: $dir"
             if [ -n "${ENFORCED_USER:-}" ]; then
                 hint+=" (hint: chown -R ${ENFORCED_USER}:${ENFORCED_USER} \"$dir\" or run 'inmanage core health --fix-permissions')"
             fi
             add_result ERR "FS" "$hint"
         fi
     done
+
+    # Cache directories first
+    if [ -n "${INM_CACHE_GLOBAL_DIRECTORY:-}" ]; then
+        local gc_path gc_parent
+        gc_path="$(expand_path_vars "$INM_CACHE_GLOBAL_DIRECTORY")"
+        gc_parent="$(dirname "$gc_path")"
+        mkdir -p "$gc_parent" 2>/dev/null || true
+        if mkdir -p "$gc_path" 2>/dev/null && touch "$gc_path/.inm_perm_test" 2>/dev/null; then
+            rm -f "$gc_path/.inm_perm_test"
+            add_result OK "FS" "Writable: $gc_path (Cache global)"
+        else
+            local hint="Not writable: $gc_path (Cache global)"
+            if [ -n "${ENFORCED_USER:-}" ]; then
+                hint+=" (hint: chown -R ${ENFORCED_USER}:${ENFORCED_USER} \"$gc_path\" or use --override_enforced_user=true to adjust perms)"
+            fi
+            hint+=" or set INM_CACHE_GLOBAL_DIRECTORY to an accessible path."
+            add_result WARN "FS" "$hint"
+        fi
+    fi
+    if [ -n "${INM_CACHE_LOCAL_DIRECTORY:-}" ]; then
+        local lc_path
+        lc_path="$(expand_path_vars "$INM_CACHE_LOCAL_DIRECTORY")"
+        mkdir -p "$lc_path" 2>/dev/null
+        if touch "$lc_path/.inm_perm_test" 2>/dev/null; then
+            rm -f "$lc_path/.inm_perm_test"
+            add_result OK "FS" "Writable: $lc_path (Cache local)"
+        else
+            local hint="Not writable: $lc_path (Cache local)"
+            if [ -n "${ENFORCED_USER:-}" ]; then
+                hint+=" (hint: chown -R ${ENFORCED_USER}:${ENFORCED_USER} \"$lc_path\" or use --override_enforced_user=true to adjust perms)"
+            fi
+            add_result WARN "FS" "$hint"
+        fi
+    fi
+
+    # ---- ENV (CLI / APP) ----
+    read_env_value() {
+        local file="$1" key="$2"
+        grep -E "^${key}=" "$file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ' || true
+    }
+
+    if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_SELF_ENV_FILE" ]; then
+        local cli_keys=(INM_ENFORCED_USER INM_BASE_DIRECTORY INM_INSTALLATION_DIRECTORY INM_BACKUP_DIRECTORY INM_CACHE_GLOBAL_DIRECTORY INM_CACHE_LOCAL_DIRECTORY)
+        for k in "${cli_keys[@]}"; do
+            local v="${!k}"
+            add_result INFO "ENVCLI" "${k}=${v:-<unset>}"
+        done
+    else
+        add_result WARN "ENVCLI" "Not installed (yet) – CLI env missing (${INM_SELF_ENV_FILE:-unset})"
+    fi
+
+    if [ -n "${INM_ENV_FILE:-}" ] && [ -f "$INM_ENV_FILE" ]; then
+        local app_keys=(APP_NAME APP_URL PDF_GENERATOR APP_DEBUG)
+        for k in "${app_keys[@]}"; do
+            local v
+            v=$(read_env_value "$INM_ENV_FILE" "$k")
+            add_result INFO "ENVAPP" "${k}=${v:-<unset>}"
+        done
+    else
+        add_result WARN "ENVAPP" "Not installed (yet) – app .env missing (${INM_ENV_FILE:-unset})"
+    fi
 
     # Try to hydrate DB vars from app .env if missing
     if [ -z "${DB_HOST:-}" ] && [ -f "${INM_ENV_FILE:-}" ]; then
@@ -400,19 +489,6 @@ run_preflight() {
         fi
     fi
 
-    # ---- Cache directories ----
-    local cache_info_done=false
-    if [ -n "${INM_CACHE_GLOBAL_DIRECTORY:-}" ] && [ -d "$INM_CACHE_GLOBAL_DIRECTORY" ] && [ -w "$INM_CACHE_GLOBAL_DIRECTORY" ]; then
-        add_result INFO "FS" "Cache (global) writable: $INM_CACHE_GLOBAL_DIRECTORY"
-        cache_info_done=true
-    elif [ -n "${INM_CACHE_LOCAL_DIRECTORY:-}" ] && [ -d "$INM_CACHE_LOCAL_DIRECTORY" ] && [ -w "$INM_CACHE_LOCAL_DIRECTORY" ]; then
-        add_result INFO "FS" "Cache (local) writable: $INM_CACHE_LOCAL_DIRECTORY"
-        cache_info_done=true
-    fi
-    if [ "$cache_info_done" = false ]; then
-        add_result WARN "FS" "No writable cache found (global: ${INM_CACHE_GLOBAL_DIRECTORY:-unset}, local: ${INM_CACHE_LOCAL_DIRECTORY:-unset})"
-    fi
-
     # ---- Network reachability for APP_URL ----
     if [ -n "${APP_URL:-}" ]; then
         local host_only scheme app_url_trim
@@ -448,19 +524,41 @@ run_preflight() {
     log info "[PREFLIGHT] Completed: OK=$ok WARN=$warn ERR=$err"
     log info "[PREFLIGHT] Aggregate status: $([ "$err" -gt 0 ] && echo ERR || { [ "$warn" -gt 0 ] && echo WARN || echo OK; })"
     printf "\n"
-    local groups=("CLI" "SYS" "CMD" "NET" "WEB" "PHP" "EXT" "WEBPHP" "FS" "DB" "CRON" "SNAPPDF")
+    local groups=("SYS" "FS" "ENVCLI" "ENVAPP" "CLI" "CMD" "WEB" "PHP" "WEBPHP" "EXT" "NET" "DB" "CRON" "SNAPPDF")
     local idx g printed
     local green="${GREEN:-}"
     local yellow="${YELLOW:-}"
     local red="${RED:-}"
     local reset="${RESET:-}"
 
+    # Human-friendly labels
+    format_check_label() {
+        case "$1" in
+            CLI) echo "CLI" ;;
+            SYS) echo "System" ;;
+            ENVCLI) echo "ENV CLI" ;;
+            ENVAPP) echo "ENV APP" ;;
+            CMD) echo "CLI Commands" ;;
+            NET) echo "Network" ;;
+            WEB) echo "Web Server" ;;
+            PHP) echo "PHP CLI" ;;
+            EXT) echo "PHP Extensions" ;;
+            WEBPHP) echo "PHP Web" ;;
+            FS) echo "Filesystem" ;;
+            DB) echo "Database" ;;
+            CRON) echo "Cron" ;;
+            SNAPPDF) echo "Snappdf" ;;
+            *) echo "$1" ;;
+        esac
+    }
+
     # Global column widths (stable across groups)
-    local max_check=5 max_status=6
+    local max_check=7 max_status=6
     for idx in "${!PF_STATUS[@]}"; do
-        local check="${PF_CHECK[$idx]}"
+        local check_label
+        check_label="$(format_check_label "${PF_CHECK[$idx]}")"
         local status="${PF_STATUS[$idx]}"
-        (( ${#check}  > max_check )) && max_check=${#check}
+        (( ${#check_label}  > max_check )) && max_check=${#check_label}
         (( ${#status} > max_status )) && max_status=${#status}
     done
 
@@ -470,13 +568,11 @@ run_preflight() {
         for idx in "${!PF_STATUS[@]}"; do
             if [[ "${PF_CHECK[$idx]}" == "$g" ]]; then
                 if [ "$printed" = false ]; then
-                    local header="$g"
-                    [[ "$g" == "CLI" && -n "${SCRIPT_NAME:-}" ]] && header="${SCRIPT_NAME} CLI"
-                    [[ "$g" == "WEB" ]] && header="WEB Server"
-                    [[ "$g" == "WEBPHP" ]] && header="WEB PHP"
-                    printf "%s\n" "== $header =="
-                    printf "%-*s | %-*s | %s\n" "$max_status" "Status" "$max_check" "Check" "Detail"
-                    printf "%s\n" "----------------------------------------"
+                    local header
+                    header="$(format_check_label "$g")"
+                    printf "%b\n" "${BLUE}== $header ==${reset}"
+                    printf "%-*s | %-*s | %s\n" "$max_check" "Subject" "$max_status" "Status" "Detail"
+                    printf "%s\n" "$(printf '%*s' $((max_check+max_status+12)) '' | tr ' ' '-')"
                     printed=true
                 fi
                 local raw_status="${PF_STATUS[$idx]}"
@@ -487,7 +583,10 @@ run_preflight() {
                     ERR)  status_field="${red}${status_field}${reset}";;
                 esac
                 local row
-                row=$(printf "%s | %-*s | %s" "$status_field" "$max_check" "${PF_CHECK[$idx]}" "${PF_DETAIL[$idx]}")
+                local check_label
+                check_label="$(format_check_label "${PF_CHECK[$idx]}")"
+                printf -v check_field "%-*s" "$max_check" "$check_label"
+                row=$(printf "%s | %s | %s" "$check_field" "$status_field" "${PF_DETAIL[$idx]}")
                 printf "%b\n" "$row"
             fi
         done
@@ -517,7 +616,6 @@ check_web_php() {
 
     if [ -n "${APP_URL:-}" ]; then
         url="${APP_URL%/}"
-        ${add_fn:-log info} INFO "WEBPHP" "Using APP_URL: $url"
     fi
 
     # Try to infer APP_URL from nginx if still unset
@@ -529,7 +627,6 @@ check_web_php() {
             host=$(grep -E "server_name" "$cfg" | grep -v default_server | head -n1 | awk '{print $2}' | tr -d ';')
             if [ -n "$host" ]; then
                 url="http://${host%/}"
-                ${add_fn:-log info} INFO "WEBPHP" "Derived APP_URL from nginx: $url"
             fi
         fi
     fi
@@ -540,9 +637,13 @@ check_web_php() {
         ${add_fn:-log warn} WARN "WEBPHP" "APP_URL not set; probing via $url"
     fi
 
-    if [ ! -d "$webroot" ] || [ ! -w "$webroot" ]; then
-        ${add_fn:-log warn} WARN "WEBPHP" "Cannot write probe to webroot: $webroot"
+    # Ensure webroot exists and is writable before probing
+    mkdir -p "$webroot" 2>/dev/null || true
+    if ! touch "$webroot/.inm_probe_touch" 2>/dev/null; then
+        ${add_fn:-log warn} WARN "WEBPHP" "Cannot write probe to webroot: $webroot (user: $(whoami)). Hint: chown -R ${ENFORCED_USER:-www-data}:${ENFORCED_USER:-www-data} \"$webroot\" or run with --override_enforced_user=true to adjust perms."
         return 1
+    else
+        rm -f "$webroot/.inm_probe_touch" 2>/dev/null || true
     fi
 
     cat > "$webroot/$tmpfile" <<'PHP'
