@@ -9,64 +9,75 @@ __CORE_CLI_LOADED=1
 # Basic help overview with available commands.
 # ---------------------------------------------------------------------
 show_help() {
-    cat <<'EOF'
+    cat <<EOF
 Usage:
   ./inmanage.sh <context> <action> [--options]
-  ./inmanage.sh <legacy_command> [--options]   # still supported for compatibility
+  ./inmanage.sh <legacy_command> [--options]   # legacy still works
 
-Contexts & Actions:
-  core:
-    install          Install Invoice Ninja
-                     Options: --clean --provision --version=<v>
-    update           Update Invoice Ninja
-                     Options: --version=<v> --force --cache-only
-                     Notes: If PDF_GENERATOR=snappdf, Chromium is fetched unless SNAPPDF_CHROMIUM_PATH is set.
-    backup           Full backup (db+files)
-                     Options: --compress=tar.gz|zip|false --name=<label> --include-app=true|false --extra-paths=a,b
-    restore          Restore from bundle
-                     Options: --file=<bundle> --force --include-app=true|false --target=<path>
-    health (info)    Preflight/health check
-                     Options: --fast=true --skip-db=true --skip-github=true --skip-snappdf=true --skip-web-php=true
-    version          Show installed/latest/cached version
-    prune            Prune versions/backups/cache
-                     Options: --override_enforced_user=true (skip enforced user switch for this run)
-    prune-versions   Prune old versions only
-    prune-backups    Prune old backups only
-    clear-cache      Clear app cache (artisan)
-    cron install     Install cronjobs
-    provision spawn  Create provision file for unattended install
-    env set|get|unset|show  Manage application .env entries
+core:
+  install                     Install Invoice Ninja
+                              --clean --provision --version=<v>
 
-  db:
-    backup           DB-only backup
-                     Options: --compress=tar.gz|zip|false --name=<label>
-    restore          Import/restore DB
-                     Options: --file=<path> --force --purge=true
-    create           Create database/user
-    prune            Prune old DB backups (alias to core prune-backups)
+  update                      Update Invoice Ninja
+                              --version=<v> --force --cache-only
 
-  files:
-    backup           Files-only backup (storage/uploads)
-                     Options: --compress=tar.gz|zip|false --name=<label>
-    prune            Cleanup old file backups
+  backup                      Full backup (db+files)
+                              --compress=tar.gz|zip|false --name=<label> --include-app=true|false --extra-paths=a,b
 
-  self:
-    install          Install this CLI (global/local/project)
-    update           Update this CLI (git pull if checkout)
-    switch-mode      Reinstall in a different mode (optionally clean old)
-    uninstall        Remove CLI symlinks; optionally delete install dir
-  env:
-    set|get|unset|show  Manage application .env keys
+  restore                     Restore from bundle
+                              --file=<bundle> --force --include-app=true|false --target=<path>
 
-Legacy commands (kept, not recommended):
+  health (info)               Preflight/health check
+                              --fast --skip-db --skip-github --skip-snappdf --skip-web-php
+
+  version                     Show installed/latest/cached version
+
+  prune                       Prune versions/backups/cache
+                              --override-enforced-user (skip enforced switch)
+  prune-versions              Prune old versions only
+  prune-backups               Prune old backups only
+
+  clear-cache                 Clear app cache (artisan)
+
+  cron install                Install cronjobs
+
+  provision spawn             Create provision file
+                              --provision-file=path --backup-file=path | --latest-backup
+
+db:
+  backup                      DB-only backup
+                              --compress=tar.gz|zip|false --name=<label>
+  restore                     Import/restore DB
+                              --file=<path> --force --purge=true
+  create                      Create database/user
+  prune                       Prune old DB backups (alias core prune-backups)
+
+files:
+  backup                      Files-only backup (storage/uploads)
+                              --compress=tar.gz|zip|false --name=<label>
+  prune                       Cleanup old file backups
+
+self:
+  install                     Install this CLI (global/local/project)
+  update                      Update this CLI (git pull if checkout)
+  switch-mode                 Reinstall in another mode (optionally clean old)
+  uninstall                   Remove CLI symlinks; optionally delete install dir
+
+env:
+  set|get|unset|show          Manage .env keys for app or cli
+                              Examples:
+                                env set app APP_URL https://example.test
+                                env get cli INM_BASE_DIRECTORY
+
+Legacy commands:
   Supported for compatibility; not listed here.
 
 Global Flags:
-  --force       Force operations where applicable
-  --debug       Enable debug logging
-  --dry-run     Log intended actions, skip execution
-  --override_enforced_user=true  Skip enforced user switch for this run (stay as current user)
-  -h, --help    Show this help
+  --force                        Force operations where applicable
+  --debug                        Enable debug logging
+  --dry-run                      Log intended actions, skip execution
+  --override-enforced-user       Skip enforced user switch for this run
+  -h, --help                     Show this help
 
 Args:
   Pass options as --key=value.
@@ -90,8 +101,9 @@ core actions:
   restore --file=... [--force] [--include-app=true|false] [--target=...]
   health | info
   version
-  prune [--override_enforced_user=true] | prune_versions | prune_backups
+  prune [--override-enforced-user] | prune_versions | prune_backups
   clear-cache
+  provision spawn [--provision-file=path] [--backup-file=path|--latest-backup]
 EOF
             ;;
         db)
@@ -119,7 +131,13 @@ self actions:
 EOF
             ;;
         env)
-            echo "env actions: set KEY=VAL | get KEY | unset KEY | show"
+            cat <<'EOF'
+env actions:
+  set <app|cli> KEY VALUE
+  get <app|cli> KEY
+  unset <app|cli> KEY
+  show [app|cli]
+EOF
             ;;
         *)
             show_help
@@ -184,6 +202,9 @@ parse_options() {
                 DRY_RUN=true
                 ;;
             --override_enforced_user)
+                NAMED_ARGS[override_enforced_user]=true
+                ;;
+            --override-enforced-user)
                 NAMED_ARGS[override_enforced_user]=true
                 ;;
             *)
