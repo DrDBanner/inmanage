@@ -37,14 +37,15 @@ prompt_var() {
         use_color=true
     fi
 
-    local prompt
+    local prompt_raw prompt_rendered
     if [[ "$use_color" == true ]]; then
-        prompt="${GREEN}\n${text}\n${RESET}${GRAY}[$default]${RESET} > "
+        prompt_raw="${GREEN}\n${text}\n${RESET}${GRAY}[${default}]${RESET} > "
     else
-        prompt=$'\n'"${text}"$'\n'"[${default}] > "
+        prompt_raw=$'\n'"${text}"$'\n'"[${default}] > "
     fi
+    printf -v prompt_rendered "%b" "$prompt_raw"
 
-    local read_opts=(-r -t "$timeout" -p "$prompt")
+    local read_opts=(-r -t "$timeout" -p "$prompt_rendered")
     [[ "$silent" == "true" ]] && read_opts+=(-s)
 
     # shellcheck disable=SC2162
@@ -52,7 +53,11 @@ prompt_var() {
         echo "${input:-$default}"
     else
         echo   # newline
-        log err "[PROMPT] Timeout after ${timeout}s – no input received"
+        if [[ $? -eq 142 ]]; then
+            log err "[PROMPT] Timeout after ${timeout}s – no input received"
+        else
+            log err "[PROMPT] Input aborted"
+        fi
         return 1
     fi
 }

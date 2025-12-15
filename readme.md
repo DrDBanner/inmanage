@@ -170,7 +170,7 @@ Backup cron:
 ## Provisioned (unattended) install
 
 1) Generate a template from your current config: `inmanage core provision spawn` (or `inm core provision spawn`). This writes `.inmanage/.env.provision`.
-2) Edit `.inmanage/.env.provision` for the target host (DB creds, APP_URL, etc.). If you copy an existing config, keep mandatory keys like `INM_ENFORCED_USER`, `INM_ENFORCED_SHELL`, `INM_BASE_DIRECTORY`, `INM_INSTALLATION_DIRECTORY`, `INM_ENV_FILE`, and backup/cache paths intact.
+2) Edit `.inmanage/.env.provision` for the target host (DB creds, APP_URL, etc.). If you copy an existing config, keep mandatory keys like `INM_ENFORCED_USER`, `INM_ENFORCED_SHELL`, `INM_BASE_DIRECTORY`, `INM_INSTALLATION_DIRECTORY`, `INM_ENV_FILE`, and backup/cache paths intact. If you need to stay as your current sudo-capable user for a command (e.g. to let non-interactive sudo succeed for cache creation), call with `--override_enforced_user=true` instead of switching to `INM_ENFORCED_USER` for that invocation.
 3) From the Invoice Ninja base: `inmanage core install --provision`.
 4) Optional: `inmanage core health` to verify.
 

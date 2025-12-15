@@ -269,7 +269,7 @@ resolve_global_cache_dir() {
         return 0
     fi
 
-    # Try sudo non-interactively first, then prompt if needed
+    # Try sudo non-interactively; if that fails, offer interactive sudo prompt
     if command -v sudo >/dev/null 2>&1; then
         if sudo -n true 2>/dev/null && timeout 20 sudo mkdir -p "$home_cache" && timeout 20 sudo chown "$USER" "$home_cache" && timeout 20 sudo chmod 750 "$home_cache"; then
             INM_GLOBAL_CACHE="$home_cache"

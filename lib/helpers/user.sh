@@ -15,6 +15,12 @@ enforce_user_switch() {
 
     local providedargs=("$@")
 
+    # Allow bypassing enforced user for this invocation
+    if [[ "${args[override_enforced_user]:-}" == "true" || "${INM_OVERRIDE_ENFORCED_USER:-}" == "true" ]]; then
+        log info "[ENV] override_enforced_user set; skipping enforced user switch."
+        return 0
+    fi
+
     local current_user
     current_user="$(whoami)"
 

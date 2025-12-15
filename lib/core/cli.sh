@@ -29,6 +29,7 @@ Contexts & Actions:
                      Options: --fast=true --skip-db=true --skip-github=true --skip-snappdf=true --skip-web-php=true
     version          Show installed/latest/cached version
     prune            Prune versions/backups/cache
+                     Options: --override_enforced_user=true (skip enforced user switch for this run)
     prune-versions   Prune old versions only
     prune-backups    Prune old backups only
     clear-cache      Clear app cache (artisan)
@@ -64,6 +65,7 @@ Global Flags:
   --force       Force operations where applicable
   --debug       Enable debug logging
   --dry-run     Log intended actions, skip execution
+  --override_enforced_user=true  Skip enforced user switch for this run (stay as current user)
   -h, --help    Show this help
 
 Args:
@@ -88,7 +90,7 @@ core actions:
   restore --file=... [--force] [--include-app=true|false] [--target=...]
   health | info
   version
-  prune | prune_versions | prune_backups
+  prune [--override_enforced_user=true] | prune_versions | prune_backups
   clear-cache
 EOF
             ;;
@@ -181,6 +183,9 @@ parse_options() {
                 # shellcheck disable=SC2034
                 DRY_RUN=true
                 ;;
+            --override_enforced_user)
+                NAMED_ARGS[override_enforced_user]=true
+                ;;
             *)
                 # Only treat as positional if it is not an option (starts with -- or -)
                 if [[ "$1" != --* && "$1" != -* ]]; then
@@ -199,5 +204,11 @@ parse_options() {
     elif [[ ${#positionals[@]} -eq 1 ]]; then
         # Legacy single-word command
         LEGACY_CMD="${positionals[0]}"
+    fi
+
+    # Export well-known flags so downstream helpers see them
+    export DEBUG DRY_RUN force_update
+    if [[ "${NAMED_ARGS[override_enforced_user]:-}" == "true" ]]; then
+        export INM_OVERRIDE_ENFORCED_USER=true
     fi
 }

@@ -13,7 +13,7 @@ install_self() {
     log info "[DRY-RUN] Skipping self install."
     return 0
   fi
-  log debug "[SELF] Checking CLI registration …"
+  log debug "[SELF] Checking CLI installation …"
 
   local default_bin="/usr/local/bin"
   local local_bin="$HOME/.local/bin"
@@ -42,11 +42,11 @@ install_self() {
   if [[ -z "$install_mode" ]]; then
     echo
     echo "Select installation mode:"
-    echo "  [1] Full Install     – system-wide (requires root)"
+    echo "  [1] Full Install     – system-wide (requires sudo/root)"
     echo "  [2] Local Install    – user context (~/.local/bin)"
-    echo "  [3] Project Install  – only for this project"
+    echo "  [3] Project Install  – once per project (least convenient)"
     echo
-    prompt_var "INSTALL_MODE" "Mode (1/2/3)" "3"
+    prompt_var "INSTALL_MODE" "Mode (1/2/3)" "2"
     # shellcheck disable=SC2153
     install_mode="$INSTALL_MODE"
   fi
