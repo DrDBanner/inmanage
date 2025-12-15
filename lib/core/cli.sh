@@ -19,7 +19,8 @@ Contexts & Actions:
     install          Install Invoice Ninja
                      Options: --clean --provision --version=<v>
     update           Update Invoice Ninja
-                     Options: --version=<v> --force
+                     Options: --version=<v> --force --cache-only
+                     Notes: If PDF_GENERATOR=snappdf, Chromium is fetched unless SNAPPDF_CHROMIUM_PATH is set.
     backup           Full backup (db+files)
                      Options: --compress=tar.gz|zip|false --name=<label> --include-app=true|false --extra-paths=a,b
     restore          Restore from bundle
@@ -81,7 +82,7 @@ show_context_help() {
             cat <<'EOF'
 core actions:
   install [--clean] [--provision] [--version=v]
-  update [--version=v] [--force]
+  update [--version=v] [--force] [--cache-only]
   backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false] [--extra-paths=a,b]
          # Default: single full bundle (app+env+db). Flags narrow scope or add extras.
   restore --file=... [--force] [--include-app=true|false] [--target=...]

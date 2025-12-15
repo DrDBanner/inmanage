@@ -16,6 +16,7 @@ run_update() {
     local -A args=()
     parse_named_args args "$@"
 
+    local cache_only="${args[cache_only]:-${args[cache-only]:-false}}"
     local installed_version latest_version timestamp response source_dir
     timestamp="$(date +'%Y%m%d_%H%M%S')"
 
@@ -43,6 +44,18 @@ run_update() {
         fi
     fi
     log info "[UPD] Installed: ${installed_version:-<unknown>} | Latest: ${latest_version:-<unknown>}"
+
+    # Cache-only path: download + checksum, no install/extract
+    if [[ "$cache_only" == true ]]; then
+        log info "[UPD] Cache-only requested; downloading package without install."
+        local cache_dir
+        cache_dir="$(download_ninja "$latest_version")" || {
+            log err "[UPD] Download failed."
+            return 1
+        }
+        log ok "[UPD] Cached Invoice Ninja ${latest_version} at $cache_dir"
+        return 0
+    fi
 
     # expand any placeholders in INM_ENV_FILE before use (without eval)
     if [[ "${INM_ENV_FILE:-}" == *\${* ]] && declare -F expand_placeholders >/dev/null; then
