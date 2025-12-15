@@ -82,10 +82,10 @@ run_restore() {
     # Determine part files (either from extraction or directly if non-bundle)
     local db_part storage_part uploads_part app_part extra_part bundle_dir
     db_part=$(find "$tmpdir" -maxdepth 2 -type f -name "*_db.sql" | head -n1)
-    storage_part=$(find "$tmpdir" -maxdepth 2 -type f \\( -name "*_storage.tar.gz" -o -name "*_storage.zip" \\) | head -n1)
-    uploads_part=$(find "$tmpdir" -maxdepth 2 -type f \\( -name "*_uploads.tar.gz" -o -name "*_uploads.zip" \\) | head -n1)
-    app_part=$(find "$tmpdir" -maxdepth 2 -type f \\( -name "*_app.tar.gz" -o -name "*_app.zip" \\) | head -n1)
-    extra_part=$(find "$tmpdir" -maxdepth 2 -type f \\( -name "*_extra.tar.gz" -o -name "*_extra.zip" \\) | head -n1)
+    storage_part=$(find "$tmpdir" -maxdepth 2 -type f \( -name "*_storage.tar.gz" -o -name "*_storage.zip" \) | head -n1)
+    uploads_part=$(find "$tmpdir" -maxdepth 2 -type f \( -name "*_uploads.tar.gz" -o -name "*_uploads.zip" \) | head -n1)
+    app_part=$(find "$tmpdir" -maxdepth 2 -type f \( -name "*_app.tar.gz" -o -name "*_app.zip" \) | head -n1)
+    extra_part=$(find "$tmpdir" -maxdepth 2 -type f \( -name "*_extra.tar.gz" -o -name "*_extra.zip" \) | head -n1)
     # If no parts but a single dir (default full bundle), treat it as app root
     if [[ -z "$app_part" && -z "$storage_part" && -z "$uploads_part" && -z "$db_part" ]]; then
         local dirs_found=()
