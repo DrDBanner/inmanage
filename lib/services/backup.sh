@@ -58,8 +58,9 @@ run_backup() {
         db=true
         storage=true
         uploads=true
-    else
-        [[ "$db" == "true" || "$storage" == "true" || "$uploads" == "true" ]] && fullbackup=false
+        include_app=true
+        bundle=true
+        single_bundle=true
     fi
 
     local ts
@@ -75,12 +76,23 @@ run_backup() {
     local simulate="${DRY_RUN:-false}"
     local planned_parts=()
     local extra_paths=()
+    local single_bundle=false
+
+    # default: if nothing specified, take full backup
+    if [[ -z "${ARGS[db]}" && -z "${ARGS[storage]}" && -z "${ARGS[uploads]}" && -z "${ARGS[include_app]}" && -z "${ARGS[include-app]}" && -z "${ARGS[extra_paths]}" && -z "${ARGS[extra]}" ]]; then
+        db=true
+        storage=true
+        uploads=true
+        include_app=true
+        bundle=true
+        single_bundle=true
+    fi
 
     [[ "$compress" == "zip" ]] && bundle_file+=".zip"
     [[ "$compress" == "tar.gz" ]] && bundle_file+=".tar.gz"
-    [[ "$compress" == "false" ]] && bundle_file+=".bak"
+    # compress=false -> keep bundle_file as directory target (no suffix)
     [[ "$compress" == "zip" ]] && extra_file="${extra_file%.tar.gz}.zip"
-    [[ "$compress" == "false" ]] && extra_file="${extra_file%.tar.gz}.bak"
+    [[ "$compress" == "false" ]] && extra_file="${extra_file%.tar.gz}"
 
     if [[ -n "$extra_paths_raw" ]]; then
         IFS=',' read -ra extra_paths <<<"$extra_paths_raw"
@@ -89,12 +101,14 @@ run_backup() {
     log info "[BACKUP] Preparing backup in: $INM_BACKUP_DIRECTORY"
     log debug "[BACKUP] Parts → db:${db} storage:${storage} uploads:${uploads} app:${include_app} extra:${#extra_paths[@]} bundle:${bundle} compress:${compress} (dry-run=${simulate})"
 
-    # Plan parts regardless of dry-run
-    [[ "$db" == "true" ]] && planned_parts+=("$db_file")
-    [[ "$storage" == "true" ]] && planned_parts+=("$storage_file")
-    [[ "$uploads" == "true" ]] && planned_parts+=("$uploads_file")
-    [[ "$include_app" == "true" ]] && planned_parts+=("$app_file")
-    [[ ${#extra_paths[@]} -gt 0 ]] && planned_parts+=("$extra_file")
+    # Plan parts regardless of dry-run (only for multi-part mode)
+    if [[ "$single_bundle" != true ]]; then
+        [[ "$db" == "true" ]] && planned_parts+=("$db_file")
+        [[ "$storage" == "true" ]] && planned_parts+=("$storage_file")
+        [[ "$uploads" == "true" ]] && planned_parts+=("$uploads_file")
+        [[ "$include_app" == "true" ]] && planned_parts+=("$app_file")
+        [[ ${#extra_paths[@]} -gt 0 ]] && planned_parts+=("$extra_file")
+    fi
 
     if [[ "$simulate" != true ]]; then
         mkdir -p "$INM_BACKUP_DIRECTORY" || {
@@ -107,12 +121,98 @@ run_backup() {
 
     local install_root="${INM_INSTALLATION_PATH:-${INM_BASE_DIRECTORY%/}/${INM_INSTALLATION_DIRECTORY#/}}"
 
+    if [[ "$single_bundle" == true ]]; then
+        if [[ "$simulate" == true ]]; then
+            log info "[DRY-RUN] Would create single full bundle -> $bundle_file"
+        else
+            local stage
+            stage="$(mktemp -d)"
+            # dump DB into staging
+            log info "[BACKUP] Starting database dump..."
+            dump_database "$stage/db.sql" || { rm -rf "$stage"; return 1; }
+            # sync entire app (exclude backup dir and .cache to avoid recursion)
+            local staged_app="$stage/$(basename "$INM_INSTALLATION_DIRECTORY")"
+            rsync -a --delete --exclude "$(basename "$INM_BACKUP_DIRECTORY")" --exclude ".cache" "$install_root"/ "$staged_app/" || {
+                log err "[BACKUP] Failed to stage app files for bundle."
+                rm -rf "$stage"; return 1;
+            }
+            # copy app .env into staged app if present
+            local app_env="${INM_ENV_FILE:-${install_root}/.env}"
+            if [[ -f "$app_env" ]]; then
+                cp "$app_env" "$staged_app/.env" 2>/dev/null || log warn "[BACKUP] Could not copy .env into bundle"
+            fi
+            # create single bundle
+            case "$compress" in
+                zip)
+                    (cd "$stage" && zip -r "$bundle_file" .) >/dev/null && log ok "[BACKUP] Bundle created: $bundle_file" || log err "[BACKUP] Failed to create bundle: $bundle_file"
+                    ;;
+                false)
+                    rm -rf "$bundle_file"
+                    mkdir -p "$bundle_file"
+                    if rsync -a "$stage"/ "$bundle_file"/; then
+                        log ok "[BACKUP] Bundle directory created: $bundle_file"
+                    else
+                        log err "[BACKUP] Failed to create bundle directory: $bundle_file"
+                    fi
+                    ;;
+                *)
+                    tar -czf "$bundle_file" -C "$stage" . && log ok "[BACKUP] Bundle created: $bundle_file" || log err "[BACKUP] Failed to create bundle: $bundle_file"
+                    ;;
+            esac
+            rm -rf "$stage"
+        fi
+        # In single bundle mode we skip the rest
+        [[ "$simulate" == true ]] && log info "[DRY-RUN] Full bundle planned: $bundle_file"
+        if [[ "$simulate" != true && "$bundle" == "true" ]]; then
+            [[ "$compress" == "false" ]] && bundle_parts=() || bundle_parts=("$bundle_file")
+        fi
+        if [[ "$simulate" != true && "$compress" != "false" && -f "$bundle_file" ]]; then
+            planned_parts=("$bundle_file")
+        fi
+        # Checksum
+        if [[ "$simulate" != true && "$compress" != "false" && -f "$bundle_file" ]]; then
+            local checksum_target="$bundle_file.sha256"
+            (cd "$INM_BACKUP_DIRECTORY" && sha256sum "$(basename "$bundle_file")" > "$(basename "$checksum_target")") && \
+                log ok "[BACKUP] Checksum written: $checksum_target"
+        fi
+        log info "[BACKUP] Completed. Base name: $base_name"
+        return 0
+    fi
+
     if [[ "$db" == "true" ]]; then
         if [[ "$simulate" == true ]]; then
             log info "[DRY-RUN] Would dump database to $db_file"
         else
             log info "[BACKUP] Starting database dump..."
             dump_database "$db_file" || return 1
+        fi
+    fi
+
+    # App .env (if present)
+    local env_file="${INM_ENV_FILE:-${install_root}/.env}"
+    if [[ -f "$env_file" ]]; then
+        local env_target="$INM_BACKUP_DIRECTORY/${base_name}_env"
+        [[ "$compress" == "tar.gz" ]] && env_target+=".tar.gz"
+        [[ "$compress" == "zip" ]] && env_target="${env_target%.tar.gz}.zip"
+        [[ "$compress" == "false" ]] && env_target="${env_target%.tar.gz}.bak"
+
+        if [[ "$simulate" == true ]]; then
+            log info "[DRY-RUN] Would copy .env -> $env_target"
+            planned_parts+=("$env_target")
+        else
+            case "$compress" in
+                zip)
+                    (cd "$(dirname "$env_file")" && zip -j "$env_target" "$(basename "$env_file")") >/dev/null && log ok "[BACKUP] .env archived: $env_target" || log warn "[BACKUP] Could not archive .env"
+                    ;;
+                tar.gz)
+                    mkdir -p "$(dirname "$env_target")" 2>/dev/null || true
+                    (cd "$(dirname "$env_file")" && tar -czf "$env_target" "$(basename "$env_file")") && log ok "[BACKUP] .env archived: $env_target" || log warn "[BACKUP] Could not archive .env"
+                    ;;
+                *)
+                    cp "$env_file" "$env_target" && log ok "[BACKUP] .env copied: $env_target" || log warn "[BACKUP] Could not copy .env"
+                    ;;
+            esac
+            [[ -f "$env_target" ]] && bundle_parts+=("$env_target")
         fi
     fi
 
@@ -198,7 +298,12 @@ run_backup() {
             if [[ "$compress" == "zip" ]]; then
                 zip -j "$bundle_file" "${bundle_parts[@]}" >/dev/null
             elif [[ "$compress" == "tar.gz" ]]; then
-                tar -czf "$bundle_file" -C "$INM_BACKUP_DIRECTORY" "$(basename -a "${bundle_parts[@]}")"
+                # Build basename array without mapfile dependency
+                local _bundle_baseparts=()
+                for _bp in "${bundle_parts[@]}"; do
+                    _bundle_baseparts+=("$(basename "$_bp")")
+                done
+                tar -czf "$bundle_file" -C "$INM_BACKUP_DIRECTORY" "${_bundle_baseparts[@]}"
             else
                 cat "${bundle_parts[@]}" > "$bundle_file"
             fi

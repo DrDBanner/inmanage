@@ -83,6 +83,7 @@ core actions:
   install [--clean] [--provision] [--version=v]
   update [--version=v] [--force]
   backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false] [--extra-paths=a,b]
+         # Default: single full bundle (app+env+db). Flags narrow scope or add extras.
   restore --file=... [--force] [--include-app=true|false] [--target=...]
   health | info
   version

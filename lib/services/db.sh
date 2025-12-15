@@ -36,7 +36,8 @@ import_database() {
 
     local file="${ARGS[file]:-}"
     local force="${ARGS[force]:-${force_update:-false}}"
-    local purge="${ARGS[purge_before_import]:-${ARGS[purge]:-false}}"
+    local purge="${ARGS[purge_before_import]:-${ARGS[purge]:-true}}"
+    local prebackup="${ARGS[pre_backup]:-${ARGS[pre-backup]:-true}}"
 
     if [[ -z "$file" ]]; then
         log err "[import_db] No SQL file provided. Use --file=/path/to/dump.sql"
@@ -56,6 +57,26 @@ import_database() {
     local mysql_cmd=("mysql" "-u${DB_USERNAME}" "-h${DB_HOST}" "-P${DB_PORT:-3306}")
     [[ "$INM_FORCE_READ_DB_PW" == "Y" ]] && mysql_cmd+=("-p${DB_PASSWORD}")
 
+    # Always attempt a pre-backup unless explicitly skipped
+    if [[ "$prebackup" != false ]]; then
+        local backup_dir="${INM_BACKUP_DIRECTORY:-./_backups}"
+        mkdir -p "$backup_dir" 2>/dev/null || log warn "[import_db] Could not ensure backup dir $backup_dir"
+        if [[ -d "$backup_dir" ]]; then
+            local shadow_dump="$backup_dir/${DB_DATABASE}_preimport_$(date +%Y%m%d-%H%M%S).sql"
+            log info "[import_db] Creating pre-import backup: $shadow_dump"
+            if ! dump_database "$shadow_dump"; then
+                log err "[import_db] Pre-import backup failed; aborting import. Use --pre-backup=false to skip (not recommended)."
+                return 1
+            fi
+            log ok "[import_db] Pre-import backup saved to $shadow_dump"
+        else
+            log err "[import_db] Backup directory unavailable; aborting import. Use --pre-backup=false to override."
+            return 1
+        fi
+    else
+        log warn "[import_db] Pre-import backup skipped by flag (not recommended)."
+    fi
+
     # Detect existing tables and warn before overwrite (unless forced)
     local table_count=""
     if table_count=$("${mysql_cmd[@]}" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_DATABASE}'" 2>/dev/null); then
@@ -69,25 +90,7 @@ import_database() {
             fi
         fi
 
-        # Shadow dump before import
-        local backup_dir="${INM_BACKUP_DIRECTORY:-./_backups}"
-        mkdir -p "$backup_dir" || log warn "[import_db] Could not create backup dir $backup_dir for shadow dump."
-        if [ -d "$backup_dir" ]; then
-            local shadow_dump="$backup_dir/${DB_DATABASE}_preimport_$(date +%Y%m%d-%H%M%S).sql"
-            log info "[import_db] Creating shadow dump before import: $shadow_dump"
-            if ! dump_database "$shadow_dump"; then
-                if [[ "$force" == true ]]; then
-                    log warn "[import_db] Shadow dump failed, continuing due to --force."
-                else
-                    log err "[import_db] Shadow dump failed; aborting import. Use --force to override."
-                    return 1
-                fi
-            else
-                log ok "[import_db] Shadow dump created at $shadow_dump"
-            fi
-        fi
-
-        # Optional purge before import
+        # Optional purge before import (default true)
         if [[ "$purge" == true ]]; then
             log warn "[import_db] Purging database '$DB_DATABASE' before import."
             local collation

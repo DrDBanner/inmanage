@@ -79,7 +79,7 @@ Update the CLI with `inmanage self update` (git checkout) or rerun the installer
 |---------|-----------------------------------------------------------|-------------------------------------------------------------------|
 | core    | `install [--clean] [--provision] [--version=v]`           | Install Invoice Ninja (provision file if present, flags optional) |
 |         | `update [--version=v] [--force]`                          | Update to specific/latest version                                 |
-|         | `backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false] [--extra-paths=a,b]` | Full backup (db+files; optional app and extra paths) |
+|         | `backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false] [--extra-paths=a,b]` | Default: single full bundle (app+env+db). Flags narrow scope or add extras. |
 |         | `restore --file=path [--force] [--include-app=true|false] [--target=...]` | Restore from bundle (pick latest if omitted)                      |
 |         | `health` \| `info`                                        | Preflight/health check                                            |
 |         | `version`                                                 | Show installed/latest/cached version                              |
