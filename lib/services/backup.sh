@@ -136,10 +136,26 @@ run_backup() {
                 log err "[BACKUP] Failed to stage app files for bundle."
                 rm -rf "$stage"; return 1;
             }
-            # copy app .env into staged app if present
+            # copy app .env into staged app; require unless overridden by --force
             local app_env="${INM_ENV_FILE:-${install_root}/.env}"
             if [[ -f "$app_env" ]]; then
-                cp "$app_env" "$staged_app/.env" 2>/dev/null || log warn "[BACKUP] Could not copy .env into bundle"
+                if ! cp "$app_env" "$staged_app/.env" 2>/dev/null; then
+                    if [[ "$force_update" == true ]]; then
+                        log warn "[BACKUP] Could not copy .env into bundle (continuing due to --force)."
+                    else
+                        log err "[BACKUP] Could not copy .env into bundle; aborting. Use --force to override."
+                        rm -rf "$stage"
+                        return 1
+                    fi
+                fi
+            else
+                if [[ "$force_update" == true ]]; then
+                    log warn "[BACKUP] .env not found; continuing due to --force."
+                else
+                    log err "[BACKUP] .env not found at $app_env; aborting full bundle. Use --force to override."
+                    rm -rf "$stage"
+                    return 1
+                fi
             fi
             # create single bundle
             case "$compress" in
