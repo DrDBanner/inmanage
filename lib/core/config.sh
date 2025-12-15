@@ -29,6 +29,7 @@ declare -A default_settings=(
     ["INM_COMPATIBILITY_VERSION"]="5+"
     ["INM_KEEP_BACKUPS"]="2"
     ["INM_GH_API_CREDENTIALS"]="" #format username:password or token:x-oauth.
+    ["INM_MIGRATION_BACKUP"]=""
 )
 
 # shellcheck disable=SC2034

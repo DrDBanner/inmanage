@@ -189,6 +189,10 @@ if [ -f "${LIB_DIR}/services/pdf.sh" ]; then
     # shellcheck source=/dev/null
     source "${LIB_DIR}/services/pdf.sh"
 fi
+if [ -f "${LIB_DIR}/services/provision.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/services/provision.sh"
+fi
 
 # Call the environment setup before doing anything else
 setup_environment

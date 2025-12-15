@@ -28,6 +28,10 @@ run_installation() {
 
     if [ "$mode" = "Provisioned" ]; then
         env_file="${INM_BASE_DIRECTORY%/}/${INM_PROVISION_ENV_FILE#/}"
+        # If migration backup hint present, stash for restore phase
+        if [ -z "${INM_MIGRATION_BACKUP:-}" ] && [ -f "$env_file" ]; then
+            INM_MIGRATION_BACKUP=$(grep -E '^INM_MIGRATION_BACKUP=' "$env_file" 2>/dev/null | tail -n1 | cut -d= -f2-)
+        fi
     else
         env_file="${install_parent}/${install_name}_temp/.env.example"
     fi
@@ -136,31 +140,31 @@ run_installation() {
 
     # shellcheck disable=SC2059
     if [ "$mode" = "Provisioned" ]; then
-        run_artisan migrate:fresh --seed --force || {
-            log err "[TAR] Failed to migrate and seed"
-            return 1
-        }
-        if run_artisan ninja:create-account --email=admin@admin.com --password=admin; then
-            printf "\n${BLUE}%s${RESET}\n" "========================================"
-            printf "${GREEN}${BOLD}Setup Complete!${RESET}\n\n"
-            printf "${BOLD}Login:${RESET} ${CYAN}%s${RESET}\n" "$APP_URL"
-            printf "${BOLD}Username:${RESET} admin@admin.com\n"
-            printf "${BOLD}Password:${RESET} admin\n"
-            printf "${BLUE}%s${RESET}\n\n" "========================================"
-            printf "${WHITE}Open your browser at ${CYAN}%s${RESET} to access the application.${RESET}\n" "$APP_URL"
-            printf "The database and user are configured.\n\n"
-            printf "${YELLOW}It's a good time to make your first backup now!${RESET}\n\n"
-            printf "${BOLD}Cronjob Setup:${RESET}\n"
-            printf "  ${CYAN}* * * * * %s %s schedule:run >> /dev/null 2>&1${RESET}\n" "$INM_ENFORCED_USER" "$(artisan_cmd_string)"
-            printf "  ${CYAN}* 3 * * * %s %s -c \"%s./inmanage.sh backup\" >> /dev/null 2>&1${RESET}\n\n" "$INM_ENFORCED_USER" "$INM_ENFORCED_SHELL" "$INM_BASE_DIRECTORY"
-            printf "${BOLD}To install cronjobs automatically, use:${RESET}\n"
-            printf "  ${CYAN}./inmanage.sh install_cronjob user=%s jobs=both${RESET}\n" "$INM_ENFORCED_USER"
-            printf "  Full explanation available via ${CYAN}./inmanage.sh -h${RESET}\n\n"
-        else
-            log err "[TAR] Failed to create default user"
-            return 1
+        # Migration-aware: if INM_MIGRATION_BACKUP is set, attempt restore after deploy
+        if [ -n "${INM_MIGRATION_BACKUP:-}" ]; then
+            log info "[PROV] Migration backup detected: ${INM_MIGRATION_BACKUP}"
+            local backup_path=""
+            if [ "${INM_MIGRATION_BACKUP}" = "LATEST" ]; then
+                if [ -d "${INM_BACKUP_DIRECTORY:-./.backups}" ]; then
+                    backup_path=$(ls -1t "${INM_BACKUP_DIRECTORY:-./.backups}"/InvoiceNinja_* 2>/dev/null | head -n1)
+                fi
+            else
+                backup_path="$INM_MIGRATION_BACKUP"
+            fi
+            if [ -n "$backup_path" ]; then
+                log info "[PROV] Restoring migration backup: $backup_path"
+                local saved_named=("${NAMED_ARGS[@]}")
+                NAMED_ARGS[file]="$backup_path"
+                NAMED_ARGS[include_app]=true
+                NAMED_ARGS[force]=true
+                NAMED_ARGS[purge]=true
+                call_with_named_args run_restore || log warn "[PROV] Migration restore failed; continuing with fresh setup."
+                NAMED_ARGS=("${saved_named[@]}")
+            else
+                log warn "[PROV] No backup found for migration hint (${INM_MIGRATION_BACKUP}); continuing with fresh setup."
+            fi
         fi
-        todo: alle inmanage.sh umstellen auf "$SCRIPT_NAME" GERNE AUCH "$SCRIPT_PATH"
+        provision_post_install || return 1
     else
         printf "\n${BLUE}%s${RESET}\n" "========================================"
         printf "${GREEN}${BOLD}Setup Complete!${RESET}\n\n"
