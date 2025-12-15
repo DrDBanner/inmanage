@@ -202,9 +202,7 @@ dump_database() {
             log err "[dump_db] Database dump failed using .env password"
             return 1
         fi
-        log ok "[dump_db] Database dumped (using env password)."
-        return 0
-    fi
+    else
 
     log debug "[dump_db] INM_FORCE_READ_DB_PW≠Y → Attempt .my.cnf"
         if ! "${dump_cmd[@]}" > "$target_file" 2>_dump.err; then
@@ -236,6 +234,22 @@ dump_database() {
             fi
         else
             rm -f _dump.err
+    fi
+
+    fi
+
+    # Sanitize dump for portability: strip hardcoded DEFINERs
+    if command -v sed >/dev/null 2>&1; then
+        local tmp_sanitize
+        tmp_sanitize=$(mktemp) || true
+        if [[ -n "$tmp_sanitize" ]]; then
+            if sed -E 's/DEFINER=`[^`]+`@`[^`]+`/DEFINER=CURRENT_USER/g' "$target_file" > "$tmp_sanitize"; then
+                mv "$tmp_sanitize" "$target_file"
+                log debug "[dump_db] Sanitized dump (DEFINER replaced with CURRENT_USER)."
+            else
+                rm -f "$tmp_sanitize"
+            fi
+        fi
     fi
 
     log ok "[dump_db] Database dumped: $target_file"

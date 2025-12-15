@@ -332,8 +332,19 @@ run_preflight() {
             local sql_mode
             sql_mode=$(mysql -N -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "select @@sql_mode;" 2>/dev/null | head -n1)
             [[ -n "$sql_mode" ]] && add_result INFO "DB" "sql_mode=${sql_mode}"
+            if [ -n "$DB_DATABASE" ]; then
+                if mysql -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "USE \`$DB_DATABASE\`;" >/dev/null 2>&1; then
+                    add_result OK "DB" "Database '$DB_DATABASE' exists."
+                else
+                    local hint="Database '$DB_DATABASE' not found or no access."
+                    hint+=" Set DB_ELEVATED_USERNAME/PASSWORD in .env.provision and rerun provision to create it."
+                    add_result WARN "DB" "$hint"
+                fi
+            fi
         else
-            add_result ERR "DB" "Cannot connect to $DB_HOST:${DB_PORT:-3306} as $DB_USERNAME"
+            local hint="Cannot connect to $DB_HOST:${DB_PORT:-3306} as $DB_USERNAME"
+            hint+=" (check DB_ELEVATED_USERNAME/PASSWORD or credentials in .env/.env.provision)"
+            add_result ERR "DB" "$hint"
         fi
     else
         add_result ERR "DB" "Missing DB_HOST/DB_USERNAME despite loaded .env"
