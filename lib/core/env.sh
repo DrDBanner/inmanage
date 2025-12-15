@@ -17,7 +17,7 @@ setup_environment() {
     local clean_path=""
 
     # Preserve original home for defaults before any user switching
-    export INM_ORIGINAL_HOME="${HOME:-}"
+    export INM_ORIGINAL_HOME="${INM_ORIGINAL_HOME:-${HOME:-}}"
 
     local default_paths=(
         /usr/local/sbin

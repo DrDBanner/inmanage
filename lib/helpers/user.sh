@@ -34,6 +34,7 @@ enforce_user_switch() {
         # shellcheck disable=SC2155
         export __INTERNAL_SWITCHED_FROM_USER="$current_user"
         export INM_CHILD_REEXEC=1
+        local original_home="${INM_ORIGINAL_HOME:-$HOME}"
 
         local memyselfasscript
         memyselfasscript="$(resolve_script_path "$0")"
@@ -41,7 +42,7 @@ enforce_user_switch() {
         log info "[ENV] Switching to user '${args[user]}'."
         log debug "[ENV] If you don't want to switch users, put your current user into the INM_ENFORCED_USER variable in your config file."
 
-        exec sudo -u "${args[user]}" -- bash "$memyselfasscript" "${providedargs[@]}"
+        exec sudo -u "${args[user]}" env INM_ORIGINAL_HOME="$original_home" bash "$memyselfasscript" "${providedargs[@]}"
     fi
 
     if [ -n "${args[switchback]}" ] && [ -n "$__INTERNAL_SWITCHED_FROM_USER" ]; then

@@ -270,17 +270,33 @@ check_envs() {
         while [[ "$output" =~ (\$\{([^}]+)\}) ]]; do
             local full="${BASH_REMATCH[1]}"
             local var="${BASH_REMATCH[2]}"
-            local val="${!var}"
+            local val
+            if [[ "$var" == "HOME" && -n "${INM_ORIGINAL_HOME:-}" ]]; then
+                val="$INM_ORIGINAL_HOME"
+            else
+                val="${!var}"
+            fi
             output="${output//$full/$val}"
         done
         printf "%s" "$output"
     }
-    if [[ "${INM_ENV_FILE:-}" == *\${* ]]; then
-        INM_ENV_FILE="$(expand_placeholders "$INM_ENV_FILE")"
-    fi
-    if [[ "${INM_ARTISAN_STRING:-}" == *\${* ]]; then
-        INM_ARTISAN_STRING="$(expand_placeholders "$INM_ARTISAN_STRING")"
-    fi
+    path_expand_no_eval() {
+        local p="$1"
+        [[ -z "$p" ]] && { printf "%s" "$p"; return; }
+        p="$(expand_placeholders "$p")"
+        local home_base="${INM_ORIGINAL_HOME:-$HOME}"
+        p="${p/#\~/$home_base}"
+        p="${p//\$\{HOME\}/$home_base}"
+        p="${p//\$HOME/$home_base}"
+        printf "%s" "$p"
+    }
+    INM_ENV_FILE="$(path_expand_no_eval "${INM_ENV_FILE:-}")"
+    INM_ARTISAN_STRING="$(path_expand_no_eval "${INM_ARTISAN_STRING:-}")"
+    INM_PROVISION_ENV_FILE="$(path_expand_no_eval "${INM_PROVISION_ENV_FILE:-}")"
+    INM_SELF_ENV_FILE="$(path_expand_no_eval "${INM_SELF_ENV_FILE:-}")"
+    INM_CACHE_GLOBAL_DIRECTORY="$(path_expand_no_eval "${INM_CACHE_GLOBAL_DIRECTORY:-}")"
+    INM_CACHE_LOCAL_DIRECTORY="$(path_expand_no_eval "${INM_CACHE_LOCAL_DIRECTORY:-}")"
+    INM_BACKUP_DIRECTORY="$(path_expand_no_eval "${INM_BACKUP_DIRECTORY:-}")"
 
     # Normalize base dir to always carry a trailing slash for consistent concatenation.
     if declare -F ensure_trailing_slash >/dev/null && [ -n "${INM_BASE_DIRECTORY:-}" ]; then

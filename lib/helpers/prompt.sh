@@ -56,3 +56,19 @@ prompt_var() {
         return 1
     fi
 }
+
+# ---------------------------------------------------------------------
+# prompt_confirm()
+# Yes/No prompt with default, optional silent, timeout. Returns 0 on yes.
+# ---------------------------------------------------------------------
+prompt_confirm() {
+    local key="$1"
+    local default="${2:-no}"
+    local text="${3:-Proceed?}"
+    local silent="${4:-false}"
+    local timeout="${5:-60}"
+
+    local reply
+    reply="$(prompt_var "$key" "$default" "$text" "$silent" "$timeout")" || return 1
+    [[ "$reply" =~ ^([yY][eE][sS]|[yY])$ ]]
+}

@@ -4,6 +4,12 @@
 [[ -n ${__RESOLVE_HELPER_LOADED:-} ]] && return
 __RESOLVE_HELPER_LOADED=1
 
+# Bring in prompt helper for sudo prompts
+if ! declare -F prompt_confirm >/dev/null 2>&1; then
+    prompt_helper_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prompt.sh"
+    [ -f "$prompt_helper_path" ] && source "$prompt_helper_path"
+fi
+
 # ---------------------------------------------------------------------
 # resolve_script_path()
 #
@@ -213,15 +219,34 @@ version_compare() {
     [[ "$comp" == "$op" ]]
 }
 
+expand_path_vars() {
+    local path="$1"
+    if [[ -z "$path" ]]; then
+        printf "\n"
+        return 0
+    fi
+    # Expand placeholders if helper exists, without eval
+    local expanded="$path"
+    if [[ "$expanded" == *\${* ]] && declare -F expand_placeholders >/dev/null; then
+        expanded="$(expand_placeholders "$expanded")"
+    fi
+    # Expand leading ~ and simple $HOME/${HOME} without eval, prefer original home if preserved
+    local home_base="${INM_ORIGINAL_HOME:-$HOME}"
+    expanded="${expanded/#\~/$home_base}"
+    expanded="${expanded//\$\{HOME\}/$home_base}"
+    expanded="${expanded//\$HOME/$home_base}"
+    printf "%s\n" "$expanded"
+}
+
 # ---------------------------------------------------------------------
 # resolve_cache_directory()
 # Chooses between global or local cache based on permissions.
 # ---------------------------------------------------------------------
 resolve_cache_directory() {
     if check_global_cache_permissions; then
-        echo "${INM_CACHE_GLOBAL_DIRECTORY}"
+        echo "$(expand_path_vars "${INM_CACHE_GLOBAL_DIRECTORY}")"
     else
-        echo "${INM_CACHE_LOCAL_DIRECTORY}"
+        echo "$(expand_path_vars "${INM_CACHE_LOCAL_DIRECTORY}")"
     fi
 }
 
@@ -230,33 +255,46 @@ resolve_cache_directory() {
 # Determines usable global cache directory for downloads/tars.
 # ---------------------------------------------------------------------
 resolve_global_cache_dir() {
-    local user_cache="${HOME}/.cache/inmanage"
-    local root_cache="/var/cache/inmanage"
+    local home_cache
+    home_cache="$(expand_path_vars "${INM_CACHE_GLOBAL_DIRECTORY:-$HOME/.cache/inmanage}")"
+    local project_cache
+    project_cache="$(expand_path_vars "${INM_CACHE_LOCAL_DIRECTORY:-./.cache}")"
 
     log debug "[GC] Resolving global cache directory..."
 
-    if [ -w "$user_cache" ]; then
-        INM_GLOBAL_CACHE="$user_cache"
-        log ok "[GC] Using user cache: $INM_GLOBAL_CACHE"
+    # Try user/home cache first
+    if [ -w "$home_cache" ] || (mkdir -p "$home_cache" 2>/dev/null && chmod 750 "$home_cache" 2>/dev/null); then
+        INM_GLOBAL_CACHE="$home_cache"
+        log ok "[GC] Using cache: $INM_GLOBAL_CACHE"
         return 0
     fi
 
-    log warn "[GC] User cache not writable: $user_cache"
-
-    if command -v sudo >/dev/null && sudo -n true 2>/dev/null; then
-        log note "[GC] Attempting sudo access for: $root_cache (timeout 20s)"
-        if timeout 20 sudo mkdir -p "$root_cache" && timeout 20 sudo chown "$USER" "$root_cache"; then
-            INM_GLOBAL_CACHE="$root_cache"
-            log ok "[GC] Using system cache: $INM_GLOBAL_CACHE"
+    # Try sudo non-interactively first, then prompt if needed
+    if command -v sudo >/dev/null 2>&1; then
+        if sudo -n true 2>/dev/null && timeout 20 sudo mkdir -p "$home_cache" && timeout 20 sudo chown "$USER" "$home_cache" && timeout 20 sudo chmod 750 "$home_cache"; then
+            INM_GLOBAL_CACHE="$home_cache"
+            log ok "[GC] Using cache via sudo: $INM_GLOBAL_CACHE"
             return 0
-        else
-            log err "[GC] Failed to set up writable system cache at $root_cache"
-            exit 1
         fi
-    else
-        log err "[GC] No writeable global cache available and no sudo rights."
-        exit 1
+        log note "[GC] Home cache not writable: $home_cache. Attempt sudo with prompt? (y/N)"
+        if prompt_confirm "GC_SUDO_CREATE_HOME" "no" "Create cache at $home_cache with sudo?" false 20; then
+            if timeout 20 sudo mkdir -p "$home_cache" && timeout 20 sudo chown "$USER" "$home_cache" && timeout 20 sudo chmod 750 "$home_cache"; then
+                INM_GLOBAL_CACHE="$home_cache"
+                log ok "[GC] Using cache via sudo: $INM_GLOBAL_CACHE"
+                return 0
+            else
+                log warn "[GC] Sudo creation failed for $home_cache."
+            fi
+        else
+            log warn "[GC] Sudo creation declined for $home_cache."
+        fi
     fi
+
+    # Fallback to project cache
+    INM_GLOBAL_CACHE="$project_cache"
+    log warn "[GC] Falling back to project cache: $INM_GLOBAL_CACHE"
+    mkdir -p "$INM_GLOBAL_CACHE" 2>/dev/null || true
+    return 1
 }
 
 # ---------------------------------------------------------------------
@@ -264,26 +302,34 @@ resolve_global_cache_dir() {
 # Verifies/creates global cache dir with sudo fallback.
 # ---------------------------------------------------------------------
 check_global_cache_permissions() {
-    local dir="${INM_CACHE_GLOBAL_DIRECTORY:-$HOME/.cache/inmanage}"
+    local dir
+    dir="$(expand_path_vars "${INM_CACHE_GLOBAL_DIRECTORY:-$HOME/.cache/inmanage}")"
     if [ -w "$dir" ]; then
         return 0
-    elif [ ! -e "$dir" ]; then
+    fi
+    if [ ! -e "$dir" ]; then
         log note "[CACHE] Global cache does not exist. Attempting to create: $dir"
-        # Try without sudo first
-        if mkdir -p "$dir" 2>/dev/null && chmod 777 "$dir" 2>/dev/null; then
+    else
+        log warn "[CACHE] Global cache is not writable: $dir"
+    fi
+    if mkdir -p "$dir" 2>/dev/null && chmod 750 "$dir" 2>/dev/null; then
+        return 0
+    fi
+    if command -v sudo >/dev/null 2>&1; then
+        if sudo -n true 2>/dev/null && timeout 20s sudo mkdir -p "$dir" && timeout 20s sudo chmod 750 "$dir" && timeout 20s sudo chown "$USER" "$dir"; then
             return 0
         fi
-        # Avoid interactive sudo; only attempt if non-interactive is available
-        if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-            if timeout 20s sudo mkdir -p "$dir" && timeout 20s sudo chmod 777 "$dir"; then
+        log note "[CACHE] Cache not writable: $dir. Attempt sudo to create? (y/N)"
+        if prompt_confirm "CACHE_SUDO_CREATE" "no" "Create cache at $dir with sudo?" false 20; then
+            if timeout 20s sudo mkdir -p "$dir" && timeout 20s sudo chmod 750 "$dir" && timeout 20s sudo chown "$USER" "$dir"; then
                 return 0
             fi
             log warn "[CACHE] sudo creation failed for $dir; falling back to local cache"
         else
-            log warn "[CACHE] Cannot create global cache (no perms). Will use local cache."
+            log warn "[CACHE] Sudo creation declined for $dir; will use local cache."
         fi
     else
-        log warn "[CACHE] Global cache is not writable: $dir"
+        log warn "[CACHE] Cannot create global cache (no perms). Will use local cache."
     fi
     return 1
 }
