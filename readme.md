@@ -24,7 +24,7 @@ At a glance (3 steps):
 
 1) Install the CLI (mode prompt inside the installer)
 2) Go to your Invoice Ninja base directory
-3) Run Invoice Ninja App installer
+3) Run CLI with eligeble user account rights
 
 Step 1 — Install the CLI (prompts for mode; asks for sudo only if you pick system)
 
@@ -37,13 +37,13 @@ Result: CLI installed per chosen mode (system/user/project), symlinks created (`
 Step 2 — Go to your Invoice Ninja base directory
 
 ```bash
-cd /path/to/your/invoiceninja/base
+cd /path/to/your/invoiceninja_basedirectory
 ```
 
-Step 3 — Install Invoice Ninja
+Step 3 — Run CLI command as the user with the appropiate rights
 
 ```bash
-inmanage core install
+inmanage
 ```
 
 - Prompts for install type: **provisioned (recommended)** vs **clean GUI setup**.  

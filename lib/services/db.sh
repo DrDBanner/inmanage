@@ -39,6 +39,28 @@ import_database() {
     local purge="${ARGS[purge_before_import]:-${ARGS[purge]:-true}}"
     local prebackup="${ARGS[pre_backup]:-${ARGS[pre-backup]:-true}}"
 
+    # Hydrate DB vars from app env if not set
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
+        log debug "[import_db] Loading DB vars from app env: ${INM_ENV_FILE}"
+        set -a
+        # shellcheck disable=SC1090
+        . "${INM_ENV_FILE}"
+        set +a
+    fi
+    # Prompt if still missing essentials
+    if [[ -z "${DB_USERNAME:-}" ]]; then
+        DB_USERNAME=$(prompt_var "MYSQL_USER" "root" "MySQL user for import:" false 60) || return 1
+    fi
+    if [[ -z "${DB_DATABASE:-}" ]]; then
+        DB_DATABASE=$(prompt_var "MYSQL_DB" "" "MySQL database to import into:" false 60) || return 1
+    fi
+    if [[ -z "${DB_HOST:-}" ]]; then
+        DB_HOST=$(prompt_var "MYSQL_HOST" "localhost" "MySQL host:" false 60) || return 1
+    fi
+    if [[ -z "${DB_PASSWORD:-}" && "${INM_FORCE_READ_DB_PW^^}" == "Y" ]]; then
+        DB_PASSWORD=$(prompt_var "MYSQL_PASS" "" "Password for ${DB_USERNAME}:" true 60) || return 1
+    fi
+
     if [[ -z "$file" ]]; then
         log err "[import_db] No SQL file provided. Use --file=/path/to/dump.sql"
         exit 1
@@ -55,7 +77,38 @@ import_database() {
     fi
 
     local mysql_cmd=("mysql" "-u${DB_USERNAME}" "-h${DB_HOST}" "-P${DB_PORT:-3306}")
-    [[ "$INM_FORCE_READ_DB_PW" == "Y" ]] && mysql_cmd+=("-p${DB_PASSWORD}")
+    [[ -n "${DB_PASSWORD:-}" ]] && mysql_cmd+=("-p${DB_PASSWORD}")
+
+    # Connectivity check; if it fails, prompt for elevated creds (e.g., root)
+    if ! "${mysql_cmd[@]}" -e "SELECT 1" >/dev/null 2>&1; then
+        log warn "[import_db] Initial DB credentials failed; prompting for elevated MySQL user."
+        local elev_user elev_pw
+        elev_user=$(prompt_var "MYSQL_USER" "${DB_USERNAME:-root}" "MySQL user for import (e.g., root):" false 60) || return 1
+        elev_pw=$(prompt_var "MYSQL_PASS" "" "Password for ${elev_user} (leave blank if none):" true 60) || return 1
+        mysql_cmd=("mysql" "-u${elev_user}" "-h${DB_HOST}" "-P${DB_PORT:-3306}")
+        [[ -n "$elev_pw" ]] && mysql_cmd+=("-p${elev_pw}")
+        # Persist for later calls in this function
+        DB_USERNAME="$elev_user"
+        DB_PASSWORD="$elev_pw"
+        if ! "${mysql_cmd[@]}" -e "SELECT 1" >/dev/null 2>&1; then
+            # Try socket if host is localhost
+            if [[ "${DB_HOST}" == "localhost" || "${DB_HOST}" == "127.0.0.1" ]]; then
+                mysql_cmd=("mysql" "-u${elev_user}" "-S" "${DB_SOCKET:-/var/run/mysqld/mysqld.sock}")
+                [[ -n "$elev_pw" ]] && mysql_cmd+=("-p${elev_pw}")
+                if "${mysql_cmd[@]}" -e "SELECT 1" >/dev/null 2>&1; then
+                    log ok "[import_db] Elevated MySQL credentials accepted via socket."
+                else
+                    log err "[import_db] Could not connect with provided elevated credentials (host or socket)."
+                    return 1
+                fi
+            else
+                log err "[import_db] Could not connect with provided elevated credentials."
+                return 1
+            fi
+        else
+            log ok "[import_db] Elevated MySQL credentials accepted."
+        fi
+    fi
 
     # Always attempt a pre-backup unless explicitly skipped
     if [[ "$prebackup" != false ]]; then
@@ -77,28 +130,19 @@ import_database() {
         log warn "[import_db] Pre-import backup skipped by flag (not recommended)."
     fi
 
-    # Detect existing tables and warn before overwrite (unless forced)
+    # Detect existing tables; purge by default to avoid mixed data
     local table_count=""
     if table_count=$("${mysql_cmd[@]}" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_DATABASE}'" 2>/dev/null); then
-        if [[ "$table_count" -gt 0 && "$force" != true ]]; then
-            log warn "[import_db] Database '$DB_DATABASE' already has $table_count tables. Import will overwrite data."
-            local answer
-            answer=$(prompt_var "CONFIRM_IMPORT" "no" "Proceed with import and overwrite existing data? (yes/no)" false 60) || exit 1
-            if [[ ! "$answer" =~ ^([Yy]([Ee][Ss])?|[Jj][Aa])$ ]]; then
-                log info "[import_db] Import cancelled by user."
-                return 0
-            fi
-        fi
-
-        # Optional purge before import (default true)
-        if [[ "$purge" == true ]]; then
-            log warn "[import_db] Purging database '$DB_DATABASE' before import."
+        if [[ "$table_count" -gt 0 && "$purge" != false ]]; then
+            log warn "[import_db] Purging database '$DB_DATABASE' (drop/create) before import; existing tables: $table_count."
             local collation
             collation=$(detect_mysql_collation "${DB_COLLATION:-}")
             if ! "${mysql_cmd[@]}" -e "DROP DATABASE IF EXISTS \`$DB_DATABASE\`; CREATE DATABASE \`$DB_DATABASE\` DEFAULT COLLATE $collation;" ; then
                 log err "[import_db] Purge failed (drop/create)."
                 [[ "$force" == true ]] && log warn "[import_db] Continuing import despite purge failure due to --force." || return 1
             fi
+        elif [[ "$table_count" -gt 0 ]]; then
+            log warn "[import_db] Existing tables detected ($table_count) and --purge=false; import may overwrite data."
         fi
     else
         log warn "[import_db] Could not determine existing tables (permissions?). Proceeding with import."

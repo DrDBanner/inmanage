@@ -6,13 +6,8 @@ __SERVICE_RESTORE_LOADED=1
 
 # ---------------------------------------------------------------------
 # run_restore()
-# Restores from a bundled/full backup. If no file provided, offers the
-# newest bundle in the backup directory for selection.
-# Options (NAMED_ARGS):
-#   --file=<path>          Bundle or part to restore from (tar.gz/zip)
-#   --force=true           Overwrite existing app directory
-#   --include-app=true     Restore app files if present (default: true)
-#   --target=<path>        Override install path (defaults to INM_INSTALLATION_PATH)
+# Restores from a backup bundle/directory or individual part (db/app/files).
+# Detects new flat bundle layout (real folders/files, no nested archives).
 # ---------------------------------------------------------------------
 run_restore() {
     declare -A ARGS
@@ -22,9 +17,8 @@ run_restore() {
     local force="${ARGS[force]:-${force_update:-false}}"
     local include_app="${ARGS[include_app]:-${ARGS[include-app]:-true}}"
     local target_arg="${ARGS[target]:-${ARGS[bundle_target]:-}}"
-    local target="${target_arg:-${INM_INSTALLATION_PATH:-${INM_BASE_DIRECTORY%/}/${INM_INSTALLATION_DIRECTORY#/}}}"
-    local target_was_explicit=false
-    [[ -n "$target_arg" ]] && target_was_explicit=true
+    local target_default="${INM_INSTALLATION_PATH:-${INM_BASE_DIRECTORY%/}/${INM_INSTALLATION_DIRECTORY#/}}"
+    local target="${target_arg:-$target_default}"
     local prebackup="${ARGS[pre_backup]:-${ARGS[pre-backup]:-true}}"
     local purge="${ARGS[purge_db]:-${ARGS[purge]:-true}}"
     local simulate="${DRY_RUN:-false}"
@@ -33,26 +27,44 @@ run_restore() {
 
     if [[ -z "$bundle" ]]; then
         local candidates=()
-        while IFS= read -r f; do
-            candidates+=("$f")
-        done < <(ls -1t "$INM_BACKUP_DIRECTORY"/*_full.* 2>/dev/null)
+        if [[ -d "$INM_BACKUP_DIRECTORY" ]]; then
+            log info "[RESTORE] Looking for backups in: $INM_BACKUP_DIRECTORY"
+            while IFS= read -r entry; do
+                local path="$INM_BACKUP_DIRECTORY/$entry"
+                [[ "$entry" == *.sha256 ]] && continue
+                if [[ -f "$path" || -d "$path" ]]; then
+                    candidates+=("$path")
+                fi
+            done < <(ls -1t "$INM_BACKUP_DIRECTORY" 2>/dev/null)
+        fi
 
         if [[ ${#candidates[@]} -eq 0 ]]; then
-            log err "[RESTORE] No bundle found. Provide --file=<bundle.tar.gz>."
+            log err "[RESTORE] No backup found. Provide --file=<bundle>."
             return 1
         fi
 
-        bundle="$(select_from_candidates "Select a backup to restore" "${candidates[@]}")" || return 1
+        if [[ "${NAMED_ARGS[latest]:-${NAMED_ARGS[file_latest]:-${NAMED_ARGS[file-latest]:-false}}}" == "true" ]]; then
+            bundle="${candidates[0]}"
+            log info "[RESTORE] --latest requested; auto-selecting newest: $bundle"
+        else
+            log info "[RESTORE] Found ${#candidates[@]} backup item(s); prompting for selection."
+            if [[ ! -t 0 && "${NAMED_ARGS[auto_select]:-${NAMED_ARGS[auto-select]:-}}" != "true" ]]; then
+                log err "[RESTORE] Cannot prompt without TTY. Re-run with --file=<path> or --auto-select=true to pick the newest automatically."
+                return 1
+            fi
+            bundle="$(select_from_candidates "Select a backup to restore" "${candidates[@]}")" || return 1
+        fi
     fi
 
-    if [[ ! -f "$bundle" ]]; then
-        log err "[RESTORE] File not found: $bundle"
+    if [[ ! -e "$bundle" ]]; then
+        log err "[RESTORE] Path not found: $bundle"
         return 1
     fi
 
     bundle="$(cd "$(dirname "$bundle")" && pwd)/$(basename "$bundle")"
     log info "[RESTORE] Using bundle: $bundle"
     log info "[RESTORE] Target app dir: $target"
+    log debug "[RESTORE] include_app=${include_app} force=${force} prebackup=${prebackup} purge=${purge}"
     [[ "$simulate" == true ]] && log info "[DRY-RUN] Restore simulation only (no changes)."
 
     local tmpdir
@@ -60,131 +72,127 @@ run_restore() {
     cleanup_tmp_restore() { rm -rf "$tmpdir"; }
     trap cleanup_tmp_restore EXIT
 
-    local extracted_parts=()
+    local stage_root="$tmpdir"
     if [[ -d "$bundle" ]]; then
         log info "[RESTORE] Using bundle directory: $bundle"
-        cp -a "$bundle"/. "$tmpdir"/ || { log err "[RESTORE] Failed to stage bundle directory."; return 1; }
+        cp -a "$bundle"/. "$stage_root"/ || { log err "[RESTORE] Failed to stage bundle directory."; return 1; }
     else
         case "$bundle" in
             *.tar.gz|*.tgz)
-                tar -xzf "$bundle" -C "$tmpdir" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
+                log info "[RESTORE] Extracting tar bundle -> $stage_root"
+                tar -xzf "$bundle" -C "$stage_root" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
                 ;;
             *.zip)
-                unzip -q "$bundle" -d "$tmpdir" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
+                log info "[RESTORE] Extracting zip bundle -> $stage_root"
+                unzip -q "$bundle" -d "$stage_root" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
                 ;;
             *)
-                log err "[RESTORE] Unsupported bundle format: $bundle"
-                return 1
+                log info "[RESTORE] Staging file -> $stage_root"
+                cp "$bundle" "$stage_root/" || { log err "[RESTORE] Failed to stage file: $bundle"; return 1; }
                 ;;
         esac
     fi
 
-    # Determine part files (either from extraction or directly if non-bundle)
-    local db_part storage_part uploads_part app_part extra_part bundle_dir
-    db_part=$(find "$tmpdir" -maxdepth 2 -type f -name "*_db.sql" | head -n1)
-    storage_part=$(find "$tmpdir" -maxdepth 2 -type f \( -name "*_storage.tar.gz" -o -name "*_storage.zip" \) | head -n1)
-    uploads_part=$(find "$tmpdir" -maxdepth 2 -type f \( -name "*_uploads.tar.gz" -o -name "*_uploads.zip" \) | head -n1)
-    app_part=$(find "$tmpdir" -maxdepth 2 -type f \( -name "*_app.tar.gz" -o -name "*_app.zip" \) | head -n1)
-    extra_part=$(find "$tmpdir" -maxdepth 2 -type f \( -name "*_extra.tar.gz" -o -name "*_extra.zip" \) | head -n1)
-    # If no parts but a single dir (default full bundle), treat it as app root
-    if [[ -z "$app_part" && -z "$storage_part" && -z "$uploads_part" && -z "$db_part" ]]; then
-        local dirs_found=()
-        while IFS= read -r d; do dirs_found+=("$d"); done < <(find "$tmpdir" -mindepth 1 -maxdepth 1 -type d)
-        if [[ ${#dirs_found[@]} -eq 1 ]]; then
-            bundle_dir="${dirs_found[0]}"
-            log info "[RESTORE] Detected single-folder bundle: $bundle_dir"
+    local db_part env_part storage_dir uploads_dir extra_dir app_dir
+    local app_missing=false
+    db_part=$(find "$stage_root" -maxdepth 4 -type f \( -name "db.sql" -o -name "*_db.sql" \) | head -n1)
+    env_part=$(find "$stage_root" -maxdepth 4 -type f \( -name ".env" -o -name "*_env" \) | head -n1)
+    storage_dir=$(find "$stage_root" -maxdepth 3 -type d -name "storage" | head -n1)
+    uploads_dir=$(find "$stage_root" -maxdepth 4 -type d \( -path "*/public/uploads" -o -name "uploads" \) | head -n1)
+    extra_dir=$(find "$stage_root" -maxdepth 2 -type d -name "extra" | head -n1)
+
+    local app_hint="${INM_INSTALLATION_DIRECTORY#/}"
+    local app_hint_base="$(basename "${INM_INSTALLATION_PATH:-$target_default}")"
+    if [[ -n "$app_hint" && -d "$stage_root/$app_hint" ]]; then
+        app_dir="$stage_root/$app_hint"
+    elif [[ -n "$app_hint_base" && -d "$stage_root/$app_hint_base" ]]; then
+        app_dir="$stage_root/$app_hint_base"
+    else
+        while IFS= read -r d; do
+            local base="$(basename "$d")"
+            [[ "$base" == "storage" || "$base" == "public" || "$base" == "extra" ]] && continue
+            app_dir="$d"
+            break
+        done < <(find "$stage_root" -mindepth 1 -maxdepth 1 -type d)
+    fi
+
+    if [[ -z "$db_part" && -z "$env_part" && -z "$storage_dir" && -z "$uploads_dir" && -z "$app_dir" && -z "$extra_dir" ]]; then
+        log err "[RESTORE] No recognizable backup content found."
+        return 1
+    fi
+
+    if [[ "$include_app" == true && -d "$target" ]]; then
+        local pre_restore_backup="${INM_BACKUP_DIRECTORY%/}/restore_pre_$(date +%Y%m%d-%H%M%S)"
+        if [[ "$simulate" == true ]]; then
+            log info "[DRY-RUN] Would move existing app to $pre_restore_backup before restore."
+        else
+            mkdir -p "$pre_restore_backup" || { log err "[RESTORE] Cannot create backup dir: $pre_restore_backup"; return 1; }
+            log info "[RESTORE] Moving existing app to backup: $pre_restore_backup"
+            safe_move_or_copy_and_clean "$target" "$pre_restore_backup" move || { log err "[RESTORE] Failed to backup existing app to $pre_restore_backup"; return 1; }
         fi
-    fi
-
-    [[ -n "$db_part" ]] && extracted_parts+=("$db_part")
-    [[ -n "$storage_part" ]] && extracted_parts+=("$storage_part")
-    [[ -n "$uploads_part" ]] && extracted_parts+=("$uploads_part")
-    [[ -n "$app_part" ]] && extracted_parts+=("$app_part")
-    [[ -n "$extra_part" ]] && extracted_parts+=("$extra_part")
-
-    if [[ ${#extracted_parts[@]} -eq 0 && -z "$bundle_dir" ]]; then
-        log err "[RESTORE] No recognizable parts found in bundle."
-        return 1
-    fi
-
-    # Prepare target
-    if [[ "$include_app" == true && -d "$target" && "$force" != true ]]; then
-        log err "[RESTORE] Target $target exists. Use --force=true to overwrite."
-        return 1
-    fi
-    if [[ "$include_app" == true && -d "$target" && "$force" == true && "$simulate" != true ]]; then
-        log warn "[RESTORE] Removing existing target due to --force: $target"
-        rm -rf "$target"
     fi
     [[ "$simulate" != true ]] && mkdir -p "$target"
 
-    # Restore app files (if present and requested)
-    if [[ "$include_app" == true ]]; then
-        if [[ -n "$app_part" ]]; then
-            if [[ "$simulate" == true ]]; then
-                log info "[DRY-RUN] Would extract app archive -> $target"
-            else
-                log info "[RESTORE] Extracting app archive -> $target"
-                tar -xzf "$app_part" -C "$target" 2>/dev/null || unzip -q "$app_part" -d "$target" 2>/dev/null
-            fi
-        elif [[ -n "$bundle_dir" ]]; then
-            if [[ "$target_was_explicit" == false ]]; then
-                local suggested_target="$target"
-                # If config produced an empty/relative path, ask for it explicitly
-                if [[ -z "$suggested_target" || "$suggested_target" == "/" ]]; then
-                    log warn "[RESTORE] No valid target from config. Please enter application directory."
-                    read -r -p "Destination for app files [$suggested_target]: " _new_target
-                    suggested_target="${_new_target:-$suggested_target}"
-                else
-                    log info "[RESTORE] Bundle app dir: $(basename "$bundle_dir")"
-                    log info "[RESTORE] Destination from config (.env.inmanage): $suggested_target"
-                    read -r -p "Destination for app files (press Enter to accept): " _new_target
-                    [[ -n "$_new_target" ]] && suggested_target="$_new_target"
-                fi
-                target="$suggested_target"
-            fi
-            if [[ "$simulate" == true ]]; then
-                log info "[DRY-RUN] Would copy bundled app dir -> $target"
-            else
-                log info "[RESTORE] Copying bundled app dir -> $target"
-                mkdir -p "$target"
-                rsync -a "$bundle_dir"/ "$target"/ || { log err "[RESTORE] Failed to copy app directory."; return 1; }
-            fi
+    if [[ "$include_app" == true && -n "$app_dir" ]]; then
+        if [[ "$simulate" == true ]]; then
+            log info "[DRY-RUN] Would restore application files -> $target"
+        else
+            log info "[RESTORE] Restoring application files via rsync -> $target"
+            rsync -a "$app_dir"/ "$target"/ || { log err "[RESTORE] Failed to restore application files."; return 1; }
         fi
+    elif [[ "$include_app" == true ]]; then
+        log err "[RESTORE] No application directory found in backup. App files will be missing."
+        app_missing=true
     fi
 
-    # Restore storage/uploads
-    if [[ -n "$storage_part" ]]; then
-        local storage_dest="$target"
+    if [[ -n "$storage_dir" ]]; then
+        local storage_dest="$target/storage"
         if [[ "$simulate" == true ]]; then
             log info "[DRY-RUN] Would restore storage -> $storage_dest"
         else
-            log info "[RESTORE] Restoring storage ..."
-            tar -xzf "$storage_part" -C "$storage_dest" 2>/dev/null || unzip -q "$storage_part" -d "$storage_dest" 2>/dev/null
+            log info "[RESTORE] Restoring storage via rsync -> $storage_dest"
+            mkdir -p "$storage_dest"
+            rsync -a "$storage_dir"/ "$storage_dest"/ || log warn "[RESTORE] Restoring storage failed."
         fi
     fi
 
-    if [[ -n "$uploads_part" ]]; then
-        local uploads_dest="$target/public"
-        [[ "$simulate" != true ]] && mkdir -p "$uploads_dest"
+    if [[ -n "$uploads_dir" ]]; then
+        local uploads_dest="$target/public/uploads"
         if [[ "$simulate" == true ]]; then
             log info "[DRY-RUN] Would restore uploads -> $uploads_dest"
         else
-            log info "[RESTORE] Restoring uploads ..."
-            tar -xzf "$uploads_part" -C "$uploads_dest" 2>/dev/null || unzip -q "$uploads_part" -d "$uploads_dest" 2>/dev/null
+            log info "[RESTORE] Restoring uploads via rsync -> $uploads_dest"
+            mkdir -p "$uploads_dest"
+            rsync -a "$uploads_dir"/ "$uploads_dest"/ || log warn "[RESTORE] Restoring uploads failed."
         fi
     fi
 
-    if [[ -n "$extra_part" ]]; then
+    if [[ -n "$extra_dir" ]]; then
+        local extra_dest="$target/extra"
         if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would restore extra paths -> $target"
+            log info "[DRY-RUN] Would restore extra paths -> $extra_dest"
         else
-            log info "[RESTORE] Restoring extra paths ..."
-            tar -xzf "$extra_part" -C "$target" 2>/dev/null || unzip -q "$extra_part" -d "$target" 2>/dev/null
+            log info "[RESTORE] Restoring extra paths via rsync -> $extra_dest"
+            mkdir -p "$extra_dest"
+            rsync -a "$extra_dir"/ "$extra_dest"/ || log warn "[RESTORE] Restoring extra paths failed."
         fi
     fi
 
-    # Restore DB last
+    if [[ -n "$env_part" ]]; then
+        local env_dest="${target%/}/.env"
+        if [[ "$simulate" == true ]]; then
+            log info "[DRY-RUN] Would restore .env -> $env_dest"
+        else
+            if [[ -f "$env_dest" && "$force" != true ]]; then
+                log warn "[RESTORE] .env exists at $env_dest (use --force to overwrite)."
+            else
+                log info "[RESTORE] Restoring .env -> $env_dest"
+                mkdir -p "$(dirname "$env_dest")"
+                cp "$env_part" "$env_dest" || log warn "[RESTORE] Failed to restore .env."
+            fi
+        fi
+    fi
+
     if [[ -n "$db_part" ]]; then
         if [[ "$simulate" == true ]]; then
             log info "[DRY-RUN] Would import database from $db_part"
@@ -194,7 +202,6 @@ run_restore() {
         fi
     fi
 
-    # Post-restore integrity notes
     local version_file="${target%/}/VERSION.txt"
     if [[ -f "$version_file" ]]; then
         local restored_ver
@@ -213,5 +220,31 @@ run_restore() {
         log warn "[RESTORE] VERSION.txt missing in $target; unable to report restored version."
     fi
 
-    log ok "[RESTORE] Restore flow completed${simulate:+ (dry-run)}."
+    if [[ "$include_app" == true ]]; then
+        if ! app_sanity_check "$target"; then
+            log warn "[RESTORE] App sanity check failed. Consider running 'inmanage core update --force'."
+            app_missing=true
+        fi
+    fi
+
+    if command -v du >/dev/null 2>&1; then
+        local target_size
+        target_size=$(du -sh "$target" 2>/dev/null | awk '{print $1}')
+        [[ -n "$target_size" ]] && log info "[RESTORE] Target footprint: $target_size at $target"
+    fi
+
+    # Final verdict on install readiness
+    if [[ "$include_app" == true ]]; then
+        if [[ "$app_missing" == true ]]; then
+            log err "[RESTORE] Installation not ready: missing critical app files."
+        elif [[ ! -f "${target%/}/.env" ]]; then
+            log err "[RESTORE] Installation not ready: .env missing at ${target%/}/.env."
+        else
+            log ok "[RESTORE] Installation appears complete. Consider running 'inmanage core update' to ensure the latest version."
+        fi
+    fi
+
+    local suffix=""
+    [[ "$simulate" == true ]] && suffix=" (dry-run)"
+    log ok "[RESTORE] Restore flow completed${suffix}."
 }

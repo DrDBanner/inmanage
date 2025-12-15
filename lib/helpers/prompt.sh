@@ -32,7 +32,17 @@ prompt_var() {
     local timeout="${5:-60}"
     local input=""
 
-    local prompt="${GREEN}\n${text}\n${RESET}${GRAY}[$default]${RESET} > "
+    local use_color=false
+    if [[ -t 2 && "${NO_COLOR:-}" != "1" ]]; then
+        use_color=true
+    fi
+
+    local prompt
+    if [[ "$use_color" == true ]]; then
+        prompt="${GREEN}\n${text}\n${RESET}${GRAY}[$default]${RESET} > "
+    else
+        prompt=$'\n'"${text}"$'\n'"[${default}] > "
+    fi
 
     local read_opts=(-r -t "$timeout" -p "$prompt")
     [[ "$silent" == "true" ]] && read_opts+=(-s)

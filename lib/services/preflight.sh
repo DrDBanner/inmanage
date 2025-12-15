@@ -45,6 +45,7 @@ run_preflight() {
     local skip_github="${NAMED_ARGS[skip_github]:-${ARGS[skip_github]:-false}}"
     local skip_snappdf="${NAMED_ARGS[skip_snappdf]:-${ARGS[skip_snappdf]:-false}}"
     local skip_web_php="${NAMED_ARGS[skip_web_php]:-${ARGS[skip_web_php]:-false}}"
+    local fix_permissions="${NAMED_ARGS[fix_permissions]:-${NAMED_ARGS[fix-permissions]:-${ARGS[fix_permissions]:-${ARGS[fix-permissions]:-false}}}}"
     log debug "[PREFLIGHT] Flags resolved: fast=$fast skip_db=$skip_db skip_github=$skip_github skip_snappdf=$skip_snappdf skip_web_php=$skip_web_php"
 
     local ok=0 warn=0 err=0
@@ -192,6 +193,39 @@ run_preflight() {
         fi
     done
 
+    # ---- App sanity & permissions ----
+    if [ -n "${INM_INSTALLATION_PATH:-}" ] && [ -d "${INM_INSTALLATION_PATH%/}" ]; then
+        if app_sanity_check "${INM_INSTALLATION_PATH%/}"; then
+            add_result OK "APP" "App structure looks complete at ${INM_INSTALLATION_PATH%/}"
+        else
+            add_result ERR "APP" "App structure incomplete at ${INM_INSTALLATION_PATH%/}"
+        fi
+
+        if [ -n "${ENFORCED_USER:-}" ]; then
+            check_owner_and_fix() {
+                local p="$1"
+                [ ! -e "$p" ] && return
+                local owner
+                owner=$(stat -c '%U' "$p" 2>/dev/null || stat -f '%Su' "$p" 2>/dev/null || echo "")
+                if [ -n "$owner" ] && [ "$owner" != "$ENFORCED_USER" ]; then
+                    if [ "$fix_permissions" = true ]; then
+                        add_result WARN "PERM" "Fixing ownership for $p (was $owner -> $ENFORCED_USER)"
+                        enforce_ownership "$p"
+                    else
+                        add_result WARN "PERM" "Ownership mismatch at $p (owner=$owner, expected=$ENFORCED_USER). Use --fix-permissions to repair."
+                    fi
+                else
+                    add_result OK "PERM" "$p owned by ${owner:-unknown}"
+                fi
+            }
+            check_owner_and_fix "${INM_INSTALLATION_PATH%/}"
+            check_owner_and_fix "${INM_INSTALLATION_PATH%/}/storage"
+            check_owner_and_fix "${INM_INSTALLATION_PATH%/}/public"
+        fi
+    else
+        add_result WARN "APP" "App directory missing or unset: ${INM_INSTALLATION_PATH:-<unset>}"
+    fi
+
     # ---- PHP version / ini ----
     local phpv
     phpv=$(php -r 'echo PHP_VERSION;' 2>/dev/null)
@@ -256,7 +290,11 @@ run_preflight() {
             rm -f "$dir/.inm_perm_test"
             add_result OK "FS" "Writable: $dir"
         else
-            add_result ERR "FS" "Not writable: $dir"
+            local hint="Not writable: $dir"
+            if [ -n "${ENFORCED_USER:-}" ]; then
+                hint+=" (hint: chown -R ${ENFORCED_USER}:${ENFORCED_USER} \"$dir\" or run 'inmanage core health --fix-permissions')"
+            fi
+            add_result ERR "FS" "$hint"
         fi
     done
 

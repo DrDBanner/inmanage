@@ -4,10 +4,7 @@
 [[ -n ${__SERVICE_BACKUP_LOADED:-} ]] && return
 __SERVICE_BACKUP_LOADED=1
 
-# ---------------------------------------------------------------------
-# run_backup()
-# Creates backups (DB/storage/uploads) with bundling/compression.
-# ---------------------------------------------------------------------
+# Creates backups (DB/env/app/storage/uploads/extra) with optional bundling/compression.
 run_backup() {
     declare -A ARGS
     parse_named_args ARGS "$@"
@@ -15,364 +12,497 @@ run_backup() {
     local compress="${ARGS[compress]:-tar.gz}"
     local bundle="${ARGS[bundle]:-true}"
     local name="${ARGS[name]:-$(date +%Y%m%d-%H%M)}"
-    local include_app="${ARGS[include_app]:-${ARGS[include-app]:-false}}"
-    local extra_paths_raw="${ARGS[extra_paths]:-${ARGS[extra]:-}}"
-
-    local db="${ARGS[db]:-false}"
-    local storage="${ARGS[storage]:-false}"
-    local uploads="${ARGS[uploads]:-false}"
-    local fullbackup="${ARGS[fullbackup]:-true}"
-    local create_script="${ARGS[create_backup_script]:-false}"
-    local script_target="${ARGS[script_path]:-backup_remote_job.sh}"
-
-    if [[ "$create_script" == "true" ]]; then
-        local root_dir
-        root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-        local template="$root_dir/templates/backup_remote_job.sh"
-
-        if [[ ! -f "$template" ]]; then
-            log err "[BACKUP] Template not found: $template"
-            return 1
-        fi
-
-        if [[ -e "$script_target" && "$force_update" != true ]]; then
-            log warn "[BACKUP] Target script exists: $script_target (use --force to overwrite)"
-            return 0
-        fi
-
-        log info "[BACKUP] Writing remote backup template to: $script_target"
-        cp "$template" "$script_target" || {
-            log err "[BACKUP] Failed to write $script_target"
-            return 1
-        }
-
-        chmod +x "$script_target" 2>/dev/null || true
-        if [[ -n "${INM_ENFORCED_USER:-}" ]]; then
-            log info "[BACKUP] Prefill suggestion: set REMOTE_USER=\"$INM_ENFORCED_USER\" inside $script_target"
-        fi
-        log ok "[BACKUP] Remote backup script created: $script_target"
-        return 0
+    local include_app="${ARGS[include_app]:-${ARGS[include-app]:-true}}"
+    local include_app_explicit=false
+    if [[ -n "${ARGS[include_app]+x}" || -n "${ARGS[include-app]+x}" ]]; then
+        include_app_explicit=true
     fi
+    local db="${ARGS[db]:-true}"
+    local storage="${ARGS[storage]:-true}"
+    local uploads="${ARGS[uploads]:-true}"
+    local fullbackup="${ARGS[fullbackup]:-false}"
+    local extra_raw="${ARGS[extra_paths]:-${ARGS[extra]:-}}"
+    local force="${force_update:-false}"
+    local simulate="${DRY_RUN:-false}"
+    local backup_dir="${INM_BACKUP_DIRECTORY%/}"
+
+    case "$compress" in
+        tar.gz|zip|false) ;;
+        *) log err "[BACKUP] Invalid compress option: $compress"; return 1 ;;
+    esac
 
     if [[ "$fullbackup" == "true" ]]; then
         db=true
         storage=true
         uploads=true
-        include_app=true
         bundle=true
-        single_bundle=true
+        [[ "$include_app_explicit" == false ]] && include_app=true
     fi
 
-    local ts
-    ts="$(date +%Y-%m-%d_%H-%M)"
+    local install_root="${INM_INSTALLATION_PATH:-$(compute_installation_path "${INM_BASE_DIRECTORY:-}" "${INM_INSTALLATION_DIRECTORY:-}")}"
+    install_root="${install_root%/}"
+    if [[ -z "$install_root" ]]; then
+        log err "[BACKUP] Could not determine installation path (check INM_INSTALLATION_PATH/INM_BASE_DIRECTORY/INM_INSTALLATION_DIRECTORY)."
+        return 1
+    fi
+    if [[ ! -d "$install_root" ]]; then
+        if [[ "$simulate" == true ]]; then
+            log warn "[DRY-RUN] Installation path not found (would fail normally): $install_root"
+        else
+            log err "[BACKUP] Installation path not found: $install_root"
+            return 1
+        fi
+    fi
+
+    local env_source="${INM_ENV_FILE:-${install_root}/.env}"
+    local install_real
+    install_real=$(realpath "$install_root" 2>/dev/null || echo "$install_root")
+    path_inside_app_tree() {
+        local src="$1"
+        [[ ! -e "$src" || -L "$src" ]] && return 1
+        local src_real
+        src_real=$(realpath "$src" 2>/dev/null || echo "$src")
+        [[ "$src_real" == "$install_real"/* ]]
+    }
+    local ts="$(date +%Y-%m-%d_%H-%M)"
     local base_name="${INM_PROGRAM_NAME:-invoiceninja}_${name}_${ts}"
+    local app_dir_name
+    app_dir_name="$(basename "${INM_INSTALLATION_DIRECTORY:-$install_root}")"
 
-    local db_file="$INM_BACKUP_DIRECTORY/${base_name}_db.sql"
-    local storage_file="$INM_BACKUP_DIRECTORY/${base_name}_storage.tar.gz"
-    local uploads_file="$INM_BACKUP_DIRECTORY/${base_name}_uploads.tar.gz"
-    local app_file="$INM_BACKUP_DIRECTORY/${base_name}_app.tar.gz"
-    local extra_file="$INM_BACKUP_DIRECTORY/${base_name}_extra.tar.gz"
-    local bundle_file="$INM_BACKUP_DIRECTORY/${base_name}_full"
-    local simulate="${DRY_RUN:-false}"
-    local planned_parts=()
     local extra_paths=()
-    local single_bundle=false
-
-    # default: if nothing specified, take full backup
-    if [[ -z "${ARGS[db]}" && -z "${ARGS[storage]}" && -z "${ARGS[uploads]}" && -z "${ARGS[include_app]}" && -z "${ARGS[include-app]}" && -z "${ARGS[extra_paths]}" && -z "${ARGS[extra]}" ]]; then
-        db=true
-        storage=true
-        uploads=true
-        include_app=true
-        bundle=true
-        single_bundle=true
+    if [[ -n "$extra_raw" ]]; then
+        IFS=',' read -ra extra_paths <<<"$extra_raw"
     fi
 
-    [[ "$compress" == "zip" ]] && bundle_file+=".zip"
-    [[ "$compress" == "tar.gz" ]] && bundle_file+=".tar.gz"
-    # compress=false -> keep bundle_file as directory target (no suffix)
-    [[ "$compress" == "zip" ]] && extra_file="${extra_file%.tar.gz}.zip"
-    [[ "$compress" == "false" ]] && extra_file="${extra_file%.tar.gz}"
-
-    if [[ -n "$extra_paths_raw" ]]; then
-        IFS=',' read -ra extra_paths <<<"$extra_paths_raw"
-    fi
-
-    log info "[BACKUP] Preparing backup in: $INM_BACKUP_DIRECTORY"
-    log debug "[BACKUP] Parts → db:${db} storage:${storage} uploads:${uploads} app:${include_app} extra:${#extra_paths[@]} bundle:${bundle} compress:${compress} (dry-run=${simulate})"
-
-    # Plan parts regardless of dry-run (only for multi-part mode)
-    if [[ "$single_bundle" != true ]]; then
-        [[ "$db" == "true" ]] && planned_parts+=("$db_file")
-        [[ "$storage" == "true" ]] && planned_parts+=("$storage_file")
-        [[ "$uploads" == "true" ]] && planned_parts+=("$uploads_file")
-        [[ "$include_app" == "true" ]] && planned_parts+=("$app_file")
-        [[ ${#extra_paths[@]} -gt 0 ]] && planned_parts+=("$extra_file")
-    fi
+    log info "[BACKUP] Preparing backup: $base_name"
+    log debug "[BACKUP] bundle=${bundle} compress=${compress} db=${db} storage=${storage} uploads=${uploads} include_app=${include_app} extras=${#extra_paths[@]} dry-run=${simulate}"
 
     if [[ "$simulate" != true ]]; then
-        mkdir -p "$INM_BACKUP_DIRECTORY" || {
-            log err "[BACKUP] Cannot create backup directory: $INM_BACKUP_DIRECTORY"
+        mkdir -p "$backup_dir" || {
+            log err "[BACKUP] Cannot create backup directory: $backup_dir"
             return 1
         }
     else
-        log info "[DRY-RUN] Would create backup directory: $INM_BACKUP_DIRECTORY"
+        log info "[DRY-RUN] Would ensure backup directory: $backup_dir"
     fi
 
-    local install_root="${INM_INSTALLATION_PATH:-${INM_BASE_DIRECTORY%/}/${INM_INSTALLATION_DIRECTORY#/}}"
-
-    if [[ "$single_bundle" == true ]]; then
-        if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would create single full bundle -> $bundle_file"
+    # Helper to resolve extra paths relative to install_root when not absolute
+    resolve_extra_path() {
+        local p="$1"
+        if [[ "$p" == /* ]]; then
+            printf "%s\n" "$p"
         else
-            local stage
-            stage="$(mktemp -d)"
-            # dump DB into staging
-            log info "[BACKUP] Starting database dump..."
-            dump_database "$stage/db.sql" || { rm -rf "$stage"; return 1; }
-            # sync entire app (exclude backup dir and .cache to avoid recursion)
-            local staged_app="$stage/$(basename "$INM_INSTALLATION_DIRECTORY")"
-            rsync -a --delete --exclude "$(basename "$INM_BACKUP_DIRECTORY")" --exclude ".cache" "$install_root"/ "$staged_app/" || {
-                log err "[BACKUP] Failed to stage app files for bundle."
-                rm -rf "$stage"; return 1;
-            }
-            # copy app .env into staged app; require unless overridden by --force
-            local app_env="${INM_ENV_FILE:-${install_root}/.env}"
-            if [[ -f "$app_env" ]]; then
-                if ! cp "$app_env" "$staged_app/.env" 2>/dev/null; then
-                    if [[ "$force_update" == true ]]; then
-                        log warn "[BACKUP] Could not copy .env into bundle (continuing due to --force)."
+            printf "%s/%s\n" "$install_root" "${p#/}"
+        fi
+    }
+
+    # Bundle mode: stage everything and pack once (no nested archives)
+    if [[ "$bundle" == "true" ]]; then
+        local bundle_path="$backup_dir/${base_name}"
+        [[ "$compress" == "tar.gz" ]] && bundle_path+=".tar.gz"
+        [[ "$compress" == "zip" ]] && bundle_path+=".zip"
+
+        local stage=""
+        if [[ "$simulate" != true ]]; then
+            stage="$(mktemp -d)" || { log err "[BACKUP] Could not create staging directory."; return 1; }
+        else
+            log info "[DRY-RUN] Would create staging directory for bundle."
+            stage="<staging>"
+        fi
+
+        cleanup_stage() {
+            [[ "$simulate" != true && -n "$stage" && -d "$stage" ]] && rm -rf "$stage"
+        }
+
+        if [[ "$db" == "true" ]]; then
+            if [[ "$simulate" == true ]]; then
+                log info "[DRY-RUN] Would dump database -> $stage/db.sql"
+            else
+                log info "[BACKUP] Dumping database..."
+                dump_database "$stage/db.sql" || { cleanup_stage; return 1; }
+            fi
+        fi
+
+        if [[ ! -f "$env_source" ]]; then
+            if [[ "$force" == true ]]; then
+                log warn "[BACKUP] .env not found at $env_source; continuing due to --force."
+            else
+                log err "[BACKUP] .env not found at $env_source; aborting. Use --force to continue."
+                cleanup_stage
+                return 1
+            fi
+        else
+            if [[ "$simulate" == true ]]; then
+                log info "[DRY-RUN] Would copy $env_source -> $stage/.env"
+            else
+                if ! cp "$env_source" "$stage/.env"; then
+                    if [[ "$force" == true ]]; then
+                        log warn "[BACKUP] Failed to copy .env (continuing due to --force)."
                     else
-                        log err "[BACKUP] Could not copy .env into bundle; aborting. Use --force to override."
-                        rm -rf "$stage"
+                        log err "[BACKUP] Failed to copy .env into bundle."
+                        cleanup_stage
                         return 1
                     fi
                 fi
+            fi
+        fi
+
+        if [[ "$include_app" == "true" ]]; then
+            local app_target="$stage/$app_dir_name"
+            if [[ "$simulate" == true ]]; then
+                log info "[DRY-RUN] Would copy app -> $app_target (exclude $(basename "$backup_dir"), .cache)"
             else
-                if [[ "$force_update" == true ]]; then
-                    log warn "[BACKUP] .env not found; continuing due to --force."
-                else
-                    log err "[BACKUP] .env not found at $app_env; aborting full bundle. Use --force to override."
-                    rm -rf "$stage"
+                log info "[BACKUP] Staging app via rsync -> $app_target"
+                mkdir -p "$app_target"
+                rsync -a --delete --exclude "$(basename "$backup_dir")" --exclude ".cache" "$install_root/." "$app_target/" || {
+                    log err "[BACKUP] Failed to stage application directory."
+                    cleanup_stage
                     return 1
+                }
+            fi
+        fi
+
+        if [[ "$storage" == "true" ]]; then
+            local storage_src="$install_root/storage"
+            local skip_storage=false
+            if [[ "$include_app" == "true" ]] && path_inside_app_tree "$storage_src"; then
+                skip_storage=true
+                log info "[BACKUP] Skipping storage: already covered by app copy."
+            fi
+            if [[ "$skip_storage" != true ]]; then
+                if [[ -d "$storage_src" ]]; then
+                    if [[ "$simulate" == true ]]; then
+                        log info "[DRY-RUN] Would copy storage -> $stage/storage/"
+                    else
+                        log info "[BACKUP] Staging storage via rsync -> $stage/storage/"
+                        mkdir -p "$stage/storage"
+                        if ! rsync -a "$storage_src/." "$stage/storage/"; then
+                            log warn "[BACKUP] Failed to copy storage directory."
+                        fi
+                    fi
+                else
+                    log warn "[BACKUP] storage/ missing at $storage_src (skipping)."
                 fi
             fi
-            # create single bundle
+        fi
+
+        if [[ "$uploads" == "true" ]]; then
+            local uploads_src="$install_root/public/uploads"
+            local skip_uploads=false
+            if [[ "$include_app" == "true" ]] && path_inside_app_tree "$uploads_src"; then
+                skip_uploads=true
+                log info "[BACKUP] Skipping uploads: already covered by app copy."
+            fi
+            if [[ "$skip_uploads" != true ]]; then
+                if [[ -d "$uploads_src" ]]; then
+                    if [[ "$simulate" == true ]]; then
+                        log info "[DRY-RUN] Would copy uploads -> $stage/public/uploads/"
+                    else
+                        log info "[BACKUP] Staging uploads via rsync -> $stage/public/uploads/"
+                        mkdir -p "$stage/public/uploads"
+                        if ! rsync -a "$uploads_src/." "$stage/public/uploads/"; then
+                            log warn "[BACKUP] Failed to copy uploads directory."
+                        fi
+                    fi
+                else
+                    log warn "[BACKUP] uploads/ missing at $uploads_src (skipping)."
+                fi
+            fi
+        fi
+
+            if [[ ${#extra_paths[@]} -gt 0 ]]; then
+                if [[ "$simulate" == true ]]; then
+                    log info "[DRY-RUN] Would copy extra paths -> $stage/extra/: ${extra_paths[*]}"
+                else
+                    mkdir -p "$stage/extra"
+                    for p in "${extra_paths[@]}"; do
+                        local resolved
+                        resolved="$(resolve_extra_path "$p")"
+                        if [[ "$include_app" == "true" ]]; then
+                            if path_inside_app_tree "$resolved"; then
+                                log info "[BACKUP] Skipping extra path (inside app copy): $resolved"
+                                continue
+                            fi
+                        fi
+                        if [[ -e "$resolved" ]]; then
+                            log info "[BACKUP] Staging extra path via rsync -> $stage/extra/ (source: $resolved)"
+                            rsync -a "$resolved" "$stage/extra/" || log warn "[BACKUP] Failed to copy extra path: $resolved"
+                        else
+                            log warn "[BACKUP] Extra path missing, skipping: $resolved"
+                        fi
+                    done
+            fi
+        fi
+
+        if [[ "$simulate" == true ]]; then
+            log info "[DRY-RUN] Would create bundle at $bundle_path (compress=$compress)"
+        else
+            log info "[BACKUP] Creating bundle ($compress) at $bundle_path"
             case "$compress" in
+                tar.gz)
+                    tar -czf "$bundle_path" -C "$stage" . || { cleanup_stage; log err "[BACKUP] Failed to create tar bundle."; return 1; }
+                    ;;
                 zip)
-                    (cd "$stage" && zip -r "$bundle_file" .) >/dev/null && log ok "[BACKUP] Bundle created: $bundle_file" || log err "[BACKUP] Failed to create bundle: $bundle_file"
+                    (cd "$stage" && zip -r "$bundle_path" . >/dev/null) || { cleanup_stage; log err "[BACKUP] Failed to create zip bundle."; return 1; }
                     ;;
                 false)
-                    rm -rf "$bundle_file"
-                    mkdir -p "$bundle_file"
-                    if rsync -a "$stage"/ "$bundle_file"/; then
-                        log ok "[BACKUP] Bundle directory created: $bundle_file"
-                    else
-                        log err "[BACKUP] Failed to create bundle directory: $bundle_file"
+                    rm -rf "$bundle_path"
+                    if ! rsync -a "$stage"/ "$bundle_path"/; then
+                        cleanup_stage
+                        log err "[BACKUP] Failed to sync bundle directory."
+                        return 1
                     fi
                     ;;
-                *)
-                    tar -czf "$bundle_file" -C "$stage" . && log ok "[BACKUP] Bundle created: $bundle_file" || log err "[BACKUP] Failed to create bundle: $bundle_file"
-                    ;;
             esac
-            rm -rf "$stage"
         fi
-        # In single bundle mode we skip the rest
-        [[ "$simulate" == true ]] && log info "[DRY-RUN] Full bundle planned: $bundle_file"
-        if [[ "$simulate" != true && "$bundle" == "true" ]]; then
-            [[ "$compress" == "false" ]] && bundle_parts=() || bundle_parts=("$bundle_file")
-        fi
-        if [[ "$simulate" != true && "$compress" != "false" && -f "$bundle_file" ]]; then
-            planned_parts=("$bundle_file")
-        fi
-        # Checksum
-        if [[ "$simulate" != true && "$compress" != "false" && -f "$bundle_file" ]]; then
-            local checksum_target="$bundle_file.sha256"
-            (cd "$INM_BACKUP_DIRECTORY" && sha256sum "$(basename "$bundle_file")" > "$(basename "$checksum_target")") && \
+
+        cleanup_stage
+
+        if [[ "$simulate" != true && "$compress" != "false" && -f "$bundle_path" ]]; then
+            local checksum_target="${bundle_path}.sha256"
+            (cd "$backup_dir" && sha256sum "$(basename "$bundle_path")" > "$(basename "$checksum_target")") && \
                 log ok "[BACKUP] Checksum written: $checksum_target"
+        elif [[ "$simulate" == true && "$compress" != "false" ]]; then
+            log info "[DRY-RUN] Would create checksum for $bundle_path"
         fi
-        log info "[BACKUP] Completed. Base name: $base_name"
+
+        log ok "[BACKUP] Bundle ready: $bundle_path"
         return 0
     fi
 
+    # Multi-part mode (no bundle)
+    local outputs=()
+
     if [[ "$db" == "true" ]]; then
+        local db_file="$backup_dir/${base_name}_db.sql"
         if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would dump database to $db_file"
+            log info "[DRY-RUN] Would dump database -> $db_file"
         else
-            log info "[BACKUP] Starting database dump..."
+            log info "[BACKUP] Dumping database..."
             dump_database "$db_file" || return 1
         fi
+        outputs+=("$db_file")
     fi
 
-    # App .env (if present)
-    local env_file="${INM_ENV_FILE:-${install_root}/.env}"
-    if [[ -f "$env_file" ]]; then
-        local env_target="$INM_BACKUP_DIRECTORY/${base_name}_env"
-        [[ "$compress" == "tar.gz" ]] && env_target+=".tar.gz"
-        [[ "$compress" == "zip" ]] && env_target="${env_target%.tar.gz}.zip"
-        [[ "$compress" == "false" ]] && env_target="${env_target%.tar.gz}.bak"
+    # .env is mandatory unless --force
+    local env_target="$backup_dir/${base_name}_env"
+    case "$compress" in
+        tar.gz) env_target+=".tar.gz" ;;
+        zip) env_target+=".zip" ;;
+        false) ;; # keep as-is
+    esac
 
+    if [[ ! -f "$env_source" ]]; then
+        if [[ "$force" == true ]]; then
+            log warn "[BACKUP] .env not found at $env_source; continuing due to --force."
+        else
+            log err "[BACKUP] .env not found at $env_source; aborting. Use --force to continue."
+            return 1
+        fi
+    else
         if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would copy .env -> $env_target"
-            planned_parts+=("$env_target")
+            log info "[DRY-RUN] Would store .env -> $env_target (compress=$compress)"
         else
             case "$compress" in
-                zip)
-                    (cd "$(dirname "$env_file")" && zip -j "$env_target" "$(basename "$env_file")") >/dev/null && log ok "[BACKUP] .env archived: $env_target" || log warn "[BACKUP] Could not archive .env"
-                    ;;
                 tar.gz)
-                    mkdir -p "$(dirname "$env_target")" 2>/dev/null || true
-                    (cd "$(dirname "$env_file")" && tar -czf "$env_target" "$(basename "$env_file")") && log ok "[BACKUP] .env archived: $env_target" || log warn "[BACKUP] Could not archive .env"
+                    tar -czf "$env_target" -C "$(dirname "$env_source")" "$(basename "$env_source")" || log warn "[BACKUP] Could not archive .env"
                     ;;
-                *)
-                    cp "$env_file" "$env_target" && log ok "[BACKUP] .env copied: $env_target" || log warn "[BACKUP] Could not copy .env"
+                zip)
+                    (cd "$(dirname "$env_source")" && zip -j "$env_target" "$(basename "$env_source")") >/dev/null || log warn "[BACKUP] Could not archive .env"
+                    ;;
+                false)
+                    cp "$env_source" "$env_target" || log warn "[BACKUP] Could not copy .env"
                     ;;
             esac
-            [[ -f "$env_target" ]] && bundle_parts+=("$env_target")
         fi
+        [[ "$simulate" == true || -f "$env_target" ]] && outputs+=("$env_target")
     fi
 
     if [[ "$storage" == "true" ]]; then
-        if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would archive storage/ -> $storage_file"
-        else
-            log info "[BACKUP] Archiving storage/"
-            if ! tar -czf "$storage_file" -C "$install_root" storage; then
-                log err "[BACKUP] Archiving storage failed (path: $install_root/storage)."
-                return 1
+        local storage_src="$install_root/storage"
+        local storage_target="$backup_dir/${base_name}_storage"
+        if [[ "$compress" == "tar.gz" ]]; then storage_target+=".tar.gz"; fi
+        if [[ "$compress" == "zip" ]]; then storage_target+=".zip"; fi
+
+        local skip_storage=false
+        if [[ "$include_app" == "true" ]] && path_inside_app_tree "$storage_src"; then
+            skip_storage=true
+            log info "[BACKUP] Skipping storage: already covered by app copy."
+        fi
+
+        if [[ "$skip_storage" != true && -d "$storage_src" ]]; then
+            if [[ "$simulate" == true ]]; then
+                log info "[DRY-RUN] Would back up storage -> $storage_target"
+            else
+                if [[ "$compress" == "false" ]]; then
+                    log info "[BACKUP] Copying storage via rsync -> $storage_target"
+                fi
+                log info "[BACKUP] Creating storage archive ($compress) -> $storage_target"
+                case "$compress" in
+                    tar.gz)
+                        tar -czf "$storage_target" -C "$install_root" storage || { log err "[BACKUP] Archiving storage failed."; return 1; }
+                        ;;
+                    zip)
+                        (cd "$install_root" && zip -r "$storage_target" storage) >/dev/null || { log err "[BACKUP] Archiving storage failed."; return 1; }
+                        ;;
+                    false)
+                        rm -rf "$storage_target"
+                        mkdir -p "$storage_target"
+                        rsync -a "$storage_src/." "$storage_target/" || { log err "[BACKUP] Copying storage failed."; return 1; }
+                        ;;
+                esac
             fi
-            log ok "[BACKUP] Storage archived: $storage_file"
+            outputs+=("$storage_target")
+        elif [[ "$skip_storage" != true ]]; then
+            log warn "[BACKUP] storage/ missing at $storage_src (skipping)."
         fi
     fi
 
     if [[ "$uploads" == "true" ]]; then
-        if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would archive uploads/logo -> $uploads_file"
-        else
-            log info "[BACKUP] Archiving uploads/"
-            if ! tar -czf "$uploads_file" -C "$install_root/public" uploads logo 2>/dev/null; then
-                log warn "[BACKUP] Archiving uploads/logo failed (path missing? $install_root/public)."
+        local uploads_src="$install_root/public/uploads"
+        local uploads_target="$backup_dir/${base_name}_uploads"
+        if [[ "$compress" == "tar.gz" ]]; then uploads_target+=".tar.gz"; fi
+        if [[ "$compress" == "zip" ]]; then uploads_target+=".zip"; fi
+
+        local skip_uploads=false
+        if [[ "$include_app" == "true" ]] && path_inside_app_tree "$uploads_src"; then
+            skip_uploads=true
+            log info "[BACKUP] Skipping uploads: already covered by app copy."
+        fi
+
+        if [[ "$skip_uploads" != true && -d "$uploads_src" ]]; then
+            if [[ "$simulate" == true ]]; then
+                log info "[DRY-RUN] Would back up uploads -> $uploads_target"
             else
-                log ok "[BACKUP] Uploads archived: $uploads_file"
+                if [[ "$compress" == "false" ]]; then
+                    log info "[BACKUP] Copying uploads via rsync -> $uploads_target"
+                fi
+                log info "[BACKUP] Creating uploads archive ($compress) -> $uploads_target"
+                case "$compress" in
+                    tar.gz)
+                        tar -czf "$uploads_target" -C "$install_root" public/uploads || log warn "[BACKUP] Archiving uploads failed."
+                        ;;
+                    zip)
+                        (cd "$install_root" && zip -r "$uploads_target" public/uploads) >/dev/null || log warn "[BACKUP] Archiving uploads failed."
+                        ;;
+                    false)
+                        rm -rf "$uploads_target"
+                        mkdir -p "$uploads_target"
+                        rsync -a "$uploads_src/." "$uploads_target/" || log warn "[BACKUP] Copying uploads failed."
+                        ;;
+                esac
             fi
+            outputs+=("$uploads_target")
+        elif [[ "$skip_uploads" != true ]]; then
+            log warn "[BACKUP] uploads/ missing at $uploads_src (skipping)."
         fi
     fi
 
     if [[ "$include_app" == "true" ]]; then
-        if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would archive app (excluding storage/uploads) -> $app_file"
-        else
-            log info "[BACKUP] Archiving app (excluding storage/uploads)"
-            if ! tar -czf "$app_file" -C "$install_root" --exclude storage --exclude 'public/uploads' .; then
-                log warn "[BACKUP] Archiving app failed (path: $install_root)."
-            else
-                log ok "[BACKUP] App archived: $app_file"
-            fi
-        fi
-    fi
-
-    # Extra paths archive
-    if [[ ${#extra_paths[@]} -gt 0 ]]; then
-        if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would archive extra paths (${extra_paths[*]}) -> $extra_file"
-        else
-            log info "[BACKUP] Archiving extra paths: ${extra_paths[*]}"
-            if [[ "$compress" == "zip" ]]; then
-                (cd "$install_root" && zip -r "$extra_file" "${extra_paths[@]}") >/dev/null || \
-                    log warn "[BACKUP] Archiving extra paths failed (zip)."
-            else
-                if ! tar -czf "$extra_file" -C "$install_root" "${extra_paths[@]}" 2>/dev/null; then
-                    log warn "[BACKUP] Archiving extra paths failed (tar)."
-                else
-                    log ok "[BACKUP] Extra paths archived: $extra_file"
-                fi
-            fi
-        fi
-    fi
-
-    local bundle_parts=()
-    if [[ "$simulate" == true ]]; then
-        bundle_parts=("${planned_parts[@]}")
-    else
-        [[ -f "$db_file" ]] && bundle_parts+=("$db_file")
-        [[ -f "$storage_file" ]] && bundle_parts+=("$storage_file")
-        [[ -f "$uploads_file" ]] && bundle_parts+=("$uploads_file")
-        [[ -f "$app_file" ]] && bundle_parts+=("$app_file")
-        [[ -f "$extra_file" ]] && bundle_parts+=("$extra_file")
-    fi
-
-    if [[ "$bundle" == "true" ]]; then
-        if [ ${#bundle_parts[@]} -eq 0 ]; then
-            log warn "[BACKUP] Bundle requested, but no parts were selected. Skipping bundle."
-            return 0
-        fi
-        log info "[BACKUP] Creating bundle: $bundle_file"
+        local app_target="$backup_dir/${base_name}_app"
+        if [[ "$compress" == "tar.gz" ]]; then app_target+=".tar.gz"; fi
+        if [[ "$compress" == "zip" ]]; then app_target+=".zip"; fi
 
         if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would bundle parts (${bundle_parts[*]}) -> $bundle_file"
+            log info "[DRY-RUN] Would back up app -> $app_target (exclude $(basename "$backup_dir"), .cache)"
         else
-            if [[ "$compress" == "zip" ]]; then
-                zip -j "$bundle_file" "${bundle_parts[@]}" >/dev/null
-            elif [[ "$compress" == "tar.gz" ]]; then
-                # Build basename array without mapfile dependency
-                local _bundle_baseparts=()
-                for _bp in "${bundle_parts[@]}"; do
-                    _bundle_baseparts+=("$(basename "$_bp")")
-                done
-                tar -czf "$bundle_file" -C "$INM_BACKUP_DIRECTORY" "${_bundle_baseparts[@]}"
-            else
-                cat "${bundle_parts[@]}" > "$bundle_file"
+            if [[ "$compress" == "false" ]]; then
+                log info "[BACKUP] Copying app via rsync -> $app_target"
             fi
-            log ok "[BACKUP] Bundle created: $bundle_file"
-            rm -f "$db_file" "$storage_file" "$uploads_file" "$app_file" "$extra_file"
-            bundle_parts=("$bundle_file")
+            log info "[BACKUP] Creating app archive ($compress) -> $app_target"
+            case "$compress" in
+                tar.gz)
+                    tar -czf "$app_target" -C "$(dirname "$install_root")" --exclude "$(basename "$backup_dir")" --exclude ".cache" "$(basename "$install_root")" || log warn "[BACKUP] Archiving app failed."
+                    ;;
+                zip)
+                    (cd "$(dirname "$install_root")" && zip -r "$app_target" "$(basename "$install_root")" -x "$(basename "$backup_dir")/*" ".cache/*") >/dev/null || log warn "[BACKUP] Archiving app failed."
+                    ;;
+                false)
+                    rm -rf "$app_target"
+                    mkdir -p "$app_target"
+                    rsync -a --exclude "$(basename "$backup_dir")" --exclude ".cache" "$install_root/." "$app_target/" || log warn "[BACKUP] Copying app failed."
+                    ;;
+            esac
         fi
+        outputs+=("$app_target")
     fi
 
-    # Checksums for integrity
-    local checksum_target=""
-    if [[ "$simulate" == true ]]; then
-        log info "[DRY-RUN] Would create checksums for: ${bundle_parts[*]:-bundle $bundle_file}"
-    else
-        if [[ -f "$bundle_file" ]]; then
-            checksum_target="$bundle_file.sha256"
-            (cd "$INM_BACKUP_DIRECTORY" && sha256sum "$(basename "$bundle_file")" > "$(basename "$checksum_target")") && \
-                log ok "[BACKUP] Checksum written: $checksum_target"
+        if [[ ${#extra_paths[@]} -gt 0 ]]; then
+            local extra_target="$backup_dir/${base_name}_extra"
+            [[ "$compress" == "tar.gz" ]] && extra_target+=".tar.gz"
+            [[ "$compress" == "zip" ]] && extra_target+=".zip"
+
+        if [[ "$simulate" == true ]]; then
+            log info "[DRY-RUN] Would back up extra paths -> $extra_target : ${extra_paths[*]}"
         else
-            for f in "${bundle_parts[@]}"; do
-                if [[ -f "$f" ]]; then
-                    local cfile="${f}.sha256"
-                    (cd "$(dirname "$f")" && sha256sum "$(basename "$f")" > "$(basename "$cfile")") && \
-                        log ok "[BACKUP] Checksum written: $cfile"
-                fi
-            done
+            case "$compress" in
+                tar.gz|zip)
+                    local extra_stage
+                    extra_stage="$(mktemp -d)" || { log err "[BACKUP] Could not create temp dir for extras."; return 1; }
+                    for p in "${extra_paths[@]}"; do
+                        local resolved
+                        resolved="$(resolve_extra_path "$p")"
+                        if [[ "$include_app" == "true" ]] && path_inside_app_tree "$resolved"; then
+                            log info "[BACKUP] Skipping extra path (inside app copy): $resolved"
+                            continue
+                        fi
+                        if [[ -e "$resolved" ]]; then
+                            log info "[BACKUP] Staging extra path via rsync -> $extra_stage/ (source: $resolved)"
+                            rsync -a "$resolved" "$extra_stage/" || log warn "[BACKUP] Failed to copy extra path: $resolved"
+                        else
+                            log warn "[BACKUP] Extra path missing, skipping: $resolved"
+                        fi
+                    done
+                    if [[ "$compress" == "tar.gz" ]]; then
+                        log info "[BACKUP] Creating extra archive (tar.gz) -> $extra_target"
+                        tar -czf "$extra_target" -C "$extra_stage" . || log warn "[BACKUP] Archiving extras failed."
+                    else
+                        log info "[BACKUP] Creating extra archive (zip) -> $extra_target"
+                        (cd "$extra_stage" && zip -r "$extra_target" . >/dev/null) || log warn "[BACKUP] Archiving extras failed."
+                    fi
+                    rm -rf "$extra_stage"
+                    ;;
+                false)
+                    rm -rf "$extra_target"
+                    mkdir -p "$extra_target"
+                    for p in "${extra_paths[@]}"; do
+                        local resolved
+                        resolved="$(resolve_extra_path "$p")"
+                        if [[ "$include_app" == "true" ]] && path_inside_app_tree "$resolved"; then
+                            log info "[BACKUP] Skipping extra path (inside app copy): $resolved"
+                            continue
+                        fi
+                        if [[ -e "$resolved" ]]; then
+                            log info "[BACKUP] Copying extra path via rsync -> $extra_target/ (source: $resolved)"
+                            rsync -a "$resolved" "$extra_target/" || log warn "[BACKUP] Failed to copy extra path: $resolved"
+                        else
+                            log warn "[BACKUP] Extra path missing, skipping: $resolved"
+                        fi
+                    done
+                    ;;
+            esac
         fi
+        outputs+=("$extra_target")
     fi
 
-    # Manifest
-    local manifest="$INM_BACKUP_DIRECTORY/${base_name}_manifest.txt"
     if [[ "$simulate" == true ]]; then
-        log info "[DRY-RUN] Would write manifest: $manifest"
+        log info "[DRY-RUN] Would write checksums for files (skip directories) among: ${outputs[*]}"
     else
-        {
-            echo "name=$base_name"
-            echo "created=$(date '+%Y-%m-%d %H:%M:%S')"
-            echo "compress=$compress"
-            echo "bundle=$bundle"
-            echo "parts=${bundle_parts[*]}"
-            echo "include_app=$include_app"
-            echo "extra_paths=${extra_paths[*]}"
-        } > "$manifest"
-        log ok "[BACKUP] Manifest written: $manifest"
+        for f in "${outputs[@]}"; do
+            if [[ -f "$f" ]]; then
+                local cfile="${f}.sha256"
+                (cd "$(dirname "$f")" && sha256sum "$(basename "$f")" > "$(basename "$cfile")") && \
+                    log ok "[BACKUP] Checksum written: $cfile"
+            fi
+        done
     fi
 
-    log info "[BACKUP] Completed. Base name: $base_name"
-    if [[ "$bundle" == "true" ]]; then
-        [[ -f "$bundle_file" || "$simulate" == true ]] && log info "[BACKUP] Bundle at: $bundle_file"
-    else
-        [[ -f "$db_file" || "$simulate" == true ]] && log info "[BACKUP] DB dump: $db_file"
-        [[ -f "$storage_file" || "$simulate" == true ]] && log info "[BACKUP] Storage: $storage_file"
-        [[ -f "$uploads_file" || "$simulate" == true ]] && log info "[BACKUP] Uploads: $uploads_file"
-        [[ -f "$app_file" || "$simulate" == true ]] && [[ "$include_app" == "true" ]] && log info "[BACKUP] App archive: $app_file"
-    fi
+    log ok "[BACKUP] Backup completed (multi-part). Base: $base_name"
+    for f in "${outputs[@]}"; do
+        if [[ "$simulate" == true ]]; then
+            log info "[DRY-RUN] Planned output: $f"
+        elif [[ -e "$f" ]]; then
+            log info "[BACKUP] Output: $f"
+        fi
+    done
 }

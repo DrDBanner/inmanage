@@ -57,6 +57,56 @@ enforce_ownership() {
 }
 
 # ---------------------------------------------------------------------
+# app_sanity_check()
+# Performs basic integrity checks on an Invoice Ninja app directory.
+# Logs missing critical pieces and returns non-zero if critical items
+# are missing. Non-critical findings are logged as warnings.
+# ---------------------------------------------------------------------
+app_sanity_check() {
+    local dir="$1"
+    if [[ -z "$dir" || ! -d "$dir" ]]; then
+        log err "[ASC] App directory not found: ${dir:-<unset>}"
+        return 1
+    fi
+
+    local missing=()
+    local warn=()
+
+    [[ -f "${dir%/}/artisan" ]] || missing+=("artisan")
+    [[ -f "${dir%/}/vendor/autoload.php" ]] || missing+=("vendor/autoload.php")
+    [[ -f "${dir%/}/public/index.php" ]] || missing+=("public/index.php")
+    [[ -f "${dir%/}/.env" ]] || missing+=(".env")
+    [[ -d "${dir%/}/storage" ]] || missing+=("storage/")
+    [[ -d "${dir%/}/public" ]] || missing+=("public/")
+    [[ -d "${dir%/}/routes" ]] || warn+=("routes/")
+    [[ -d "${dir%/}/resources/views" ]] || warn+=("resources/views/")
+    [[ -d "${dir%/}/database" ]] || warn+=("database/")
+    [[ -f "${dir%/}/public/.htaccess" ]] || warn+=("public/.htaccess")
+
+    [[ -d "${dir%/}/bootstrap/cache" ]] || warn+=("bootstrap/cache/")
+    [[ -f "${dir%/}/composer.json" ]] || warn+=("composer.json")
+    [[ -f "${dir%/}/VERSION.txt" ]] || warn+=("VERSION.txt")
+
+    if command -v du >/dev/null 2>&1; then
+        local sz
+        sz=$(du -sh "$dir" 2>/dev/null | awk '{print $1}')
+        [[ -n "$sz" ]] && log info "[ASC] App footprint: $sz at $dir"
+    fi
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        log err "[ASC] Critical app items missing: ${missing[*]}"
+        return 1
+    fi
+
+    if [[ ${#warn[@]} -gt 0 ]]; then
+        log warn "[ASC] Non-critical items missing: ${warn[*]}"
+    else
+        log ok "[ASC] App structure looks complete."
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------
 # ensure_trailing_slash()
 # Normalizes a path with a single trailing slash; keeps absolute/relative intact.
 # ---------------------------------------------------------------------
