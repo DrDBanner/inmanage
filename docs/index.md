@@ -23,6 +23,7 @@ Important keys to keep in provision/self config: `INM_ENFORCED_USER`, `INM_ENFOR
 2) `cd` into Invoice Ninja base directory.  
 3) Run `inmanage core install` and choose:
    - **Provisioned (recommended):** uses `.inmanage/.env.provision` (spawn + edit) → unattended install, seeds defaults.
+   - **Wizard install:** only when you explicitly want the interactive web setup.
    - **Clean:** deploys vanilla app; complete setup in the browser or reuse an existing `.env` + imported DB.
 Direct flags: `--provision`, `--install-mode=system|user|project`, `--provision-env=<path>`.
 

@@ -8,7 +8,7 @@ Full documentation: see `docs/index.md` (install, config, automation, troublesho
 
 ## Highlights
 
-- Install (provisioned/unattended recommended; bare install leaves GUI setup) separate from the GUI.
+- Install (provisioned/unattended recommended; bare install leaves setup wizard) separate from the web setup.
 - Backups for DB and files (storage/uploads) with retention & restore.
 - Updates with rollback (old versions kept).
 - Snappdf setup included.
@@ -46,7 +46,7 @@ Step 3 — Run CLI command as the user with the appropiate rights
 inmanage
 ```
 
-- Prompts for install type: **provisioned (recommended)** vs **clean GUI setup**.  
+- Prompts for install type: **provisioned (recommended)** vs **wizard setup**.  
 - If provisioned: you'll be offered to create/edit `.inmanage/.env.provision`, then it runs unattended.  
 - If clean: a vanilla app is deployed; finish setup in the browser. You can also drop in an existing `.env` and a pre-imported database to reuse prior data.
 
@@ -174,7 +174,7 @@ Backup cron:
 3) From the Invoice Ninja base: `inmanage core install --provision`.
 4) Optional: `inmanage core health` to verify.
 
-Why provisioned is recommended vs GUI:
+Why provisioned is recommended vs wizard:
 
 - Repeatable: reuse the same provision file for staging/production; no manual clicks.
 - Auditable: values live in `.inmanage/.env.provision`, so changes are trackable.
@@ -227,7 +227,7 @@ tar -xf InvoiceNinja_*.tar.gz --wildcards '*.sql' --strip-components=6
 
 - **Use with existing installs?** Yes
 - **Deletes anything?** No – it moves or backs up
-- **GUI updates okay?** Yes
+- **Web updates okay?** Yes
 - **Docker?** Yes, with correct shell + mounts
 - **Failed install?** Retry or rollback
 - **Custom env?** Edit or delete `.env.inmanage` to regenerate
@@ -277,7 +277,7 @@ Yes. Install inmanage, run a backup, dann `inmanage core update`. Es wird nichts
 ### Was tun bei kaputter Installation oder Rechten?
 Das Skript zieht eine frische Version, migriert Config/DB und versucht Rechte zu reparieren. Notfalls alte Version aus dem Backup-Verzeichnis zurückrollen.
 
-### Kann ich weiter über die GUI updaten?
+### Kann ich weiter über die Web-Oberfläche updaten?
 Ja. inmanage ist unabhängig, bietet aber versionierte Backups vor Updates.
 
 ### Automatisierte Backups?
