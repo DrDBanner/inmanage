@@ -9,12 +9,16 @@ __SERVICE_DB_LOADED=1
 # ---------------------------------------------------------------------
 detect_mysql_collation() {
     local collation="${1:-}"
+    local db_client="${2:-}"
     if [ -n "$collation" ]; then
         echo "$collation"
         return 0
     fi
 
-    if mysql --version 2>/dev/null | grep -iq "mariadb"; then
+    if [ -z "$db_client" ]; then
+        db_client="$(select_db_client false true)"
+    fi
+    if [ -n "$db_client" ] && "$db_client" --version 2>/dev/null | grep -iq "mariadb"; then
         echo "utf8mb4_unicode_ci"
     else
         echo "utf8mb4_unicode_ci"
@@ -47,15 +51,20 @@ import_database() {
         . "${INM_ENV_FILE}"
         set +a
     fi
+    local db_config_present=false
+    if [[ -n "${DB_HOST:-}" || -n "${DB_USERNAME:-}" || -n "${DB_DATABASE:-}" ]]; then
+        db_config_present=true
+    fi
+
     # Prompt if still missing essentials
     if [[ -z "${DB_USERNAME:-}" ]]; then
-        DB_USERNAME=$(prompt_var "MYSQL_USER" "root" "MySQL user for import:" false 60) || return 1
+        DB_USERNAME=$(prompt_var "MYSQL_USER" "root" "MySQL/MariaDB user for import:" false 60) || return 1
     fi
     if [[ -z "${DB_DATABASE:-}" ]]; then
-        DB_DATABASE=$(prompt_var "MYSQL_DB" "" "MySQL database to import into:" false 60) || return 1
+        DB_DATABASE=$(prompt_var "MYSQL_DB" "" "MySQL/MariaDB database to import into:" false 60) || return 1
     fi
     if [[ -z "${DB_HOST:-}" ]]; then
-        DB_HOST=$(prompt_var "MYSQL_HOST" "localhost" "MySQL host:" false 60) || return 1
+        DB_HOST=$(prompt_var "MYSQL_HOST" "localhost" "MySQL/MariaDB host:" false 60) || return 1
     fi
     if [[ -z "${DB_PASSWORD:-}" && "${INM_FORCE_READ_DB_PW^^}" == "Y" ]]; then
         DB_PASSWORD=$(prompt_var "MYSQL_PASS" "" "Password for ${DB_USERNAME}:" true 60) || return 1
@@ -71,32 +80,34 @@ import_database() {
         exit 1
     fi
 
-    if ! command -v mysql >/dev/null 2>&1; then
-        log err "[import_db] mysql client not found. Please install MySQL client tools."
+    local db_client=""
+    db_client="$(select_db_client true "$db_config_present")"
+    if [ -z "$db_client" ]; then
+        log err "[import_db] No MySQL/MariaDB client found. Please install mysql or mariadb client tools."
         exit 1
     fi
 
-    local mysql_cmd=("mysql" "-u${DB_USERNAME}" "-h${DB_HOST}" "-P${DB_PORT:-3306}")
-    [[ -n "${DB_PASSWORD:-}" ]] && mysql_cmd+=("-p${DB_PASSWORD}")
+    local db_cmd=("$db_client" "-u${DB_USERNAME}" "-h${DB_HOST}" "-P${DB_PORT:-3306}")
+    [[ -n "${DB_PASSWORD:-}" ]] && db_cmd+=("-p${DB_PASSWORD}")
 
     # Connectivity check; if it fails, prompt for elevated creds (e.g., root)
-    if ! "${mysql_cmd[@]}" -e "SELECT 1" >/dev/null 2>&1; then
-        log warn "[import_db] Initial DB credentials failed; prompting for elevated MySQL user."
+    if ! "${db_cmd[@]}" -e "SELECT 1" >/dev/null 2>&1; then
+        log warn "[import_db] Initial DB credentials failed; prompting for elevated DB user."
         local elev_user elev_pw
-        elev_user=$(prompt_var "MYSQL_USER" "${DB_USERNAME:-root}" "MySQL user for import (e.g., root):" false 60) || return 1
+        elev_user=$(prompt_var "MYSQL_USER" "${DB_USERNAME:-root}" "MySQL/MariaDB user for import (e.g., root):" false 60) || return 1
         elev_pw=$(prompt_var "MYSQL_PASS" "" "Password for ${elev_user} (leave blank if none):" true 60) || return 1
-        mysql_cmd=("mysql" "-u${elev_user}" "-h${DB_HOST}" "-P${DB_PORT:-3306}")
-        [[ -n "$elev_pw" ]] && mysql_cmd+=("-p${elev_pw}")
+        db_cmd=("$db_client" "-u${elev_user}" "-h${DB_HOST}" "-P${DB_PORT:-3306}")
+        [[ -n "$elev_pw" ]] && db_cmd+=("-p${elev_pw}")
         # Persist for later calls in this function
         DB_USERNAME="$elev_user"
         DB_PASSWORD="$elev_pw"
-        if ! "${mysql_cmd[@]}" -e "SELECT 1" >/dev/null 2>&1; then
+        if ! "${db_cmd[@]}" -e "SELECT 1" >/dev/null 2>&1; then
             # Try socket if host is localhost
             if [[ "${DB_HOST}" == "localhost" || "${DB_HOST}" == "127.0.0.1" ]]; then
-                mysql_cmd=("mysql" "-u${elev_user}" "-S" "${DB_SOCKET:-/var/run/mysqld/mysqld.sock}")
-                [[ -n "$elev_pw" ]] && mysql_cmd+=("-p${elev_pw}")
-                if "${mysql_cmd[@]}" -e "SELECT 1" >/dev/null 2>&1; then
-                    log ok "[import_db] Elevated MySQL credentials accepted via socket."
+                db_cmd=("$db_client" "-u${elev_user}" "-S" "${DB_SOCKET:-/var/run/mysqld/mysqld.sock}")
+                [[ -n "$elev_pw" ]] && db_cmd+=("-p${elev_pw}")
+                if "${db_cmd[@]}" -e "SELECT 1" >/dev/null 2>&1; then
+                    log ok "[import_db] Elevated DB credentials accepted via socket."
                 else
                     log err "[import_db] Could not connect with provided elevated credentials (host or socket)."
                     return 1
@@ -106,7 +117,7 @@ import_database() {
                 return 1
             fi
         else
-            log ok "[import_db] Elevated MySQL credentials accepted."
+            log ok "[import_db] Elevated DB credentials accepted."
         fi
     fi
 
@@ -132,12 +143,12 @@ import_database() {
 
     # Detect existing tables; purge by default to avoid mixed data
     local table_count=""
-    if table_count=$("${mysql_cmd[@]}" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_DATABASE}'" 2>/dev/null); then
+    if table_count=$("${db_cmd[@]}" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_DATABASE}'" 2>/dev/null); then
         if [[ "$table_count" -gt 0 && "$purge" != false ]]; then
             log warn "[import_db] Purging database '$DB_DATABASE' (drop/create) before import; existing tables: $table_count."
             local collation
-            collation=$(detect_mysql_collation "${DB_COLLATION:-}")
-            if ! "${mysql_cmd[@]}" -e "DROP DATABASE IF EXISTS \`$DB_DATABASE\`; CREATE DATABASE \`$DB_DATABASE\` DEFAULT COLLATE $collation;" ; then
+            collation=$(detect_mysql_collation "${DB_COLLATION:-}" "$db_client")
+            if ! "${db_cmd[@]}" -e "DROP DATABASE IF EXISTS \`$DB_DATABASE\`; CREATE DATABASE \`$DB_DATABASE\` DEFAULT COLLATE $collation;" ; then
                 log err "[import_db] Purge failed (drop/create)."
                 [[ "$force" == true ]] && log warn "[import_db] Continuing import despite purge failure due to --force." || return 1
             fi
@@ -149,7 +160,7 @@ import_database() {
     fi
 
     log info "[import_db] Importing '$file' into database '$DB_DATABASE' ..."
-    if ! "${mysql_cmd[@]}" "$DB_DATABASE" < "$file"; then
+    if ! "${db_cmd[@]}" "$DB_DATABASE" < "$file"; then
         log err "[import_db] Import failed for $DB_DATABASE@$DB_HOST."
         exit 1
     fi
@@ -177,12 +188,16 @@ dump_database() {
 
     log info "[dump_db] Dumping database to $target_file ..."
 
-    if ! command -v mysqldump >/dev/null 2>&1; then
-        log err "[dump_db] mysqldump not found. Please install the MySQL client tools."
+    local db_client=""
+    local db_dump=""
+    db_client="$(select_db_client false true)"
+    db_dump="$(select_db_dump "$db_client")"
+    if [ -z "$db_dump" ]; then
+        log err "[dump_db] No MySQL/MariaDB dump tool found. Please install mysqldump or mariadb-dump."
         return 1
     fi
 
-    local dump_cmd=("mysqldump")
+    local dump_cmd=("$db_dump")
     if [[ -n "$INM_DUMP_OPTIONS" ]]; then
         read -r -a tmp_opts <<< "$INM_DUMP_OPTIONS"
         dump_cmd+=("${tmp_opts[@]}")
@@ -226,8 +241,8 @@ dump_database() {
                 rm -f _dump.err
                 [[ "$success" != true ]] && return 1
             else
-                log err "[dump_db] Dump failed for ${DB_DATABASE}@${DB_HOST} (mysqldump exit $(cat _dump.err))"
-            log err "[dump_db] Dump failed for ${DB_DATABASE}@${DB_HOST}. mysqldump output:"
+                log err "[dump_db] Dump failed for ${DB_DATABASE}@${DB_HOST} (${db_dump} exit $(cat _dump.err))"
+            log err "[dump_db] Dump failed for ${DB_DATABASE}@${DB_HOST}. ${db_dump} output:"
             cat _dump.err >&2
                 rm -f _dump.err
                 return 1
@@ -267,8 +282,15 @@ create_database() {
     local elevated_user="$1"
     local elevated_pass="$2"
 
+    local db_client=""
+    db_client="$(select_db_client false true)"
+    if [ -z "$db_client" ]; then
+        log err "[db] No MySQL/MariaDB client found. Please install mysql or mariadb client tools."
+        exit 1
+    fi
+
     local collation
-    collation=$(detect_mysql_collation "${DB_COLLATION:-}")
+    collation=$(detect_mysql_collation "${DB_COLLATION:-}" "$db_client")
 
     local db_host="${NAMED_ARGS[db_host]:-${DB_HOST:-localhost}}"
     local db_port="${NAMED_ARGS[db_port]:-${DB_PORT:-3306}}"
@@ -277,7 +299,7 @@ create_database() {
     local db_pass="${NAMED_ARGS[db_pass]:-$DB_PASSWORD}"
 
     log debug "[db] Running DB provisioning commands..."
-    if mysql -h "$db_host" -P "$db_port" -u "$elevated_user" -p"$elevated_pass" <<EOF
+    if "$db_client" -h "$db_host" -P "$db_port" -u "$elevated_user" -p"$elevated_pass" <<EOF
 CREATE DATABASE IF NOT EXISTS \`$db_name\` DEFAULT COLLATE $collation;
 
 CREATE USER IF NOT EXISTS '$db_user'@'localhost' IDENTIFIED BY '${db_pass//\'/\\\'}';

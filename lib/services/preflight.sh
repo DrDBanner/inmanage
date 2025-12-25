@@ -8,11 +8,7 @@ __SERVICE_PREFLIGHT_LOADED=1
 # run_preflight()
 # Performs environment checks for inmanage/Invoice Ninja.
 # Flags via NAMED_ARGS:
-#   --fast=true         Skip network/snappdf checks
-#   --skip-db=true      Skip DB reachability test
-#   --skip-github=true  Skip GitHub reachability
-#   --skip-snappdf=true Skip Snappdf presence check
-#   --skip-web-php=true Skip web PHP check via APP_URL/public
+#   --checks=TAG1,TAG2  Only run selected check groups (e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
 # ---------------------------------------------------------------------
 run_preflight() {
     local errexit_set=false
@@ -23,11 +19,26 @@ run_preflight() {
     local -A ARGS=()
     parse_named_args ARGS "$@"
 
+    # Optional check filter (CSV of tags, e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
+    local checks_filter="${NAMED_ARGS[checks]:-${ARGS[checks]:-}}"
+    declare -A PF_ALLOW=()
+    if [[ -n "$checks_filter" ]]; then
+        IFS=',' read -ra tmp_checks <<<"$checks_filter"
+        for c in "${tmp_checks[@]}"; do
+            PF_ALLOW["${c}"]=1
+        done
+        log debug "[PREFLIGHT] Checks filter active: $checks_filter"
+    fi
+
     # Results collector
     local -a PF_STATUS=()
     local -a PF_CHECK=()
     local -a PF_DETAIL=()
     add_result() {
+        local tag="$2"
+        if [[ -n "$checks_filter" && -z "${PF_ALLOW[$tag]:-}" ]]; then
+            return 0
+        fi
         PF_STATUS+=("$1")
         PF_CHECK+=("$2")
         PF_DETAIL+=("$3")
@@ -40,16 +51,10 @@ run_preflight() {
     }
 
     # prefer globally parsed NAMED_ARGS to survive re-exec user switches
-    local fast="${NAMED_ARGS[fast]:-${ARGS[fast]:-false}}"
-    local skip_db="${NAMED_ARGS[skip_db]:-${ARGS[skip_db]:-false}}"
-    local skip_github="${NAMED_ARGS[skip_github]:-${ARGS[skip_github]:-false}}"
-    local skip_snappdf="${NAMED_ARGS[skip_snappdf]:-${ARGS[skip_snappdf]:-false}}"
-    local skip_web_php="${NAMED_ARGS[skip_web_php]:-${ARGS[skip_web_php]:-false}}"
     local fix_permissions="${NAMED_ARGS[fix_permissions]:-${NAMED_ARGS[fix-permissions]:-${ARGS[fix_permissions]:-${ARGS[fix-permissions]:-false}}}}"
-    log debug "[PREFLIGHT] Flags resolved: fast=$fast skip_db=$skip_db skip_github=$skip_github skip_snappdf=$skip_snappdf skip_web_php=$skip_web_php"
 
     local ok=0 warn=0 err=0
-    log info "[PREFLIGHT] Starting system checks (fast=$fast)"
+    log info "[PREFLIGHT] Starting system checks"
 
     # ---- CLI self info ----
     local cli_root cli_branch cli_commit cli_dirty="" cli_source="snapshot"
@@ -197,7 +202,97 @@ run_preflight() {
     fi
 
     # ---- Command availability ----
-    local req_cmds=(php mysql mysqldump git curl tar rsync zip unzip composer jq awk sed find xargs touch tee sha256sum)
+    local req_cmds=(php git curl tar rsync zip unzip composer jq awk sed find xargs touch tee sha256sum)
+    local db_cmds_required=false
+    local db_config_present=false
+    if [[ -n "${DB_HOST:-}" || -n "${DB_USERNAME:-}" || -n "${DB_DATABASE:-}" ]]; then
+        db_cmds_required=true
+        db_config_present=true
+    else
+        local env_for_db=""
+        if [ -n "${INM_ENV_FILE:-}" ]; then
+            env_for_db="$(expand_path_vars "$INM_ENV_FILE")"
+        elif [ -n "${INM_INSTALLATION_PATH:-}" ]; then
+            env_for_db="${INM_INSTALLATION_PATH%/}/.env"
+        fi
+        if [ -n "$env_for_db" ] && [ -f "$env_for_db" ]; then
+            if grep -qE '^DB_(HOST|USERNAME|DATABASE)=' "$env_for_db" 2>/dev/null; then
+                db_cmds_required=true
+                db_config_present=true
+            fi
+        fi
+    fi
+    local db_scope_note=""
+    local db_missing_status="ERR"
+    if [ "$db_cmds_required" != true ]; then
+        db_scope_note=" (DB not configured)"
+        db_missing_status="WARN"
+    fi
+
+    local have_mysql=false
+    local have_mariadb=false
+    local have_mysqldump=false
+    local have_mariadb_dump=false
+    command -v mysql >/dev/null 2>&1 && have_mysql=true
+    command -v mariadb >/dev/null 2>&1 && have_mariadb=true
+    command -v mysqldump >/dev/null 2>&1 && have_mysqldump=true
+    command -v mariadb-dump >/dev/null 2>&1 && have_mariadb_dump=true
+
+    local db_client=""
+    local db_dump=""
+    local db_client_note=""
+    if [ "$have_mysql" = true ] && [ "$have_mariadb" != true ]; then
+        db_client="mysql"
+    elif [ "$have_mariadb" = true ] && [ "$have_mysql" != true ]; then
+        db_client="mariadb"
+    elif [ "$have_mysql" = true ] && [ "$have_mariadb" = true ]; then
+        db_client="mysql"
+        if [ -n "${INM_DB_CLIENT:-}" ]; then
+            case "${INM_DB_CLIENT,,}" in
+                mysql|mariadb)
+                    db_client="${INM_DB_CLIENT,,}"
+                    db_client_note=" (INM_DB_CLIENT)"
+                    ;;
+                *)
+                    add_result WARN "CMD" "INM_DB_CLIENT ignored (use mysql or mariadb)"
+                    ;;
+            esac
+        elif [ "$db_config_present" != true ] && [[ -t 0 ]]; then
+            local choice=""
+            choice=$(prompt_var "DB_CLIENT" "mysql" \
+                "Both mysql and mariadb clients found but DB is not configured yet. Which DB system will be used? (mysql/mariadb)" \
+                false 30) || true
+            choice="${choice,,}"
+            case "$choice" in
+                mysql|mariadb)
+                    db_client="$choice"
+                    db_client_note=" (selected)"
+                    ;;
+                *)
+                    db_client="mysql"
+                    db_client_note=" (defaulted)"
+                    ;;
+            esac
+        else
+            if [ "$db_config_present" != true ] && [[ ! -t 0 ]]; then
+                db_client_note=" (defaulted: mysql)"
+                add_result WARN "CMD" "Both mysql and mariadb clients found; defaulting to mysql (non-interactive). Set INM_DB_CLIENT to override."
+            else
+                db_client_note=" (both installed)"
+            fi
+        fi
+    fi
+
+    if [ "$db_client" = "mariadb" ] && [ "$have_mariadb_dump" = true ]; then
+        db_dump="mariadb-dump"
+    elif [ "$db_client" = "mysql" ] && [ "$have_mysqldump" = true ]; then
+        db_dump="mysqldump"
+    elif [ "$have_mysqldump" = true ]; then
+        db_dump="mysqldump"
+    elif [ "$have_mariadb_dump" = true ]; then
+        db_dump="mariadb-dump"
+    fi
+
     for cmd in "${req_cmds[@]}"; do
         if command -v "$cmd" >/dev/null 2>&1; then
             add_result OK "CMD" "$cmd"
@@ -205,6 +300,26 @@ run_preflight() {
             add_result ERR "CMD" "$cmd missing"
         fi
     done
+
+    if [ "$have_mysql" = true ] || [ "$have_mariadb" = true ]; then
+        if [ "$have_mysql" = true ] && [ "$have_mariadb" = true ]; then
+            add_result OK "CMD" "DB client: ${db_client:-mysql}${db_client_note} (mysql + mariadb available)"
+        else
+            add_result OK "CMD" "DB client: ${db_client:-mysql}${db_client_note}"
+        fi
+    else
+        add_result "$db_missing_status" "CMD" "DB client missing (need mysql or mariadb)${db_scope_note}"
+    fi
+
+    if [ "$have_mysqldump" = true ] || [ "$have_mariadb_dump" = true ]; then
+        if [ "$have_mysqldump" = true ] && [ "$have_mariadb_dump" = true ]; then
+            add_result OK "CMD" "DB dump: ${db_dump:-mysqldump} (mysqldump + mariadb-dump available)"
+        else
+            add_result OK "CMD" "DB dump: ${db_dump:-mysqldump}"
+        fi
+    else
+        add_result "$db_missing_status" "CMD" "DB dump tool missing (need mysqldump or mariadb-dump)${db_scope_note}"
+    fi
 
     # ---- App sanity & permissions ----
     if [ -n "${INM_INSTALLATION_PATH:-}" ] && [ -d "${INM_INSTALLATION_PATH%/}" ]; then
@@ -290,10 +405,8 @@ run_preflight() {
         done
     fi
 
-    # ---- Web PHP check (optional) ----
-    if [ "$skip_web_php" != true ]; then
-        check_web_php "$phpv" add_result
-    fi
+    # ---- Web PHP check ----
+    check_web_php "$phpv" add_result
 
     # ---- Filesystem perms ----
     # Base, app, backup directories
@@ -395,23 +508,24 @@ run_preflight() {
         add_result INFO "DB" "Loaded DB vars from ${INM_ENV_FILE}"
     fi
 
-    # ---- DB connectivity (optional) ----
-    if [ "$skip_db" = true ]; then
-        add_result WARN "DB" "Connectivity check skipped via --skip-db=true"
-    elif [ -n "$DB_HOST" ] && [ -n "$DB_USERNAME" ]; then
+    # ---- DB connectivity ----
+    if [ -n "$DB_HOST" ] && [ -n "$DB_USERNAME" ]; then
         local db_port="${DB_PORT:-3306}"
         add_result INFO "DB" "Target: host=${DB_HOST} port=${db_port} db=${DB_DATABASE:-<unset>} user=${DB_USERNAME}"
-        if mysql -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "SELECT 1" >/dev/null 2>&1; then
+        if [ -z "${db_client:-}" ]; then
+            add_result ERR "DB" "No MySQL/MariaDB client available"
+        elif "$db_client" -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "SELECT 1" >/dev/null 2>&1; then
+            add_result INFO "DB" "Client: ${db_client}"
             add_result OK "DB" "Connection ok to $DB_HOST:${DB_PORT:-3306}"
             # Try to read server/version info
             local dbinfo
-            dbinfo=$(mysql -N -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "select @@version, @@version_comment;" 2>/dev/null | head -n1)
+            dbinfo=$("$db_client" -N -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "select @@version, @@version_comment;" 2>/dev/null | head -n1)
             if [ -n "$dbinfo" ]; then
                 add_result INFO "DB" "Server: $dbinfo"
             fi
             # DB settings (best effort)
             local settings
-            settings=$(mysql -N -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "select @@innodb_file_per_table, @@max_allowed_packet, @@character_set_server, @@collation_server;" 2>/dev/null | head -n1)
+            settings=$("$db_client" -N -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "select @@innodb_file_per_table, @@max_allowed_packet, @@character_set_server, @@collation_server;" 2>/dev/null | head -n1)
             if [ -n "$settings" ]; then
                 IFS=$'\t' read -r innodb packet charset coll <<<"$settings"
                 add_result INFO "DB" "innodb_file_per_table=${innodb:-?}"
@@ -419,10 +533,10 @@ run_preflight() {
                 add_result INFO "DB" "charset=${charset:-?} collation=${coll:-?}"
             fi
             local sql_mode
-            sql_mode=$(mysql -N -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "select @@sql_mode;" 2>/dev/null | head -n1)
+            sql_mode=$("$db_client" -N -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "select @@sql_mode;" 2>/dev/null | head -n1)
             [[ -n "$sql_mode" ]] && add_result INFO "DB" "sql_mode=${sql_mode}"
             if [ -n "$DB_DATABASE" ]; then
-                if mysql -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "USE \`$DB_DATABASE\`;" >/dev/null 2>&1; then
+                if "$db_client" -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "USE \`$DB_DATABASE\`;" >/dev/null 2>&1; then
                     add_result OK "DB" "Database '$DB_DATABASE' exists."
                 else
                     local hint="Database '$DB_DATABASE' not found or no access."
@@ -436,7 +550,17 @@ run_preflight() {
             add_result ERR "DB" "$hint"
         fi
     else
-        add_result ERR "DB" "Missing DB_HOST/DB_USERNAME despite loaded .env"
+        local db_env_file=""
+        if [ -n "${INM_ENV_FILE:-}" ]; then
+            db_env_file="$(expand_path_vars "$INM_ENV_FILE")"
+        elif [ -n "${INM_INSTALLATION_PATH:-}" ]; then
+            db_env_file="${INM_INSTALLATION_PATH%/}/.env"
+        fi
+        if [ -n "$db_env_file" ] && [ -f "$db_env_file" ]; then
+            add_result ERR "DB" "Missing DB_HOST/DB_USERNAME despite loaded .env"
+        else
+            add_result WARN "DB" "DB config not set; skipping connectivity checks"
+        fi
     fi
 
     # ---- Cron presence ----

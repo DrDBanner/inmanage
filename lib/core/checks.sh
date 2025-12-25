@@ -107,7 +107,7 @@ check_missing_settings() {
 # Verifies required external tools and shell builtins are available.
 # ---------------------------------------------------------------------
 check_commands() {
-    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "mysqldump" "mysql" "grep" "xargs" "php" "touch" "sed" "sudo" "tee" "rsync" "awk" "jq" "git" "composer")
+    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "grep" "xargs" "php" "touch" "sed" "sudo" "tee" "rsync" "awk" "jq" "git" "composer")
     local missing_commands=()
 
     for cmd in "${commands[@]}"; do
@@ -115,6 +115,17 @@ check_commands() {
             missing_commands+=("$cmd")
         fi
     done
+
+    local db_client=""
+    local db_dump=""
+    db_client="$(select_db_client false false)"
+    db_dump="$(select_db_dump "$db_client")"
+    if [ -z "$db_client" ]; then
+        missing_commands+=("mysql/mariadb")
+    fi
+    if [ -z "$db_dump" ]; then
+        missing_commands+=("mysqldump/mariadb-dump")
+    fi
 
     local shell_builtins=("read")
     for builtin in "${shell_builtins[@]}"; do
@@ -394,6 +405,12 @@ check_provision_file() {
     fi
 
     log ok "Provision file loaded. Starting installation logic."
+    local db_client=""
+    db_client="$(select_db_client false true)"
+    if [ -z "$db_client" ]; then
+        log err "[PVF] No MySQL/MariaDB client available (need mysql or mariadb)."
+        exit 1
+    fi
     # shellcheck disable=SC2154
     if [ "$force_update" != true ]; then
         log info "[PVF] You have 10 seconds to cancel this operation if you do not want to run the provision."
@@ -405,10 +422,10 @@ check_provision_file() {
     if [ -n "$elevated_username" ]; then
         log info "[PVF] Elevated SQL user '$elevated_username' found."
 
-        if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e 'quit' 2>/dev/null; then
+        if "$db_client" -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e 'quit' 2>/dev/null; then
             log ok "[PVF] Connection with elevated credentials successful."
 
-            if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e "USE \`$DB_DATABASE\`;" 2>/dev/null; then
+            if "$db_client" -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e "USE \`$DB_DATABASE\`;" 2>/dev/null; then
                 log ok "[PVF] Database '$DB_DATABASE' already exists."
             else
                 log warn "[PVF] Database '$DB_DATABASE' does not exist. Creating..."
@@ -421,10 +438,10 @@ check_provision_file() {
                 elevated_password=$(prompt_var "DB_ELEVATED_PASSWORD" "" "Enter the password for elevated user '$elevated_username'" true)
             fi
 
-            if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e 'quit' 2>/dev/null; then
+            if "$db_client" -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e 'quit' 2>/dev/null; then
                 log ok "[PVF] Retry successful with prompted password."
 
-                if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e "USE \`$DB_DATABASE\`;" 2>/dev/null; then
+                if "$db_client" -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e "USE \`$DB_DATABASE\`;" 2>/dev/null; then
                     log ok "[PVF] Database '$DB_DATABASE' already exists."
                 else
                     log warn "[PVF] Database '$DB_DATABASE' does not exist. Creating..."
@@ -438,8 +455,8 @@ check_provision_file() {
     else
         log info "[PVF] No elevated credentials found. Trying with standard user '$DB_USERNAME'..."
 
-        if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e 'quit' 2>/dev/null; then
-            if mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "USE \`$DB_DATABASE\`;" 2>/dev/null; then
+        if "$db_client" -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e 'quit' 2>/dev/null; then
+            if "$db_client" -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" -p"$DB_PASSWORD" -e "USE \`$DB_DATABASE\`;" 2>/dev/null; then
                 log ok "[PVF] Standard credentials valid. Database '$DB_DATABASE' exists."
             else
                 log err "[PVF] Database '$DB_DATABASE' not found and cannot be created without elevated user."

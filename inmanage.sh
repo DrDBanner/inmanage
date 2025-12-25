@@ -40,6 +40,14 @@ else
     exit 1
 fi
 
+if [ -f "${LIB_DIR}/helpers/db_client.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/db_client.sh"
+else
+    echo "[ERR] Missing db client helper: ${LIB_DIR}/helpers/db_client.sh" >&2
+    exit 1
+fi
+
 if [ -f "${LIB_DIR}/helpers/selection.sh" ]; then
     # shellcheck source=/dev/null
     source "${LIB_DIR}/helpers/selection.sh"
