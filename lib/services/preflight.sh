@@ -20,13 +20,110 @@ run_preflight() {
     parse_named_args ARGS "$@"
 
     # Optional check filter (CSV of tags, e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
-    local checks_filter="${NAMED_ARGS[checks]:-${ARGS[checks]:-}}"
+    normalize_check_tag() {
+        local raw="$1"
+        local tag="${raw^^}"
+        tag="${tag//[^A-Z0-9]/}"
+        case "$tag" in
+            CLI) echo "CLI" ;;
+            SYS|SYSTEM) echo "SYS" ;;
+            FS|FILESYSTEM|DISK) echo "FS" ;;
+            ENVCLI|ENVCL|CLICONFIG) echo "ENVCLI" ;;
+            ENVAPP|APPENV) echo "ENVAPP" ;;
+            CMD|COMMAND|COMMANDS|TOOLS) echo "CMD" ;;
+            WEB|WEBSERVER) echo "WEB" ;;
+            PHP) echo "PHP" ;;
+            EXT|EXTENSIONS|PHPEXT) echo "EXT" ;;
+            WEBPHP|WEBPH) echo "WEBPHP" ;;
+            NET|NETWORK|DNS) echo "NET" ;;
+            DB|DATABASE|MYSQL|MARIADB) echo "DB" ;;
+            APP|APPLICATION) echo "APP" ;;
+            CRON|SCHEDULER) echo "CRON" ;;
+            SNAPPDF|SNAPDF|PDF) echo "SNAPPDF" ;;
+            *) echo "" ;;
+        esac
+    }
+
+    mem_to_mb() {
+        local val="$1"
+        if [[ "$val" =~ ^-?[0-9]+$ ]]; then
+            echo "$val"
+            return
+        fi
+        if [[ "$val" =~ ^([0-9]+)([KkMmGg])$ ]]; then
+            local mem_val="${BASH_REMATCH[1]}"
+            local mem_unit="${BASH_REMATCH[2]}"
+            case "$mem_unit" in
+                K|k) echo $((mem_val / 1024));;
+                M|m) echo "$mem_val";;
+                G|g) echo $((mem_val * 1024));;
+            esac
+            return
+        fi
+        echo ""
+    }
+
+    local -A allowed_args=(
+        [checks]=1
+        [check]=1
+        [fix_permissions]=1
+        [debug]=1
+        [dry_run]=1
+        [force]=1
+        [override_enforced_user]=1
+        [user]=1
+    )
+    local -A unknown_args=()
+    local arg_key
+    for arg_key in "${!ARGS[@]}"; do
+        if [[ -z "${allowed_args[$arg_key]:-}" ]]; then
+            unknown_args["$arg_key"]=1
+        fi
+    done
+    if declare -p NAMED_ARGS >/dev/null 2>&1; then
+        for arg_key in "${!NAMED_ARGS[@]}"; do
+            if [[ -z "${allowed_args[$arg_key]:-}" ]]; then
+                unknown_args["$arg_key"]=1
+            fi
+        done
+    fi
+    if (( ${#unknown_args[@]} > 0 )); then
+        local -a bad_args=()
+        for arg_key in "${!unknown_args[@]}"; do
+            bad_args+=("--${arg_key//_/-}")
+        done
+        log err "[PREFLIGHT] Unknown arguments: ${bad_args[*]}"
+        log info "[PREFLIGHT] Allowed flags: --checks=TAG1,TAG2 --check=TAG1,TAG2 --fix-permissions --debug --dry-run --override-enforced-user"
+        $errexit_set && set -e
+        return 1
+    fi
+
+    local checks_filter="${NAMED_ARGS[checks]:-${NAMED_ARGS[check]:-${ARGS[checks]:-${ARGS[check]:-}}}}"
     declare -A PF_ALLOW=()
     if [[ -n "$checks_filter" ]]; then
+        local -a unknown_checks=()
         IFS=',' read -ra tmp_checks <<<"$checks_filter"
         for c in "${tmp_checks[@]}"; do
-            PF_ALLOW["${c}"]=1
+            local norm
+            norm="$(normalize_check_tag "$c")"
+            if [[ -n "$norm" ]]; then
+                PF_ALLOW["${norm}"]=1
+            else
+                unknown_checks+=("$c")
+            fi
         done
+        if [[ ${#unknown_checks[@]} -gt 0 ]]; then
+            log err "[PREFLIGHT] Unknown check tags: ${unknown_checks[*]}"
+            log info "[PREFLIGHT] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,DB,APP,CRON,SNAPPDF"
+            $errexit_set && set -e
+            return 1
+        fi
+        if [[ ${#PF_ALLOW[@]} -eq 0 ]]; then
+            log err "[PREFLIGHT] No valid check tags in --checks=$checks_filter"
+            log info "[PREFLIGHT] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,DB,APP,CRON,SNAPPDF"
+            $errexit_set && set -e
+            return 1
+        fi
         log debug "[PREFLIGHT] Checks filter active: $checks_filter"
     fi
 
@@ -322,11 +419,51 @@ run_preflight() {
     fi
 
     # ---- App sanity & permissions ----
-    if [ -n "${INM_INSTALLATION_PATH:-}" ] && [ -d "${INM_INSTALLATION_PATH%/}" ]; then
-        if app_sanity_check "${INM_INSTALLATION_PATH%/}"; then
-            add_result OK "APP" "App structure looks complete at ${INM_INSTALLATION_PATH%/}"
+    local app_cfg_hint=""
+    if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
+        app_cfg_hint="CLI config: ${INM_SELF_ENV_FILE}"
+    fi
+    if [ -n "${INM_ENV_FILE:-}" ] && [ -f "${INM_ENV_FILE:-}" ]; then
+        if [ -n "$app_cfg_hint" ]; then
+            app_cfg_hint+=" | App env: ${INM_ENV_FILE}"
         else
-            add_result ERR "APP" "App structure incomplete at ${INM_INSTALLATION_PATH%/}"
+            app_cfg_hint="App env: ${INM_ENV_FILE}"
+        fi
+    fi
+    if [ -n "${INM_INSTALLATION_PATH:-}" ] && [ -d "${INM_INSTALLATION_PATH%/}" ]; then
+        local app_dir="${INM_INSTALLATION_PATH%/}"
+        if command -v du >/dev/null 2>&1; then
+            local app_sz
+            app_sz=$(du -sh "$app_dir" 2>/dev/null | awk '{print $1}')
+            [[ -n "$app_sz" ]] && add_result INFO "FS" "App footprint: ${app_sz} at ${app_dir}"
+        fi
+
+        local app_missing=()
+        local app_warn=()
+        [[ -f "${app_dir}/artisan" ]] || app_missing+=("artisan")
+        [[ -f "${app_dir}/vendor/autoload.php" ]] || app_missing+=("vendor/autoload.php")
+        [[ -f "${app_dir}/public/index.php" ]] || app_missing+=("public/index.php")
+        [[ -f "${app_dir}/.env" ]] || app_missing+=(".env")
+        [[ -d "${app_dir}/storage" ]] || app_missing+=("storage/")
+        [[ -d "${app_dir}/public" ]] || app_missing+=("public/")
+        [[ -d "${app_dir}/routes" ]] || app_warn+=("routes/")
+        [[ -d "${app_dir}/resources/views" ]] || app_warn+=("resources/views/")
+        [[ -d "${app_dir}/database" ]] || app_warn+=("database/")
+        [[ -f "${app_dir}/public/.htaccess" ]] || app_warn+=("public/.htaccess")
+        [[ -d "${app_dir}/bootstrap/cache" ]] || app_warn+=("bootstrap/cache/")
+        [[ -f "${app_dir}/composer.json" ]] || app_warn+=("composer.json")
+        [[ -f "${app_dir}/VERSION.txt" ]] || app_warn+=("VERSION.txt")
+
+        if [[ ${#app_missing[@]} -gt 0 ]]; then
+            add_result ERR "APP" "Critical app items missing: ${app_missing[*]}"
+            if [ -n "$app_cfg_hint" ]; then
+                add_result WARN "APP" "Config found (${app_cfg_hint}) but app tree is missing/incomplete. Fix: move existing app to ${app_dir} or run 'inmanage core install --provision' (recommended). For guidance, run 'inmanage core install --help'."
+            fi
+        else
+            add_result OK "APP" "App structure looks complete at ${app_dir}"
+            if [[ ${#app_warn[@]} -gt 0 ]]; then
+                add_result WARN "APP" "Non-critical items missing: ${app_warn[*]}"
+            fi
         fi
 
         if [ -n "${ENFORCED_USER:-}" ]; then
@@ -352,6 +489,9 @@ run_preflight() {
         fi
     else
         add_result WARN "APP" "App directory missing or unset: ${INM_INSTALLATION_PATH:-<unset>}"
+        if [ -n "$app_cfg_hint" ]; then
+            add_result WARN "APP" "Config found (${app_cfg_hint}) but app directory is missing. Fix: move existing app to ${INM_INSTALLATION_PATH%/} or run 'inmanage core install --provision' (recommended). For guidance, run 'inmanage core install --help'."
+        fi
     fi
 
     # ---- PHP version / ini ----
@@ -369,12 +509,12 @@ run_preflight() {
         else
             add_result ERR "PHP" "Needs >= 8.1"
         fi
-        local mem mem_int
+        local mem mem_mb
         mem=$(php -r "echo ini_get('memory_limit');" 2>/dev/null)
-        mem_int=$(php -r "echo (int)ini_get('memory_limit');" 2>/dev/null)
-        if [ "${mem_int:-0}" -lt 0 ]; then
+        mem_mb="$(mem_to_mb "$mem")"
+        if [ "$mem" = "-1" ]; then
             add_result OK "PHP" "memory_limit unlimited (-1)"
-        elif [ "${mem_int:-0}" -ge 256 ]; then
+        elif [ -n "$mem_mb" ] && [ "$mem_mb" -ge 256 ] 2>/dev/null; then
             add_result OK "PHP" "memory_limit ${mem:-unset}"
         else
             add_result WARN "PHP" "memory_limit too low (${mem:-unset})"
@@ -440,6 +580,11 @@ run_preflight() {
     done
 
     # Cache directories first
+    local cache_global_state="unset"
+    local cache_local_state="unset"
+    local cache_global_detail=""
+    local cache_local_detail=""
+
     if [ -n "${INM_CACHE_GLOBAL_DIRECTORY:-}" ]; then
         local gc_path gc_parent
         gc_path="$(expand_path_vars "$INM_CACHE_GLOBAL_DIRECTORY")"
@@ -447,29 +592,58 @@ run_preflight() {
         mkdir -p "$gc_parent" 2>/dev/null || true
         if mkdir -p "$gc_path" 2>/dev/null && touch "$gc_path/.inm_perm_test" 2>/dev/null; then
             rm -f "$gc_path/.inm_perm_test"
-            add_result OK "FS" "Writable: $gc_path (Cache global)"
+            cache_global_state="ok"
+            cache_global_detail="Writable: $gc_path (Cache global)"
         else
-            local hint="Not writable: $gc_path (Cache global)"
+            cache_global_state="fail"
+            cache_global_detail="Not writable: $gc_path (Cache global)"
             if [ -n "${ENFORCED_USER:-}" ]; then
-                hint+=" (hint: chown -R ${ENFORCED_USER}:${ENFORCED_USER} \"$gc_path\" or use --override_enforced_user=true to adjust perms)"
+                cache_global_detail+=" (hint: chown -R ${ENFORCED_USER}:${ENFORCED_USER} \"$gc_path\" or use --override_enforced_user=true to adjust perms)"
             fi
-            hint+=" or set INM_CACHE_GLOBAL_DIRECTORY to an accessible path."
-            add_result WARN "FS" "$hint"
+            cache_global_detail+=" or set INM_CACHE_GLOBAL_DIRECTORY to an accessible path."
         fi
     fi
+
     if [ -n "${INM_CACHE_LOCAL_DIRECTORY:-}" ]; then
         local lc_path
         lc_path="$(expand_path_vars "$INM_CACHE_LOCAL_DIRECTORY")"
         mkdir -p "$lc_path" 2>/dev/null
         if touch "$lc_path/.inm_perm_test" 2>/dev/null; then
             rm -f "$lc_path/.inm_perm_test"
-            add_result OK "FS" "Writable: $lc_path (Cache local)"
+            cache_local_state="ok"
+            cache_local_detail="Writable: $lc_path (Cache local)"
         else
-            local hint="Not writable: $lc_path (Cache local)"
+            cache_local_state="fail"
+            cache_local_detail="Not writable: $lc_path (Cache local)"
             if [ -n "${ENFORCED_USER:-}" ]; then
-                hint+=" (hint: chown -R ${ENFORCED_USER}:${ENFORCED_USER} \"$lc_path\" or use --override_enforced_user=true to adjust perms)"
+                cache_local_detail+=" (hint: chown -R ${ENFORCED_USER}:${ENFORCED_USER} \"$lc_path\" or use --override_enforced_user=true to adjust perms)"
             fi
-            add_result WARN "FS" "$hint"
+            cache_local_detail+=" or set INM_CACHE_LOCAL_DIRECTORY to an accessible path."
+        fi
+    fi
+
+    local cache_any_ok=false
+    if [ "$cache_global_state" = "ok" ] || [ "$cache_local_state" = "ok" ]; then
+        cache_any_ok=true
+    fi
+
+    if [ "$cache_global_state" = "ok" ]; then
+        add_result OK "FS" "$cache_global_detail"
+    elif [ "$cache_global_state" = "fail" ]; then
+        if [ "$cache_any_ok" = true ]; then
+            add_result INFO "FS" "${cache_global_detail} (local cache writable; consider fixing global cache for shared use)"
+        else
+            add_result ERR "FS" "${cache_global_detail} (no writable cache directories)"
+        fi
+    fi
+
+    if [ "$cache_local_state" = "ok" ]; then
+        add_result OK "FS" "$cache_local_detail"
+    elif [ "$cache_local_state" = "fail" ]; then
+        if [ "$cache_any_ok" = true ]; then
+            add_result INFO "FS" "${cache_local_detail} (global cache writable; consider fixing local cache for speed)"
+        else
+            add_result ERR "FS" "${cache_local_detail} (no writable cache directories)"
         fi
     fi
 
@@ -572,7 +746,7 @@ run_preflight() {
     if crontab -l 2>/dev/null | grep -q "artisan schedule:run"; then
         add_result OK "CRON" "artisan schedule:run present"
     else
-        add_result WARN "CRON" "artisan schedule missing; run core cron install"
+        add_result WARN "CRON" "artisan schedule missing; run: inmanage core cron install"
     fi
 
     # ---- Snappdf presence (only if enabled) ----
@@ -630,7 +804,7 @@ run_preflight() {
                 add_result INFO "NET" "APP_URL reachable: $app_url_trim"
                 curl_ok=true
             elif [ "$scheme" = "https" ] && curl -Is -k --connect-timeout 5 "$app_url_trim" >/dev/null 2>&1; then
-                add_result WARN "NET" "APP_URL reachable with -k (self-signed/invalid cert): $app_url_trim"
+                add_result WARN "NET" "Webserver certificate does not match URL: $app_url_trim"
                 curl_ok=true
             fi
             if [ "$curl_ok" != true ]; then
@@ -645,10 +819,8 @@ run_preflight() {
     fi
 
     # Summary table (grouped)
-    log info "[PREFLIGHT] Completed: OK=$ok WARN=$warn ERR=$err"
-    log info "[PREFLIGHT] Aggregate status: $([ "$err" -gt 0 ] && echo ERR || { [ "$warn" -gt 0 ] && echo WARN || echo OK; })"
     printf "\n"
-    local groups=("SYS" "FS" "ENVCLI" "ENVAPP" "CLI" "CMD" "WEB" "PHP" "WEBPHP" "EXT" "NET" "DB" "CRON" "SNAPPDF")
+    local groups=("SYS" "FS" "APP" "ENVCLI" "ENVAPP" "CLI" "CMD" "WEB" "PHP" "WEBPHP" "EXT" "NET" "DB" "CRON" "SNAPPDF")
     local idx g printed
     local green="${GREEN:-}"
     local yellow="${YELLOW:-}"
@@ -661,6 +833,7 @@ run_preflight() {
             CLI) echo "CLI" ;;
             SYS) echo "System" ;;
             ENVCLI) echo "ENV CLI" ;;
+            APP) echo "App" ;;
             ENVAPP) echo "ENV APP" ;;
             CMD) echo "CLI Commands" ;;
             NET) echo "Network" ;;
@@ -718,6 +891,9 @@ run_preflight() {
             printf "\n"
         fi
     done
+
+    log info "[PREFLIGHT] Completed: OK=$ok WARN=$warn ERR=$err"
+    log info "[PREFLIGHT] Aggregate status: $([ "$err" -gt 0 ] && echo ERR || { [ "$warn" -gt 0 ] && echo WARN || echo OK; })"
 
     if [ "$err" -gt 0 ]; then
         $errexit_set && set -e
@@ -821,7 +997,11 @@ PHP
     ${add_fn:-log info} INFO "WEBPHP" ".user.ini ${web_user_ini:-<none>}"
 
     # Evaluate memory_limit / input_vars similar to CLI thresholds
-    if [ -n "$web_mem" ] && { [ "$web_mem" = "-1" ] || [ "${web_mem%%M}" -ge 256 ] 2>/dev/null; }; then
+    local web_mem_mb=""
+    web_mem_mb="$(mem_to_mb "$web_mem")"
+    if [ "$web_mem" = "-1" ]; then
+        ${add_fn:-log info} INFO "WEBPHP" "memory_limit $web_mem"
+    elif [ -n "$web_mem_mb" ] && [ "$web_mem_mb" -ge 256 ] 2>/dev/null; then
         ${add_fn:-log info} INFO "WEBPHP" "memory_limit $web_mem"
     else
         ${add_fn:-log warn} WARN "WEBPHP" "memory_limit too low (${web_mem:-unset})"
