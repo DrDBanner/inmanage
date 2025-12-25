@@ -79,6 +79,7 @@ Global Flags:
   --debug                        Enable debug logging
   --dry-run                      Log intended actions, skip execution
   --override-enforced-user       Skip enforced user switch for this run
+  --no-cli-clear                 Skip clearing terminal and logo output
   -h, --help                     Show this help
 
 Args:
@@ -352,6 +353,11 @@ parse_options() {
                 shift
                 continue
                 ;;
+            --no-cli-clear)
+                NAMED_ARGS[no_cli_clear]=true
+                # shellcheck disable=SC2034
+                NO_CLI_CLEAR=true
+                ;;
             --force)
                 # shellcheck disable=SC2034
                 force_update=true
@@ -400,6 +406,7 @@ parse_options() {
 
     # Export well-known flags so downstream helpers see them
     export DEBUG DRY_RUN force_update
+    export NO_CLI_CLEAR
     if [[ "${NAMED_ARGS[override_enforced_user]:-}" == "true" ]]; then
         export INM_OVERRIDE_ENFORCED_USER=true
     fi

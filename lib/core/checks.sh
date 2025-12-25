@@ -272,6 +272,7 @@ check_envs() {
         log err "[ENV] Failed to load project configuration."
         exit 1
     }
+    log info "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
 
     # Expand placeholders in key paths after all loads (allows ${INM_BASE_DIRECTORY} style) without eval
     expand_placeholders() {

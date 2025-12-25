@@ -67,7 +67,7 @@ resolve_env_paths() {
             INM_INSTALLATION_DIRECTORY="$(basename "$ninja_dir")"
             INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
             INM_ENV_FILE="$ninja_dir/.env"
-            log ok "[RES] Using .env from --ninja-location: $INM_ENV_FILE"
+        log debug "[RES] Using .env from --ninja-location: $INM_ENV_FILE"
             if [ -z "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_BASE_DIRECTORY/.inmanage/.env.inmanage" ]; then
                 INM_SELF_ENV_FILE="$INM_BASE_DIRECTORY/.inmanage/.env.inmanage"
             fi
@@ -90,7 +90,7 @@ resolve_env_paths() {
                 log debug "[RES] Using .env from existing project config, skipping discovery."
                 return 0
             else
-                log warn "[RES] .env not found at $INM_ENV_FILE (from config); continuing discovery."
+            log warn "[RES] App .env not found at $INM_ENV_FILE (from config); continuing discovery."
             fi
         fi
     fi
@@ -142,10 +142,10 @@ resolve_env_paths() {
         INM_INSTALLATION_DIRECTORY="$(basename "$(dirname "$INM_ENV_FILE")")"
         INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
 
-        log ok "[RES] Detected base: $INM_BASE_DIRECTORY"
-        log ok "[RES] Detected install dir: $INM_INSTALLATION_DIRECTORY"
-        log ok "[RES] Install path: $INM_INSTALLATION_PATH"
-        log ok "[RES] Using: $INM_ENV_FILE"
+        log debug "[RES] Detected base: $INM_BASE_DIRECTORY"
+        log debug "[RES] Detected install dir: $INM_INSTALLATION_DIRECTORY"
+        log debug "[RES] Install path: $INM_INSTALLATION_PATH"
+        log debug "[RES] Using: $INM_ENV_FILE"
     fi
 
     # Prefer config alongside the base directory (not inside Invoice Ninja)

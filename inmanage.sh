@@ -304,6 +304,11 @@ check_gh_credentials
 
 # contexts/actions that should not clear or print logo
 skip_clear_logo=false
+if [[ "${NO_CLI_CLEAR:-}" == true || "${NAMED_ARGS[no_cli_clear]:-}" == true ]]; then
+    skip_clear_logo=true
+elif [[ "${INM_NO_CLI_CLEAR:-}" =~ ^(1|true|yes)$ ]]; then
+    skip_clear_logo=true
+fi
 if [[ "$CMD_CONTEXT" == "env" ]]; then
     skip_clear_logo=true
 fi
@@ -368,6 +373,7 @@ dispatch_command() {
                 call_with_named_args run_update
                 ;;
             info|health)
+                export INM_PREFLIGHT_LABEL="HEALTH"
                 call_with_named_args run_preflight
                 ;;
             version)

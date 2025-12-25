@@ -18,6 +18,7 @@ run_preflight() {
     fi
     local -A ARGS=()
     parse_named_args ARGS "$@"
+    local pf_label="${INM_PREFLIGHT_LABEL:-PREFLIGHT}"
 
     # Optional check filter (CSV of tags, e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
     normalize_check_tag() {
@@ -72,6 +73,7 @@ run_preflight() {
         [force]=1
         [override_enforced_user]=1
         [user]=1
+        [no_cli_clear]=1
     )
     local -A unknown_args=()
     local arg_key
@@ -92,8 +94,8 @@ run_preflight() {
         for arg_key in "${!unknown_args[@]}"; do
             bad_args+=("--${arg_key//_/-}")
         done
-        log err "[PREFLIGHT] Unknown arguments: ${bad_args[*]}"
-        log info "[PREFLIGHT] Allowed flags: --checks=TAG1,TAG2 --check=TAG1,TAG2 --fix-permissions --debug --dry-run --override-enforced-user"
+        log err "[${pf_label}] Unknown arguments: ${bad_args[*]}"
+        log info "[${pf_label}] Allowed flags: --checks=TAG1,TAG2 --check=TAG1,TAG2 --fix-permissions --debug --dry-run --override-enforced-user --no-cli-clear"
         $errexit_set && set -e
         return 1
     fi
@@ -113,18 +115,18 @@ run_preflight() {
             fi
         done
         if [[ ${#unknown_checks[@]} -gt 0 ]]; then
-            log err "[PREFLIGHT] Unknown check tags: ${unknown_checks[*]}"
-            log info "[PREFLIGHT] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,DB,APP,CRON,SNAPPDF"
+            log err "[${pf_label}] Unknown check tags: ${unknown_checks[*]}"
+            log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,DB,APP,CRON,SNAPPDF"
             $errexit_set && set -e
             return 1
         fi
         if [[ ${#PF_ALLOW[@]} -eq 0 ]]; then
-            log err "[PREFLIGHT] No valid check tags in --checks=$checks_filter"
-            log info "[PREFLIGHT] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,DB,APP,CRON,SNAPPDF"
+            log err "[${pf_label}] No valid check tags in --checks=$checks_filter"
+            log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,DB,APP,CRON,SNAPPDF"
             $errexit_set && set -e
             return 1
         fi
-        log debug "[PREFLIGHT] Checks filter active: $checks_filter"
+        log debug "[${pf_label}] Checks filter active: $checks_filter"
     fi
 
     # Results collector
@@ -151,7 +153,7 @@ run_preflight() {
     local fix_permissions="${NAMED_ARGS[fix_permissions]:-${NAMED_ARGS[fix-permissions]:-${ARGS[fix_permissions]:-${ARGS[fix-permissions]:-false}}}}"
 
     local ok=0 warn=0 err=0
-    log info "[PREFLIGHT] Starting system checks"
+    log info "[${pf_label}] Starting system checks"
 
     # ---- CLI self info ----
     local cli_root cli_branch cli_commit cli_dirty="" cli_source="snapshot"
@@ -354,26 +356,9 @@ run_preflight() {
                     add_result WARN "CMD" "INM_DB_CLIENT ignored (use mysql or mariadb)"
                     ;;
             esac
-        elif [ "$db_config_present" != true ] && [[ -t 0 ]]; then
-            local choice=""
-            choice=$(prompt_var "DB_CLIENT" "mysql" \
-                "Both mysql and mariadb clients found but DB is not configured yet. Which DB system will be used? (mysql/mariadb)" \
-                false 30) || true
-            choice="${choice,,}"
-            case "$choice" in
-                mysql|mariadb)
-                    db_client="$choice"
-                    db_client_note=" (selected)"
-                    ;;
-                *)
-                    db_client="mysql"
-                    db_client_note=" (defaulted)"
-                    ;;
-            esac
         else
-            if [ "$db_config_present" != true ] && [[ ! -t 0 ]]; then
-                db_client_note=" (defaulted: mysql)"
-                add_result WARN "CMD" "Both mysql and mariadb clients found; defaulting to mysql (non-interactive). Set INM_DB_CLIENT to override."
+            if [ "$db_config_present" != true ]; then
+                db_client_note=" (both installed; DB not configured)"
             else
                 db_client_note=" (both installed)"
             fi
@@ -892,8 +877,8 @@ run_preflight() {
         fi
     done
 
-    log info "[PREFLIGHT] Completed: OK=$ok WARN=$warn ERR=$err"
-    log info "[PREFLIGHT] Aggregate status: $([ "$err" -gt 0 ] && echo ERR || { [ "$warn" -gt 0 ] && echo WARN || echo OK; })"
+    log info "[${pf_label}] Completed: OK=$ok WARN=$warn ERR=$err"
+    log info "[${pf_label}] Aggregate status: $([ "$err" -gt 0 ] && echo ERR || { [ "$warn" -gt 0 ] && echo WARN || echo OK; })"
 
     if [ "$err" -gt 0 ]; then
         $errexit_set && set -e
@@ -931,10 +916,10 @@ check_web_php() {
         fi
     fi
 
-    # Fallback to localhost/loopback if still empty
+    # If still unset, skip web probe (no reliable target)
     if [ -z "$url" ]; then
-        url="http://127.0.0.1"
-        ${add_fn:-log warn} WARN "WEBPHP" "APP_URL not set; probing via $url"
+        ${add_fn:-log info} INFO "WEBPHP" "APP_URL not set; skipping web probe"
+        return 0
     fi
 
     # Ensure webroot exists and is writable before probing
@@ -978,6 +963,10 @@ PHP
 
     if [ -z "$web_php_out" ]; then
         ${add_fn:-log warn} WARN "WEBPHP" "Could not retrieve via ${url%/}/$tmpfile"
+        return 1
+    fi
+    if ! echo "$web_php_out" | grep -q '^PHP_VERSION='; then
+        ${add_fn:-log warn} WARN "WEBPHP" "Probe did not return PHP details via ${url%/}/$tmpfile"
         return 1
     fi
 
