@@ -422,6 +422,9 @@ dispatch_command() {
                 backup)
                     NAMED_ARGS[db]=true
                     NAMED_ARGS[fullbackup]=false
+                    NAMED_ARGS[include_app]=false
+                    NAMED_ARGS[storage]=false
+                    NAMED_ARGS[uploads]=false
                     if skip_if_dry_run "db backup"; then return 0; fi
                     call_with_named_args run_backup
                     ;;
@@ -450,6 +453,7 @@ dispatch_command() {
                     NAMED_ARGS[storage]=true
                     NAMED_ARGS[uploads]=true
                     NAMED_ARGS[fullbackup]=false
+                    NAMED_ARGS[include_app]=false
                     if skip_if_dry_run "files backup"; then return 0; fi
                     call_with_named_args run_backup
                     ;;

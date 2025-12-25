@@ -42,6 +42,10 @@ run_backup() {
     local install_root="${INM_INSTALLATION_PATH:-$(compute_installation_path "${INM_BASE_DIRECTORY:-}" "${INM_INSTALLATION_DIRECTORY:-}")}"
     install_root="${install_root%/}"
     if [[ -z "$install_root" ]]; then
+        if [[ "$simulate" == true ]]; then
+            log err "[DRY-RUN] Would fail: installation path undetermined (INM_INSTALLATION_PATH/INM_BASE_DIRECTORY/INM_INSTALLATION_DIRECTORY)."
+            return 0
+        fi
         log err "[BACKUP] Could not determine installation path (check INM_INSTALLATION_PATH/INM_BASE_DIRECTORY/INM_INSTALLATION_DIRECTORY)."
         return 1
     fi
@@ -147,20 +151,20 @@ run_backup() {
             fi
         fi
 
-        if [[ "$include_app" == "true" ]]; then
-            local app_target="$stage/$app_dir_name"
-            if [[ "$simulate" == true ]]; then
-                log info "[DRY-RUN] Would copy app -> $app_target (exclude $(basename "$backup_dir"), .cache)"
-            else
-                log info "[BACKUP] Staging app via rsync -> $app_target"
-                mkdir -p "$app_target"
-                rsync -a --delete --exclude "$(basename "$backup_dir")" --exclude ".cache" "$install_root/." "$app_target/" || {
-                    log err "[BACKUP] Failed to stage application directory."
-                    cleanup_stage
-                    return 1
-                }
+            if [[ "$include_app" == "true" ]]; then
+                local app_target="$stage/$app_dir_name"
+                if [[ "$simulate" == true ]]; then
+                    log info "[DRY-RUN] Would copy app -> $app_target (exclude $(basename "$backup_dir"), .cache)"
+                else
+                    log info "[BACKUP] Staging app via rsync -> $app_target"
+                    mkdir -p "$app_target"
+                    rsync -a --delete --exclude "$(basename "$backup_dir")" --exclude ".cache" "$install_root/." "$app_target/" || {
+                        log err "[BACKUP] Failed to stage application directory."
+                        cleanup_stage
+                        return 1
+                    }
+                fi
             fi
-        fi
 
         if [[ "$storage" == "true" ]]; then
             local storage_src="$install_root/storage"
@@ -257,6 +261,12 @@ run_backup() {
         fi
 
         cleanup_stage
+
+        if [[ "$simulate" != true ]]; then
+            enforce_ownership "$backup_dir"
+        else
+            log info "[DRY-RUN] Would enforce ownership on backup dir: $backup_dir"
+        fi
 
         if [[ "$simulate" != true && "$compress" != "false" && -f "$bundle_path" ]]; then
             local checksum_target="${bundle_path}.sha256"
@@ -495,6 +505,8 @@ run_backup() {
                     log ok "[BACKUP] Checksum written: $cfile"
             fi
         done
+        enforce_ownership "$backup_dir"
+        enforce_permissions 750 "$backup_dir"
     fi
 
     log ok "[BACKUP] Backup completed (multi-part). Base: $base_name"

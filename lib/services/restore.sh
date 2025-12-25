@@ -21,6 +21,9 @@ run_restore() {
     local target="${target_arg:-$target_default}"
     local prebackup="${ARGS[pre_backup]:-${ARGS[pre-backup]:-true}}"
     local purge="${ARGS[purge_db]:-${ARGS[purge]:-true}}"
+    local autofill="${ARGS[autofill_missing]:-${ARGS[autofill-missing]:-${ARGS[autoheal]:-1}}}"
+    local autofill_app="${ARGS[autofill_missing_app]:-${ARGS[autofill-missing-app]:-${ARGS[autoheal_app]:-${ARGS[autoheal-app]:-$autofill}}}}"
+    local autofill_db="${ARGS[autofill_missing_db]:-${ARGS[autofill-missing-db]:-${ARGS[autoheal_db]:-${ARGS[autoheal-db]:-$autofill}}}}"
     local simulate="${DRY_RUN:-false}"
 
     if [[ "$simulate" != true ]]; then
@@ -68,7 +71,7 @@ run_restore() {
     bundle="$(cd "$(dirname "$bundle")" && pwd)/$(basename "$bundle")"
     log info "[RESTORE] Using bundle: $bundle"
     log info "[RESTORE] Target app dir: $target"
-    log debug "[RESTORE] include_app=${include_app} force=${force} prebackup=${prebackup} purge=${purge}"
+    log debug "[RESTORE] include_app=${include_app} force=${force} prebackup=${prebackup} purge=${purge} autofill_app=${autofill_app} autofill_db=${autofill_db}"
     [[ "$simulate" == true ]] && log info "[DRY-RUN] Restore simulation only (no changes)."
 
     if [[ "$simulate" == true ]]; then
@@ -130,6 +133,24 @@ run_restore() {
         return 1
     fi
 
+    # Warn if no .env is present; without APP_KEY, encrypted secrets (gateway/mail/API/2FA) will be unusable.
+    if [[ -z "$env_part" ]]; then
+        if [[ "$simulate" == true ]]; then
+            log warn "[DRY-RUN] No .env found in backup. Without APP_KEY, encrypted secrets (payment/mail/API/2FA) will be lost; users will need to re-enter them."
+        else
+            log warn "[RESTORE] No .env found in backup. Without APP_KEY, encrypted secrets (payment/mail/API/2FA) will be lost; users must re-enter them."
+            if [[ "$force" != true ]]; then
+                log info "[RESTORE] Continue without .env? (yes/no): "
+                local cont_env=""
+                read -r cont_env
+                if [[ ! "$cont_env" =~ ^([Yy]([Ee][Ss])?)$ ]]; then
+                    log err "[RESTORE] Aborted due to missing .env."
+                    return 1
+                fi
+            fi
+        fi
+    fi
+
     if [[ "$include_app" == true && -d "$target" ]]; then
         local pre_restore_backup="${INM_BACKUP_DIRECTORY%/}/restore_pre_$(date +%Y%m%d-%H%M%S)"
         if [[ "$simulate" == true ]]; then
@@ -150,8 +171,20 @@ run_restore() {
             rsync -a "$app_dir"/ "$target"/ || { log err "[RESTORE] Failed to restore application files."; return 1; }
         fi
     elif [[ "$include_app" == true ]]; then
-        log err "[RESTORE] No application directory found in backup. App files will be missing."
-        app_missing=true
+        if [[ "$autofill_app" != "0" ]]; then
+            if [[ "$simulate" == true ]]; then
+                log info "[DRY-RUN] Would download and install a fresh app because backup lacks app files."
+            else
+                log warn "[RESTORE] No application directory found in backup. Attempting fresh install (autofill app)."
+                local saved_named=("${NAMED_ARGS[@]}")
+                NAMED_ARGS[clean]=true
+                call_with_named_args run_installation ""
+                NAMED_ARGS=("${saved_named[@]}")
+            fi
+        else
+            log warn "[RESTORE] No application directory in backup and autofill-app disabled; app files will be missing."
+            app_missing=true
+        fi
     fi
 
     if [[ -n "$storage_dir" ]]; then
@@ -187,8 +220,10 @@ run_restore() {
         fi
     fi
 
+    local restored_env=""
     if [[ -n "$env_part" ]]; then
         local env_dest="${target%/}/.env"
+        restored_env="$env_dest"
         if [[ "$simulate" == true ]]; then
             log info "[DRY-RUN] Would restore .env -> $env_dest"
         else
@@ -206,8 +241,53 @@ run_restore() {
         if [[ "$simulate" == true ]]; then
             log info "[DRY-RUN] Would import database from $db_part"
         else
+            if [[ -n "$restored_env" && -f "$restored_env" ]]; then
+                if ! grep -q '^APP_KEY=' "$restored_env"; then
+                    log warn "[RESTORE] APP_KEY missing in restored .env ($restored_env). Encrypted secrets (payment/mail/API/2FA) will be unusable until replaced."
+                    if [[ "$force" != true ]]; then
+                        log info "[RESTORE] Continue without APP_KEY? (yes/no): "
+                        local cont=""
+                        read -r cont
+                        if [[ ! "$cont" =~ ^([Yy]([Ee][Ss])?)$ ]]; then
+                            log err "[RESTORE] Aborted due to missing APP_KEY."
+                            return 1
+                        fi
+                    fi
+                fi
+            fi
             log info "[RESTORE] Importing database from $db_part"
             import_database --file="$db_part" --force="$force" --pre-backup="$prebackup" --purge_before_import="$purge"
+        fi
+    else
+        if [[ "$simulate" == true ]]; then
+            log warn "[DRY-RUN] No DB dump in backup. Would prompt for alternative or fresh seed."
+        else
+            log warn "[RESTORE] No DB dump found. Provide a path to import, type 'fresh' to migrate/seed, or leave empty to abort."
+            printf "Enter SQL file path or 'fresh' (empty to abort): "
+            local choice=""
+            read -r choice
+            if [[ -z "$choice" ]]; then
+                log err "[RESTORE] Aborting. Rerun with --file=<backup> or use autofill-db=1 with --force to bypass prompts."
+                return 1
+            elif [[ "$choice" == "fresh" ]]; then
+                if [[ "$autofill_db" == "0" ]]; then
+                    log err "[RESTORE] Autofill-db disabled and no SQL provided; aborting."
+                    return 1
+                fi
+                log info "[RESTORE] Running migrate:fresh --seed."
+                run_artisan migrate:fresh --seed --force || { log err "[RESTORE] Fresh migrate/seed failed."; return 1; }
+            else
+                if [[ ! -f "$choice" ]]; then
+                    log err "[RESTORE] SQL file not found: $choice"
+                    return 1
+                fi
+                # Basic validation: must contain CREATE TABLE or INSERT to look like SQL
+                if ! grep -qiE "CREATE TABLE|INSERT INTO" "$choice" 2>/dev/null; then
+                    log warn "[RESTORE] SQL file does not appear to contain table/data statements. Proceeding may fail."
+                fi
+                log info "[RESTORE] Importing database from $choice"
+                import_database --file="$choice" --force="$force" --pre-backup="$prebackup" --purge_before_import="$purge"
+            fi
         fi
     fi
 
@@ -250,6 +330,12 @@ run_restore() {
             log err "[RESTORE] Installation not ready: .env missing at ${target%/}/.env."
         else
             log ok "[RESTORE] Installation appears complete. Consider running 'inmanage core update' to ensure the latest version."
+        fi
+        if [[ "$simulate" != true ]]; then
+            enforce_ownership "$target"
+            enforce_permissions 750 "$target"
+        else
+            log info "[DRY-RUN] Would enforce ownership and permissions (750) on $target"
         fi
     fi
 

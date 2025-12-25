@@ -42,15 +42,69 @@ safe_move_or_copy_and_clean() {
 }
 
 # ---------------------------------------------------------------------
+# internal: best-effort owner/mode detection (portable)
+_fs_get_owner() {
+    local path="$1"
+    local owner=""
+    owner=$(stat -c '%U:%G' "$path" 2>/dev/null || stat -f '%Su:%Sg' "$path" 2>/dev/null || echo "")
+    printf "%s" "$owner"
+}
+
+_fs_get_mode() {
+    local path="$1"
+    local mode=""
+    mode=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Mp%Lp' "$path" 2>/dev/null || echo "")
+    mode="${mode##0}" # drop leading zeros
+    printf "%s" "$mode"
+}
+
 # enforce_ownership()
 # Applies chown recursively to given paths if they exist.
 # ---------------------------------------------------------------------
 enforce_ownership() {
     local paths=("$@")
+    local owner="${INM_ENFORCED_USER:-${ENFORCED_USER:-}}"
+    if [[ -z "$owner" ]]; then
+        log debug "[EU] No enforced user configured; skipping chown."
+        return 0
+    fi
     for path in "${paths[@]}"; do
         if [ -e "$path" ]; then
-            if ! chown -R "$ENFORCED_USER:$ENFORCED_USER" "$path" 2>/dev/null; then
-                log warn "[EU] chown failed for $path"
+            local current
+            current="$(_fs_get_owner "$path")"
+            if [[ "$current" == "$owner:$owner" ]]; then
+                log debug "[EU] Ownership already $current for $path"
+                continue
+            fi
+            if ! chown -R "$owner:$owner" "$path" 2>/dev/null; then
+                log warn "[EU] chown failed for $path (wanted $owner:$owner)"
+            fi
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------
+# enforce_permissions()
+# Applies chmod recursively if paths exist.
+# ---------------------------------------------------------------------
+enforce_permissions() {
+    local mode="${1:-}"
+    shift || true
+    local paths=("$@")
+    if [[ -z "$mode" || ${#paths[@]} -eq 0 ]]; then
+        log debug "[EP] Mode or paths missing; skipping chmod."
+        return 0
+    fi
+    for path in "${paths[@]}"; do
+        if [ -e "$path" ]; then
+            local current_mode
+            current_mode="$(_fs_get_mode "$path")"
+            if [[ "$current_mode" == "$mode" ]]; then
+                log debug "[EP] Mode already $mode for $path"
+                continue
+            fi
+            if ! chmod -R "$mode" "$path" 2>/dev/null; then
+                log warn "[EP] chmod failed for $path (wanted $mode)"
             fi
         fi
     done

@@ -22,13 +22,14 @@ core:
                               --version=<v> --force --cache-only
 
   backup                      Full backup (db+files)
-                              --compress=tar.gz|zip|false --name=<label> --include-app=true|false --extra-paths=a,b
+                              --compress=tar.gz|zip|false --name=<label> --extra-paths=a,b
 
   restore                     Restore from bundle
-                              --file=<bundle> --force --include-app=true|false --target=<path>
+                              --file=<bundle> --force --target=<path>
+                              --autofill-missing[=1|0] --autofill-missing-app=1|0 --autofill-missing-db=1|0
 
   health (info)               Preflight/health check
-                              --fast --skip-db --skip-github --skip-snappdf --skip-web-php
+                              --checks=TAG1,TAG2 (e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
 
   version                     Show installed/latest/cached version
 
