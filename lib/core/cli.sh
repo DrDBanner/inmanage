@@ -17,6 +17,7 @@ Usage:
 core:
   install                     Install Invoice Ninja
                               --clean --provision --version=<v>
+                              Provisioned install is recommended (uses .inmanage/.env.provision; create with core provision spawn)
 
   update                      Update Invoice Ninja
                               --version=<v> --force --cache-only
@@ -96,6 +97,7 @@ show_context_help() {
             cat <<'EOF'
 core actions:
   install [--clean] [--provision] [--version=v]
+         # Provisioned install is recommended; wizard install only when needed.
   update [--version=v] [--force] [--cache-only]
   backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false] [--extra-paths=a,b]
          # Default: single full bundle (app+env+db). Flags narrow scope or add extras.
@@ -139,6 +141,174 @@ env actions:
   unset <app|cli> KEY
   show [app|cli]
 EOF
+            ;;
+        *)
+            show_help
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------
+# show_action_help()
+# Prints help for a specific context/action combo.
+# ---------------------------------------------------------------------
+show_action_help() {
+    local ctx="$1"
+    local action="$2"
+    case "$ctx" in
+        core)
+            case "$action" in
+                install)
+                    cat <<'EOF'
+core install:
+  inmanage core install [--clean] [--provision] [--version=v]
+  - Provisioned install is recommended (uses .inmanage/.env.provision)
+  - Create a provision file with: inmanage core provision spawn
+  - Wizard install only when needed
+EOF
+                    ;;
+                update)
+                    cat <<'EOF'
+core update:
+  inmanage core update [--version=v] [--force] [--cache-only]
+EOF
+                    ;;
+                backup)
+                    cat <<'EOF'
+core backup:
+  inmanage core backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false] [--extra-paths=a,b]
+EOF
+                    ;;
+                restore)
+                    cat <<'EOF'
+core restore:
+  inmanage core restore --file=... [--force] [--include-app=true|false] [--target=...]
+  --autofill-missing[=1|0] --autofill-missing-app=1|0 --autofill-missing-db=1|0
+EOF
+                    ;;
+                health|info)
+                    cat <<'EOF'
+core health (info):
+  inmanage core health [--checks=TAG1,TAG2]
+  Tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,DB,APP,CRON,SNAPPDF
+EOF
+                    ;;
+                version)
+                    cat <<'EOF'
+core version:
+  inmanage core version
+EOF
+                    ;;
+                prune)
+                    cat <<'EOF'
+core prune:
+  inmanage core prune [--override-enforced-user]
+EOF
+                    ;;
+                prune_versions|prune-versions)
+                    cat <<'EOF'
+core prune-versions:
+  inmanage core prune-versions
+EOF
+                    ;;
+                prune_backups|prune-backups)
+                    cat <<'EOF'
+core prune-backups:
+  inmanage core prune-backups
+EOF
+                    ;;
+                clear-cache|clear_cache)
+                    cat <<'EOF'
+core clear-cache:
+  inmanage core clear-cache
+EOF
+                    ;;
+                provision)
+                    cat <<'EOF'
+core provision spawn:
+  inmanage core provision spawn [--provision-file=path] [--backup-file=path|--latest-backup]
+EOF
+                    ;;
+                *)
+                    show_context_help "$ctx"
+                    ;;
+            esac
+            ;;
+        db)
+            case "$action" in
+                backup)
+                    cat <<'EOF'
+db backup:
+  inmanage db backup [--compress=tar.gz|zip|false] [--name=...]
+EOF
+                    ;;
+                restore)
+                    cat <<'EOF'
+db restore:
+  inmanage db restore --file=path [--force] [--purge=true]
+EOF
+                    ;;
+                create)
+                    cat <<'EOF'
+db create:
+  inmanage db create
+EOF
+                    ;;
+                *)
+                    show_context_help "$ctx"
+                    ;;
+            esac
+            ;;
+        files)
+            case "$action" in
+                backup)
+                    cat <<'EOF'
+files backup:
+  inmanage files backup [--compress=tar.gz|zip|false] [--name=...]
+EOF
+                    ;;
+                prune)
+                    cat <<'EOF'
+files prune:
+  inmanage files prune
+EOF
+                    ;;
+                *)
+                    show_context_help "$ctx"
+                    ;;
+            esac
+            ;;
+        self)
+            case "$action" in
+                install|update|switch-mode|switch_mode|uninstall)
+                    cat <<'EOF'
+self commands:
+  inmanage self install
+  inmanage self update
+  inmanage self switch-mode
+  inmanage self uninstall
+EOF
+                    ;;
+                *)
+                    show_context_help "$ctx"
+                    ;;
+            esac
+            ;;
+        env)
+            case "$action" in
+                set|get|unset|show)
+                    cat <<'EOF'
+env commands:
+  inmanage env set <app|cli> KEY VALUE
+  inmanage env get <app|cli> KEY
+  inmanage env unset <app|cli> KEY
+  inmanage env show [app|cli]
+EOF
+                    ;;
+                *)
+                    show_context_help "$ctx"
+                    ;;
+            esac
             ;;
         *)
             show_help

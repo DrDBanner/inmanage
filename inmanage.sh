@@ -274,11 +274,23 @@ fi
 
 if [[ "$SHOW_FUNCTION_HELP" == true ]]; then
     help_ctx="$CMD_CONTEXT"
+    help_action="$CMD_ACTION"
     if [[ -z "$help_ctx" && -n "$LEGACY_CMD" ]]; then
-        help_ctx="$LEGACY_CMD"
+        case "$LEGACY_CMD" in
+            info|health) help_ctx="core"; help_action="health";;
+            version) help_ctx="core"; help_action="version";;
+            clear-cache|clear_cache) help_ctx="core"; help_action="clear-cache";;
+            backup) help_ctx="core"; help_action="backup";;
+            cleanup|prune) help_ctx="core"; help_action="prune";;
+            cleanup_versions|prune_versions) help_ctx="core"; help_action="prune_versions";;
+            cleanup_backups|prune_backups) help_ctx="core"; help_action="prune_backups";;
+            *) help_ctx="$LEGACY_CMD";;
+        esac
     fi
     log debug "[SFH] Showing help. Context: ${help_ctx:-<none>} Action: ${CMD_ACTION:-<none>} Legacy: ${LEGACY_CMD:-<none>}"
-    if [[ -n "$help_ctx" ]]; then
+    if [[ -n "$help_ctx" && -n "$help_action" ]]; then
+        show_action_help "$help_ctx" "$help_action"
+    elif [[ -n "$help_ctx" ]]; then
         show_context_help "$help_ctx"
     else
         show_function_help
