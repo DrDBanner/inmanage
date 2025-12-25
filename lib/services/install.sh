@@ -16,6 +16,31 @@ run_installation() {
     if [[ -z "$mode" && "${NAMED_ARGS[provision]:-false}" == "true" ]]; then
         mode="Provisioned"
         log info "[TAR] Provision mode enabled via --provision."
+    elif [[ -z "$mode" ]]; then
+        if [[ -t 0 ]]; then
+            local choice
+            choice=$(prompt_var "INSTALL_MODE" "provisioned" \
+                "Install type? (provisioned/wizard) [recommended: provisioned]:" false 60) || return 1
+            choice="${choice,,}"
+            case "$choice" in
+                provisioned|provision|prov|p)
+                    mode="Provisioned"
+                    NAMED_ARGS[provision]=true
+                    log info "[TAR] Provisioned install selected (recommended)."
+                    ;;
+                wizard|guided|gui|clean|g)
+                    mode="Wizard"
+                    log info "[TAR] Wizard install selected."
+                    ;;
+                *)
+                    mode="Provisioned"
+                    NAMED_ARGS[provision]=true
+                    log warn "[TAR] Unknown choice; defaulting to provisioned install."
+                    ;;
+            esac
+        else
+            log info "[TAR] Non-interactive install; use --provision for recommended provisioned install."
+        fi
     fi
     local env_file timestamp latest_version response source_dir
     timestamp="$(date +'%Y%m%d_%H%M%S')"
@@ -27,13 +52,68 @@ run_installation() {
     install_name="$(basename "$install_path")"
 
     if [ "$mode" = "Provisioned" ]; then
-        env_file="${INM_BASE_DIRECTORY%/}/${INM_PROVISION_ENV_FILE#/}"
+        local provision_rel="${INM_PROVISION_ENV_FILE:-.inmanage/.env.provision}"
+        if [ -n "${INM_BASE_DIRECTORY:-}" ]; then
+            env_file="${INM_BASE_DIRECTORY%/}/${provision_rel#/}"
+        else
+            env_file="$provision_rel"
+            if [[ "$env_file" != /* ]]; then
+                env_file="$(pwd)/${env_file}"
+            fi
+        fi
         # If migration backup hint present, stash for restore phase
         if [ -z "${INM_MIGRATION_BACKUP:-}" ] && [ -f "$env_file" ]; then
             INM_MIGRATION_BACKUP=$(grep -E '^INM_MIGRATION_BACKUP=' "$env_file" 2>/dev/null | tail -n1 | cut -d= -f2-)
         fi
     else
         env_file="${install_parent}/${install_name}_temp/.env.example"
+    fi
+
+    if declare -F assert_file_path >/dev/null 2>&1; then
+        assert_file_path "$env_file" "Provision file path" || return 1
+    elif [ -d "$env_file" ]; then
+        log err "[TAR] Provision file path resolves to a directory: $env_file"
+        return 1
+    fi
+
+    if [ "$mode" = "Provisioned" ] && [ ! -f "$env_file" ]; then
+        if [[ -t 0 ]]; then
+            if prompt_confirm "CREATE_PROVISION" "yes" "No provision file found. Create one now? [Y/n]" false 60; then
+                local saved_provision_file="${NAMED_ARGS[provision_file]:-}"
+                NAMED_ARGS[provision_file]="$env_file"
+                spawn_provision_file || return 1
+                if [ -n "$saved_provision_file" ]; then
+                    NAMED_ARGS[provision_file]="$saved_provision_file"
+                else
+                    unset 'NAMED_ARGS[provision_file]'
+                fi
+
+                local editor=""
+                if command -v nano >/dev/null 2>&1; then
+                    editor="nano"
+                elif command -v vi >/dev/null 2>&1; then
+                    editor="vi"
+                fi
+
+                if [ -n "$editor" ]; then
+                    if [ -f "$env_file" ]; then
+                        log info "[PROV] Opening provision file in ${editor}."
+                        log info "[PROV] If you're not familiar with ${editor}, please review its basics first."
+                        log info "[PROV] For .env values, see Invoice Ninja docs. DB_ELEVATED_* is only for creating DB/user."
+                        "$editor" "$env_file"
+                    else
+                        log warn "[PROV] Provision file not found at: $env_file"
+                    fi
+                else
+                    log warn "[PROV] No editor found (nano/vi). Edit manually: $env_file"
+                fi
+            else
+                log info "[PROV] Provision file not created."
+            fi
+        else
+            log warn "[PROV] Provision file missing: $env_file"
+            log info "[PROV] Run 'inmanage core provision spawn' or 'inmanage core install --help'."
+        fi
     fi
 
     if [ -d "$install_path" ]; then

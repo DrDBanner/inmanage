@@ -16,7 +16,7 @@ __SERVICE_PROVISION_LOADED=1
 
 # ---------------------------------------------------------------------
 # spawn_provision_file()
-# Creates/updates .env.provision based on current app env or bundled example.
+# Creates/updates .env.provision based on .env.example (preferred) or app env.
 # Supports: --provision-file, --backup-file, --latest-backup, --force.
 # ---------------------------------------------------------------------
 spawn_provision_file() {
@@ -29,6 +29,16 @@ spawn_provision_file() {
     local migration_backup="${NAMED_ARGS[backup_file]:-${NAMED_ARGS[backup-file]:-${INM_MIGRATION_BACKUP:-}}}"
     local latest_backup="${NAMED_ARGS[latest_backup]:-${NAMED_ARGS[latest-backup]:-false}}"
 
+    if [[ "$target" != /* ]]; then
+        target="$(pwd)/${target}"
+    fi
+    if declare -F assert_file_path >/dev/null 2>&1; then
+        assert_file_path "$target" "Provision file path" || return 1
+    elif [[ -d "$target" || "$target" == */ ]]; then
+        log err "[PROV] Provision file path resolves to a directory: $target"
+        return 1
+    fi
+
     mkdir -p "$(dirname "$target")" 2>/dev/null || {
         log err "[PROV] Cannot create directory for provision file: $(dirname "$target")"
         return 1
@@ -39,37 +49,63 @@ spawn_provision_file() {
         return 0
     fi
 
+    local env_example="${INM_ENV_EXAMPLE_FILE:-${INM_BASE_DIRECTORY%/}/.inmanage/.env.example}"
+    if [[ "$env_example" != /* ]]; then
+        env_example="$(pwd)/${env_example}"
+    fi
     local src_env=""
-    if [ -f "${INM_ENV_FILE:-}" ]; then
+
+    if [ -f "$env_example" ]; then
+        src_env="$env_example"
+    else
+        log info "[PROV] Downloading .env.example for provisioning"
+        mkdir -p "$(dirname "$env_example")" 2>/dev/null || true
+        curl -sL ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} \
+            "https://raw.githubusercontent.com/invoiceninja/invoiceninja/v5-stable/.env.example" \
+            -o "$env_example" || {
+                log warn "[PROV] Failed to download .env.example; will try app env instead."
+                env_example=""
+            }
+        if [ -f "$env_example" ]; then
+            src_env="$env_example"
+        fi
+    fi
+
+    if [ -z "$src_env" ] && [ -f "${INM_ENV_FILE:-}" ]; then
         src_env="$INM_ENV_FILE"
         log info "[PROV] Seeding from app env: $src_env"
-    elif [ -f "${SCRIPT_DIR:-.}/.env.example" ]; then
+    elif [ -z "$src_env" ] && [ -f "${SCRIPT_DIR:-.}/.env.example" ]; then
         src_env="${SCRIPT_DIR:-.}/.env.example"
         log info "[PROV] Seeding from bundled .env.example: $src_env"
     fi
 
-    local keys=(APP_NAME APP_URL PDF_GENERATOR APP_DEBUG DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD DB_ELEVATED_USERNAME DB_ELEVATED_PASSWORD)
-    {
-        echo "# Auto-generated provision file"
-        echo "# Adjust values as needed, then run: inmanage core install --provision"
-        echo "# Generated: $(date -Iseconds)"
-        for k in "${keys[@]}"; do
-            local v=""
-            if [ -n "$src_env" ]; then
-                v=$(grep -E "^${k}=" "$src_env" 2>/dev/null | tail -n1 | cut -d= -f2-)
-            fi
-            printf "%s=%s\n" "$k" "${v}"
-        done
-        if [ -n "$migration_backup" ]; then
-            printf "INM_MIGRATION_BACKUP=%s\n" "$migration_backup"
-            log info "[PROV] Added migration backup reference: $migration_backup"
-        elif [ "$latest_backup" = true ]; then
-            printf "INM_MIGRATION_BACKUP=LATEST\n"
-            log info "[PROV] Will use latest backup during provisioned install."
-        fi
-    } > "$target"
+    if [ -z "$src_env" ]; then
+        log err "[PROV] No source env found (.env.example or app env)."
+        return 1
+    fi
 
-    chmod 600 "$target" 2>/dev/null || true
+    cp -f "$src_env" "$target" || {
+        log err "[PROV] Failed to seed provision file from $src_env"
+        return 1
+    }
+
+    if ! grep -q '^DB_ELEVATED_USERNAME=' "$target" 2>/dev/null; then
+        sed -i '/^DB_PORT=/a DB_ELEVATED_USERNAME=\nDB_ELEVATED_PASSWORD=' "$target" 2>/dev/null || true
+    fi
+    if [ -n "$migration_backup" ]; then
+        printf "\nINM_MIGRATION_BACKUP=%s\n" "$migration_backup" >> "$target"
+        log info "[PROV] Added migration backup reference: $migration_backup"
+    elif [ "$latest_backup" = true ]; then
+        printf "\nINM_MIGRATION_BACKUP=LATEST\n" >> "$target"
+        log info "[PROV] Will use latest backup during provisioned install."
+    fi
+
+    if [ -f "$target" ]; then
+        chmod 600 "$target" 2>/dev/null || true
+    else
+        log warn "[PROV] Provision file not created at: $target"
+        return 1
+    fi
     log ok "[PROV] Provision file written: $target"
 }
 

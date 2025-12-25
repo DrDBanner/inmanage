@@ -19,6 +19,14 @@ safe_move_or_copy_and_clean() {
         log err "[SMO] Source or destination missing."
         return 1
     fi
+    if [ ! -d "$src" ]; then
+        log err "[SMO] Source is not a directory: $src"
+        return 1
+    fi
+    if [ -e "$dst" ] && [ ! -d "$dst" ]; then
+        log err "[SMO] Destination exists but is not a directory: $dst"
+        return 1
+    fi
 
     if [ "$mode" = "move" ] || [ "$mode" = "new" ]; then
         if mv "$src" "$dst"; then
@@ -38,6 +46,42 @@ safe_move_or_copy_and_clean() {
     fi
 
     log ok "[SMO] Copied $src to $dst"
+    return 0
+}
+
+# ---------------------------------------------------------------------
+# assert_file_path()
+# Validates that a path is suitable for a file (not a directory).
+# Does not require the file to exist.
+# ---------------------------------------------------------------------
+assert_file_path() {
+    local path="$1"
+    local label="${2:-Path}"
+
+    if [[ -z "$path" ]]; then
+        log err "[FS] ${label} is empty."
+        return 1
+    fi
+    if [[ "$path" == */ ]]; then
+        log err "[FS] ${label} ends with '/': $path"
+        return 1
+    fi
+    if [[ -d "$path" ]]; then
+        log err "[FS] ${label} resolves to a directory: $path"
+        return 1
+    fi
+    local base
+    base="$(basename "$path")"
+    if [[ "$base" == "." || "$base" == ".." ]]; then
+        log err "[FS] ${label} basename is invalid: $path"
+        return 1
+    fi
+    local parent
+    parent="$(dirname "$path")"
+    if [[ -e "$parent" && ! -d "$parent" ]]; then
+        log err "[FS] ${label} parent is not a directory: $parent"
+        return 1
+    fi
     return 0
 }
 

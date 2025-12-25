@@ -334,10 +334,18 @@ check_global_cache_permissions() {
         fi
     fi
 
-    if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    if command -v sudo >/dev/null 2>&1; then
         local cache_owner="${INM_ENFORCED_USER:-$USER}"
-        if sudo_prepare_cache_dir "$dir" "$cache_owner" 755 false; then
-            return 0
+        if sudo -n true 2>/dev/null; then
+            if sudo_prepare_cache_dir "$dir" "$cache_owner" 755 false; then
+                return 0
+            fi
+        elif [[ -t 0 ]] && declare -F prompt_confirm >/dev/null 2>&1; then
+            if prompt_confirm "CACHE_SUDO" "no" "Global cache not writable at $dir. Use sudo to create and chown to ${cache_owner}? [y/N]" false 60; then
+                if sudo_prepare_cache_dir "$dir" "$cache_owner" 755 true; then
+                    return 0
+                fi
+            fi
         fi
     fi
 
