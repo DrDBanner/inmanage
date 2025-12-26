@@ -911,7 +911,7 @@ lrwxrwxrwx  1 www-data www-data   55  8. Jun 19:01 inmanage.sh -> /var/www/billi
 drwxr-xr-x  2 www-data www-data 4096  8. Jun 20:30 ._in_tempDownload
 drwxr-xr-x 15 www-data www-data 4096  8. Jun 20:30 invoiceninja
 drwxr-xr-x 15 www-data www-data 4096  8. Jun 20:18 invoiceninja_20250608_203055
-drwxr-xr-x  3 www-data www-data 4096  8. Jun 18:09 _last_IN_20250608_201836
+drwxr-xr-x  3 www-data www-data 4096  8. Jun 18:09 invoiceninja_rollback_20250608_201836
 ```
 
 > [!TIP]

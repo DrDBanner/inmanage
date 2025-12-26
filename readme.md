@@ -34,6 +34,7 @@ inmanage core install --provision
 inmanage core health
 inmanage core install [--clean] [--provision] [--version=v]
 inmanage core update [--version=v] [--force]
+inmanage core update rollback last
 inmanage core backup [--name=label] [--compress=tar.gz|zip|false]
 inmanage core restore --file=path [--force] [--include-app=true|false]
 ```
@@ -50,3 +51,9 @@ inmanage core health -h
 - No silent deletes: old installs are moved aside.
 - Backups include checksums (SHA-256).
 - Provisioned installs are repeatable and auditable.
+- Hooks are available for pre/post install/update/backup (see docs).
+
+## Extended docs
+
+Full documentation:
+https://github.com/DrDBanner/inmanage/blob/main/docs/index.md

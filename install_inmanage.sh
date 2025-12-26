@@ -86,6 +86,7 @@ ensure_dirs() {
 clone_or_update() {
   if [[ -n "$SOURCE_DIR" ]]; then
     log INFO "Using local source: $SOURCE_DIR"
+    log WARN "Note: --source uses rsync --delete; files in the target not present in source will be removed."
     if [[ ! -d "$SOURCE_DIR" || ! -f "$SOURCE_DIR/inmanage.sh" ]]; then
       log ERR "SOURCE_DIR must contain an inmanage checkout (missing inmanage.sh): $SOURCE_DIR"
       exit 1

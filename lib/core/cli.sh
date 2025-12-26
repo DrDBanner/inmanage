@@ -17,13 +17,16 @@ Usage:
 core:
   install                     Install Invoice Ninja
                               --clean --provision --version=<v>
+                              --cron-mode=auto|system|crontab --no-cron-install
+                              --cron-jobs=scheduler|backup|both --no-backup-cron --backup-time=HH:MM
                               Provisioned install is recommended (uses .inmanage/.env.provision; create with core provision spawn)
 
   update                      Update Invoice Ninja
-                              --version=<v> --force --cache-only
+                              --version=<v> --force --cache-only --no-db-backup
+                              rollback [last|<dir>]
 
   backup                      Full backup (db+files)
-                              --compress=tar.gz|zip|false --name=<label> --extra-paths=a,b
+                              --compress=tar.gz|zip|false --name=<label> --extra-paths=a,b --create-migration-export
 
   restore                     Restore from bundle
                               --file=<bundle> --force --target=<path>
@@ -41,7 +44,7 @@ core:
 
   clear-cache                 Clear app cache (artisan)
 
-  cron install                Install cronjobs
+  cron install|uninstall      Install or remove cronjobs
 
   provision spawn             Create provision file
                               --provision-file=path --backup-file=path | --latest-backup
@@ -84,6 +87,9 @@ Global Flags:
 
 Args:
   Pass options as --key=value.
+
+Docs:
+  https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
 }
 
@@ -100,13 +106,17 @@ core actions:
   install [--clean] [--provision] [--version=v]
          # Provisioned install is recommended; wizard install only when needed.
   update [--version=v] [--force] [--cache-only]
+         rollback [last|<dir>]
   backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false] [--extra-paths=a,b]
+         [--create-migration-export]
          # Default: single full bundle (app+env+db). Flags narrow scope or add extras.
   restore --file=... [--force] [--include-app=true|false] [--target=...]
+         # DB import requires --force.
   health | info
   version
   prune [--override-enforced-user] | prune_versions | prune_backups
   clear-cache
+  cron install|uninstall [--user=name] [--jobs=scheduler|backup|both] [--mode=auto|system|crontab]
   provision spawn [--provision-file=path] [--backup-file=path|--latest-backup]
 EOF
             ;;
@@ -115,13 +125,16 @@ EOF
 db actions:
   backup [--compress=tar.gz|zip|false] [--name=...]
   restore --file=path [--force] [--purge=true]
+         # Requires --force (destructive).
   create
 EOF
             ;;
         files)
             cat <<'EOF'
 files actions:
-  backup [--compress=tar.gz|zip|false] [--name=...]
+  backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false]
+         [--bundle=true|false] [--storage=true|false] [--uploads=true|false]
+         [--extra-paths=a,b] [--extra=a,b]
   prune
 EOF
             ;;
@@ -166,19 +179,33 @@ core install:
   - Recommended: provisioned install (uses .inmanage/.env.provision)
   - Create provision file first: inmanage core provision spawn
   - Wizard install only if you need the interactive web setup
-  - Docs: https://github.com/DrDBanner/inmanage/blob/development/docs/index.md
+  - Provisioned installs require --force (destructive)
+  - Optional: --no-backup to skip pre-provision DB backup
+  - Optional: --no-cron-install to skip cron setup
+  - Optional: --cron-mode=auto|system|crontab to force cron install mode
+  - Optional: --cron-jobs=scheduler|backup|both to override installed cron jobs
+  - Optional: --no-backup-cron to skip the backup cron job
+  - Optional: --backup-time=HH:MM for the backup cron schedule (default 03:24)
+  - Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 update)
                     cat <<'EOF'
 core update:
-  inmanage core update [--version=v] [--force] [--cache-only]
+  inmanage core update [--version=v] [--force] [--cache-only] [--no-db-backup]
+  inmanage core update rollback [last|<dir>]
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 backup)
                     cat <<'EOF'
 core backup:
-  inmanage core backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false] [--extra-paths=a,b]
+  inmanage core backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false]
+                       [--bundle=true|false] [--db=true|false] [--storage=true|false] [--uploads=true|false]
+                       [--fullbackup=true|false] [--extra-paths=a,b] [--create-migration-export]
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 restore)
@@ -186,49 +213,77 @@ EOF
 core restore:
   inmanage core restore --file=... [--force] [--include-app=true|false] [--target=...]
   --autofill-missing[=1|0] --autofill-missing-app=1|0 --autofill-missing-db=1|0
+  - DB import requires --force
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 health|info)
                     cat <<'EOF'
 core health (info):
   inmanage core health [--checks=TAG1,TAG2]
-  Tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,DB,APP,CRON,SNAPPDF
+  Tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 version)
                     cat <<'EOF'
 core version:
   inmanage core version
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 prune)
                     cat <<'EOF'
 core prune:
   inmanage core prune [--override-enforced-user]
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 prune_versions|prune-versions)
                     cat <<'EOF'
 core prune-versions:
   inmanage core prune-versions
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 prune_backups|prune-backups)
                     cat <<'EOF'
 core prune-backups:
   inmanage core prune-backups
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
+EOF
+                    ;;
+                cron)
+                    cat <<'EOF'
+core cron install:
+  inmanage core cron install [--user=name] [--jobs=scheduler|backup|both]
+                             [--mode=auto|system|crontab] [--cron-file=path]
+                             [--backup-time=HH:MM]
+  inmanage core cron uninstall [--mode=auto|system|crontab] [--cron-file=path]
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 clear-cache|clear_cache)
                     cat <<'EOF'
 core clear-cache:
   inmanage core clear-cache
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 provision)
                     cat <<'EOF'
 core provision spawn:
   inmanage core provision spawn [--provision-file=path] [--backup-file=path|--latest-backup]
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 *)
@@ -242,18 +297,25 @@ EOF
                     cat <<'EOF'
 db backup:
   inmanage db backup [--compress=tar.gz|zip|false] [--name=...]
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 restore)
                     cat <<'EOF'
 db restore:
   inmanage db restore --file=path [--force] [--purge=true]
+  - Requires --force (destructive)
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 create)
                     cat <<'EOF'
 db create:
   inmanage db create
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 *)
@@ -266,13 +328,19 @@ EOF
                 backup)
                     cat <<'EOF'
 files backup:
-  inmanage files backup [--compress=tar.gz|zip|false] [--name=...]
+  inmanage files backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false]
+                        [--bundle=true|false] [--storage=true|false] [--uploads=true|false]
+                        [--extra-paths=a,b]
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 prune)
                     cat <<'EOF'
 files prune:
   inmanage files prune
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 *)
@@ -289,6 +357,8 @@ self commands:
   inmanage self update
   inmanage self switch-mode
   inmanage self uninstall
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 *)
@@ -305,6 +375,8 @@ env commands:
   inmanage env get <app|cli> KEY
   inmanage env unset <app|cli> KEY
   inmanage env show [app|cli]
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
                 *)
