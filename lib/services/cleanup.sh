@@ -14,13 +14,27 @@ cleanup_old_versions() {
     fi
     log info "[COV] Cleaning up old update directory versions."
     local update_dirs
+    local rollback_dirs
     local install_parent
+    local install_name
     install_parent="$(dirname "${INM_INSTALLATION_PATH%/}")"
-    update_dirs=$(find "$install_parent" -maxdepth 1 -type d -name "$(basename "$INM_INSTALLATION_DIRECTORY")_*" | sort -r | tail -n +$((INM_KEEP_BACKUPS + 1)))
+    install_name="$(basename "${INM_INSTALLATION_PATH%/}")"
+    if [ -z "$install_name" ] || [ "$install_name" = "." ]; then
+        install_name="$(basename "${INM_INSTALLATION_DIRECTORY}")"
+    fi
+
+    update_dirs=$(find "$install_parent" -maxdepth 1 -type d -name "${install_name}_*" ! -name "${install_name}_rollback_*" 2>/dev/null | sort -r | tail -n +$((INM_KEEP_BACKUPS + 1)))
+    rollback_dirs=$(find "$install_parent" -maxdepth 1 -type d -name "${install_name}_rollback_*" 2>/dev/null | sort -r | tail -n +$((INM_KEEP_BACKUPS + 1)))
 
     if [ -n "$update_dirs" ]; then
         echo "$update_dirs" | xargs -r rm -rf || {
             log err "[COV] Failed to clean up old versions."
+            exit 1
+        }
+    fi
+    if [ -n "$rollback_dirs" ]; then
+        echo "$rollback_dirs" | xargs -r rm -rf || {
+            log err "[COV] Failed to clean up old rollbacks."
             exit 1
         }
     fi
