@@ -19,6 +19,8 @@ install_self() {
   local local_bin="$HOME/.local/bin"
   local source_script
   source_script="$(realpath "$0")"
+  local source_dir
+  source_dir="$(dirname "$source_script")"
 
   local install_dir="${NAMED_ARGS[target_dir]:-${NAMED_ARGS[--target-dir]:-}}"
   local install_mode="${NAMED_ARGS[install_mode]:-${NAMED_ARGS[--install-mode]:-}}"
@@ -46,9 +48,7 @@ install_self() {
     echo "  [2] Local Install    – user context (~/.local/bin)"
     echo "  [3] Project Install  – once per project (least convenient)"
     echo
-    prompt_var "INSTALL_MODE" "Mode (1/2/3)" "2"
-    # shellcheck disable=SC2153
-    install_mode="$INSTALL_MODE"
+    install_mode="$(prompt_var "INSTALL_MODE" "2" "Mode (1/2/3)")" || return 1
   fi
 
   if [[ -z "$install_dir" ]]; then
@@ -64,7 +64,32 @@ install_self() {
   install_dir="$(prompt_var "INSTALL_DIR" "$install_dir" "Install directory for the inmanage app? (ENTER for default)")"
   INM_SELF_INSTALL_DIR="$install_dir"
 
-  if [[ "$(realpath "$install_dir")" == "$(realpath "$(dirname "$source_script")")" ]]; then
+  resolve_path() {
+    if declare -F resolve_script_path >/dev/null 2>&1; then
+      resolve_script_path "$1" 2>/dev/null && return
+    fi
+    if command -v realpath >/dev/null 2>&1; then
+      realpath "$1" 2>/dev/null && return
+    fi
+    printf "%s" "$1"
+  }
+
+  local current_mode="unknown"
+  if [[ "$source_dir" == "/usr/local/share/inmanage" ]]; then
+    current_mode="1"
+  elif [[ "$source_dir" == "$HOME/.inmanage_app" ]]; then
+    current_mode="2"
+  elif [[ -n "$base_dir" && "$source_dir" == "${base_dir%/}/.inmanage_app" ]]; then
+    current_mode="3"
+  elif [[ -n "$base_dir" && "$source_dir" == "${base_dir%/}"* ]]; then
+    current_mode="3"
+  fi
+
+  if [[ "$(resolve_path "$install_dir")" == "$(resolve_path "$source_dir")" ]]; then
+      if [[ "$current_mode" != "unknown" && "$install_mode" == "$current_mode" ]]; then
+          log ok "[SELF] Already installed in this mode. All good, nothing to do."
+          return 0
+      fi
       log err "[SELF] Source and target install directory are the same. Choose a different target."
       return 1
   fi

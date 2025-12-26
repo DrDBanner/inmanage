@@ -212,6 +212,27 @@ run_preflight() {
         cli_version=$(<"$cli_root/VERSION")
         add_result INFO "CLI" "Version file: ${cli_version}"
     fi
+    # Detect install mode for CLI
+    local cli_install_mode="unknown"
+    if [ -n "${INM_SELF_INSTALL_MODE:-}" ]; then
+        case "${INM_SELF_INSTALL_MODE}" in
+            1|system) cli_install_mode="system" ;;
+            2|local|user) cli_install_mode="user" ;;
+            3|project) cli_install_mode="project" ;;
+        esac
+    fi
+    if [ "$cli_install_mode" = "unknown" ]; then
+        if [[ "$cli_root" == "/usr/local/share/inmanage" ]]; then
+            cli_install_mode="system"
+        elif [[ -n "${HOME:-}" && "$cli_root" == "${HOME%/}/.inmanage_app" ]]; then
+            cli_install_mode="user"
+        elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$cli_root" == "${INM_BASE_DIRECTORY%/}/.inmanage_app" ]]; then
+            cli_install_mode="project"
+        elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$cli_root" == "${INM_BASE_DIRECTORY%/}"* ]]; then
+            cli_install_mode="project"
+        fi
+    fi
+    add_result INFO "CLI" "Install mode: ${cli_install_mode} (switch with: inmanage self switch-mode)"
     # Newest file mtime (best-effort)
     local inmanage_mtime="" inmanage_mtime_short="" inmanage_rel="inmanage.sh"
     if [ -f "$cli_root/inmanage.sh" ]; then
