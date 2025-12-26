@@ -207,12 +207,14 @@ download_ninja() {
     local download_url="https://github.com/invoiceninja/invoiceninja/releases/download/v$version/invoiceninja.tar.gz"
     # Show progress when interactive or in debug; otherwise stay quiet
     local curl_opts=(--fail --location --connect-timeout 20 --max-time 600 --show-error)
+    local use_spinner=false
     if [ -t 1 ] || [[ "${DEBUG:-false}" == true ]]; then
         curl_opts+=(--progress-bar)
         log info "[DN] Download in progress..."
     else
         curl_opts+=(--silent)
         log info "[DN] Download in progress (quiet mode, use --debug to see progress)..."
+        use_spinner=true
     fi
     if [[ -n "${CURL_AUTH_FLAG[*]}" ]]; then
         curl_opts+=("${CURL_AUTH_FLAG[@]}")
@@ -225,7 +227,17 @@ download_ninja() {
         resume_flag=(--continue-at -)
         log info "[DN] Resuming download (partial file found)."
     fi
-    if curl "${curl_opts[@]}" "${resume_flag[@]}" "$download_url" -o "$temp_file"; then
+    local curl_rc=0
+    if [ "$use_spinner" = true ]; then
+        spinner_start "Downloading Invoice Ninja..."
+        curl "${curl_opts[@]}" "${resume_flag[@]}" "$download_url" -o "$temp_file"
+        curl_rc=$?
+        spinner_stop
+    else
+        curl "${curl_opts[@]}" "${resume_flag[@]}" "$download_url" -o "$temp_file"
+        curl_rc=$?
+    fi
+    if [ "$curl_rc" -eq 0 ]; then
         if [ "$(wc -c < "$temp_file")" -gt 1048576 ]; then
             if ! safe_move_or_copy_and_clean "$temp_file" "$target_file" move; then
                 log err "[DN] Failed to finalize download: $temp_file -> $target_file"
@@ -252,7 +264,6 @@ download_ninja() {
             exit 1
         fi
     else
-        local curl_rc=$?
         if [ "$curl_rc" -eq 28 ]; then
             log err "[DN] Download timed out (curl exit 28). Re-run to resume from partial."
         else

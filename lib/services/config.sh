@@ -40,7 +40,7 @@ persist_derived_config() {
         echo "$key=\"${default_settings[$key]}\"" >> "$INM_SELF_ENV_FILE"
     done
 
-    chmod 600 "$INM_SELF_ENV_FILE" 2>/dev/null
+    chmod 644 "$INM_SELF_ENV_FILE" 2>/dev/null
     log ok "[PDC] Config persisted successfully"
 
     return 0
@@ -120,6 +120,7 @@ create_own_config() {
         fi
     done
 
+    chmod 644 "$INM_SELF_ENV_FILE" 2>/dev/null
     log ok "$INM_SELF_ENV_FILE has been created and configured."
 
     load_env_file_raw "$INM_SELF_ENV_FILE"

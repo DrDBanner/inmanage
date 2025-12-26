@@ -77,10 +77,15 @@ resolve_env_paths() {
 
     # If a local .inmanage/.env.inmanage exists, load it early to derive base/install
     if [ -f "$PWD/.inmanage/.env.inmanage" ]; then
-        log debug "[RES] Loading local config: $PWD/.inmanage/.env.inmanage"
-        # shellcheck source=/dev/null
-        source "$PWD/.inmanage/.env.inmanage"
-        INM_SELF_ENV_FILE="$PWD/.inmanage/.env.inmanage"
+        if [ -r "$PWD/.inmanage/.env.inmanage" ]; then
+            log debug "[RES] Loading local config: $PWD/.inmanage/.env.inmanage"
+            # shellcheck source=/dev/null
+            source "$PWD/.inmanage/.env.inmanage"
+            INM_SELF_ENV_FILE="$PWD/.inmanage/.env.inmanage"
+        else
+            log warn "[RES] Local config not readable: $PWD/.inmanage/.env.inmanage"
+            INM_SELF_ENV_FILE="$PWD/.inmanage/.env.inmanage"
+        fi
         if [ -n "${INM_BASE_DIRECTORY:-}" ] && [ -n "${INM_INSTALLATION_DIRECTORY:-}" ]; then
             INM_BASE_DIRECTORY="$(ensure_trailing_slash "${INM_BASE_DIRECTORY}")"
             INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
@@ -305,12 +310,12 @@ resolve_global_cache_dir() {
             fi
         fi
     else
-        log warn "[GC] Cache parent not writable: $home_parent (perms/owner). Set INM_CACHE_GLOBAL_DIRECTORY to an accessible path or rerun with --override_enforced_user=true."
+        log debug "[GC] Cache parent not writable: $home_parent (perms/owner)."
     fi
 
     # Fallback to project cache (normalize relative to cwd)
     INM_GLOBAL_CACHE="$project_cache"
-    log warn "[GC] Falling back to project cache: $INM_GLOBAL_CACHE"
+    log debug "[GC] Falling back to project cache: $INM_GLOBAL_CACHE"
     mkdir -p "$INM_GLOBAL_CACHE" 2>/dev/null || true
     return 1
 }
@@ -324,6 +329,13 @@ check_global_cache_permissions() {
     dir="$(expand_path_vars "${INM_CACHE_GLOBAL_DIRECTORY:-$HOME/.cache/inmanage}")"
     local parent_dir
     parent_dir="$(dirname "$dir")"
+    if [[ -z "${INM_CACHE_SUDO_PROMPT:-}" && -n "${INM_SELF_ENV_FILE:-}" && -r "$INM_SELF_ENV_FILE" ]]; then
+        local cache_prompt
+        cache_prompt=$(grep -E '^INM_CACHE_SUDO_PROMPT=' "$INM_SELF_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ')
+        if [[ -n "$cache_prompt" ]]; then
+            INM_CACHE_SUDO_PROMPT="$cache_prompt"
+        fi
+    fi
     if [ -w "$dir" ]; then
         return 0
     fi
@@ -341,14 +353,23 @@ check_global_cache_permissions() {
                 return 0
             fi
         elif [[ -t 0 ]] && declare -F prompt_confirm >/dev/null 2>&1; then
+            if [[ "${INM_CACHE_SUDO_PROMPT:-ask}" =~ ^(0|no|false|never|off)$ ]]; then
+                log debug "[CACHE] Using local cache."
+                return 1
+            fi
             if prompt_confirm "CACHE_SUDO" "no" "Global cache not writable at $dir. Use sudo to create and chown to ${cache_owner}? [y/N]" false 60; then
                 if sudo_prepare_cache_dir "$dir" "$cache_owner" 755 true; then
                     return 0
+                fi
+            else
+                INM_CACHE_SUDO_PROMPT="off"
+                if declare -F env_set >/dev/null 2>&1 && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
+                    env_set cli "INM_CACHE_SUDO_PROMPT=\"off\"" >/dev/null 2>&1 || true
                 fi
             fi
         fi
     fi
 
-    log warn "[CACHE] Global cache unavailable at $dir; using local cache."
+    log debug "[CACHE] Using local cache."
     return 1
 }

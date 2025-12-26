@@ -11,7 +11,11 @@ run_backup() {
 
     local compress="${ARGS[compress]:-tar.gz}"
     local bundle="${ARGS[bundle]:-true}"
-    local name="${ARGS[name]:-$(date +%Y%m%d-%H%M)}"
+    local name="${ARGS[name]:-}"
+    local name_provided=false
+    if [[ -n "${ARGS[name]+x}" ]]; then
+        name_provided=true
+    fi
     local include_app="${ARGS[include_app]:-${ARGS[include-app]:-true}}"
     local include_app_explicit=false
     if [[ -n "${ARGS[include_app]+x}" || -n "${ARGS[include-app]+x}" ]]; then
@@ -22,6 +26,7 @@ run_backup() {
     local uploads="${ARGS[uploads]:-true}"
     local fullbackup="${ARGS[fullbackup]:-false}"
     local extra_raw="${ARGS[extra_paths]:-${ARGS[extra]:-}}"
+    local create_migration_export="${ARGS[create_migration_export]:-${ARGS[create-migration-export]:-false}}"
     local force="${force_update:-false}"
     local simulate="${DRY_RUN:-false}"
     local backup_dir="${INM_BACKUP_DIRECTORY%/}"
@@ -58,7 +63,15 @@ run_backup() {
         fi
     fi
 
+    if declare -F run_hook >/dev/null 2>&1; then
+        run_hook "pre-backup" || return 1
+    fi
+
     local env_source="${INM_ENV_FILE:-${install_root}/.env}"
+    if [[ "$create_migration_export" == "true" && "$simulate" != true && ! -f "$env_source" ]]; then
+        log err "[BACKUP] Migration export requested but .env not found at $env_source"
+        return 1
+    fi
     local install_real
     install_real=$(realpath "$install_root" 2>/dev/null || echo "$install_root")
     path_inside_app_tree() {
@@ -69,7 +82,21 @@ run_backup() {
         [[ "$src_real" == "$install_real"/* ]]
     }
     local ts="$(date +%Y-%m-%d_%H-%M)"
-    local base_name="${INM_PROGRAM_NAME:-invoiceninja}_${name}_${ts}"
+    local base_name=""
+    if [[ -z "$name" ]]; then
+        base_name="${INM_PROGRAM_NAME:-invoiceninja}_${ts}"
+    else
+        local append_ts=true
+        if [[ "$name_provided" == true && "$name" =~ [0-9]{8}([_-][0-9]{4})? ]]; then
+            append_ts=false
+        elif [[ "$name_provided" == true && "$name" =~ [0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
+            append_ts=false
+        fi
+        base_name="${INM_PROGRAM_NAME:-invoiceninja}_${name}"
+        if [[ "$append_ts" == true ]]; then
+            base_name+="_${ts}"
+        fi
+    fi
     local app_dir_name
     app_dir_name="$(basename "${INM_INSTALLATION_DIRECTORY:-$install_root}")"
 
@@ -98,6 +125,116 @@ run_backup() {
         else
             printf "%s/%s\n" "$install_root" "${p#/}"
         fi
+    }
+
+    get_path_size() {
+        local p="$1"
+        if command -v du >/dev/null 2>&1; then
+            du -sh "$p" 2>/dev/null | awk '{print $1}'
+        fi
+    }
+
+    run_with_spinner() {
+        local msg="$1"
+        shift
+        if declare -F spinner_run >/dev/null 2>&1; then
+            spinner_run "$msg" "$@"
+        else
+            "$@"
+        fi
+    }
+
+    read_env_value() {
+        local file="$1"
+        local key="$2"
+        grep -E "^${key}=" "$file" 2>/dev/null | tail -n1 | cut -d= -f2-
+    }
+
+    set_env_value() {
+        local file="$1"
+        local key="$2"
+        local value="$3"
+        if declare -F env_set >/dev/null 2>&1; then
+            INM_ENV_FILE="$file" env_set app "${key}=${value}" >/dev/null || return 1
+        else
+            log err "[BACKUP] env_set helper missing; cannot update $key in $file"
+            return 1
+        fi
+    }
+
+    prompt_secret_keep_current() {
+        local prompt="$1"
+        local current="$2"
+        local input=""
+        if [[ ! -t 0 ]]; then
+            log err "[BACKUP] No TTY available for migration export input."
+            return 1
+        fi
+        printf "\n%s\n" "$prompt" >&2
+        printf "[leave blank to keep current] > " >&2
+        if ! read -r -s input; then
+            echo >&2
+            log err "[BACKUP] Failed to read input."
+            return 1
+        fi
+        echo >&2
+        if [[ -z "$input" ]]; then
+            printf "%s" "$current"
+        else
+            printf "%s" "$input"
+        fi
+    }
+
+    apply_migration_export() {
+        local env_file="$1"
+        if [[ "$simulate" == true ]]; then
+            log info "[DRY-RUN] Would prompt for migration export values and update $env_file"
+            return 0
+        fi
+        if [[ ! -f "$env_file" ]]; then
+            log err "[BACKUP] Migration export requested but .env not found at $env_file"
+            return 1
+        fi
+
+        log info "[BACKUP] Migration export: updating .env inside backup."
+        local current_app_url current_db_host current_db_port current_db_name current_db_user current_db_pass
+        current_app_url="$(read_env_value "$env_file" "APP_URL")"
+        current_db_host="$(read_env_value "$env_file" "DB_HOST")"
+        current_db_port="$(read_env_value "$env_file" "DB_PORT")"
+        current_db_name="$(read_env_value "$env_file" "DB_DATABASE")"
+        current_db_user="$(read_env_value "$env_file" "DB_USERNAME")"
+        current_db_pass="$(read_env_value "$env_file" "DB_PASSWORD")"
+
+        local app_url db_host db_port db_name db_user db_pass
+        app_url="$(prompt_var "MIG_APP_URL" "${current_app_url}" "[MIG] APP_URL for target host:" false 120)" || return 1
+        db_host="$(prompt_var "MIG_DB_HOST" "${current_db_host:-localhost}" "[MIG] DB_HOST for target host:" false 120)" || return 1
+        db_port="$(prompt_var "MIG_DB_PORT" "${current_db_port:-3306}" "[MIG] DB_PORT for target host:" false 120)" || return 1
+        db_name="$(prompt_var "MIG_DB_NAME" "${current_db_name}" "[MIG] DB_DATABASE for target host:" false 120)" || return 1
+        db_user="$(prompt_var "MIG_DB_USER" "${current_db_user}" "[MIG] DB_USERNAME for target host:" false 120)" || return 1
+        db_pass="$(prompt_secret_keep_current "[MIG] DB_PASSWORD for target host:" "$current_db_pass")" || return 1
+
+        set_env_value "$env_file" "APP_URL" "$app_url" || return 1
+        set_env_value "$env_file" "DB_HOST" "$db_host" || return 1
+        set_env_value "$env_file" "DB_PORT" "$db_port" || return 1
+        set_env_value "$env_file" "DB_DATABASE" "$db_name" || return 1
+        set_env_value "$env_file" "DB_USERNAME" "$db_user" || return 1
+        set_env_value "$env_file" "DB_PASSWORD" "$db_pass" || return 1
+
+        if prompt_confirm "MIG_EXTRA" "no" "[MIG] Add or override more .env keys?" false 120; then
+            while true; do
+                local extra_key extra_val
+                extra_key="$(prompt_var "MIG_EXTRA_KEY" "" "[MIG] Extra key (leave empty to finish):" false 120)" || return 1
+                [[ -z "$extra_key" ]] && break
+                if [[ "$extra_key" == "APP_KEY" ]]; then
+                    log warn "[BACKUP] APP_KEY is preserved for migrations; skipping."
+                    continue
+                fi
+                extra_val="$(prompt_var "MIG_EXTRA_VAL" "" "[MIG] Value for $extra_key:" false 120)" || return 1
+                set_env_value "$env_file" "$extra_key" "$extra_val" || return 1
+            done
+        fi
+
+        log ok "[BACKUP] Migration export complete."
     }
 
     # Bundle mode: stage everything and pack once (no nested archives)
@@ -150,6 +287,9 @@ run_backup() {
                 fi
             fi
         fi
+        if [[ "$create_migration_export" == "true" ]]; then
+            apply_migration_export "$stage/.env" || { cleanup_stage; return 1; }
+        fi
 
             if [[ "$include_app" == "true" ]]; then
                 local app_target="$stage/$app_dir_name"
@@ -158,7 +298,7 @@ run_backup() {
                 else
                     log info "[BACKUP] Staging app via rsync -> $app_target"
                     mkdir -p "$app_target"
-                    rsync -a --delete --exclude "$(basename "$backup_dir")" --exclude ".cache" "$install_root/." "$app_target/" || {
+                    run_with_spinner "Staging app files..." rsync -a --delete --exclude "$(basename "$backup_dir")" --exclude ".cache" "$install_root/." "$app_target/" || {
                         log err "[BACKUP] Failed to stage application directory."
                         cleanup_stage
                         return 1
@@ -171,7 +311,7 @@ run_backup() {
             local skip_storage=false
             if [[ "$include_app" == "true" ]] && path_inside_app_tree "$storage_src"; then
                 skip_storage=true
-                log info "[BACKUP] Skipping storage: already covered by app copy."
+                log debug "[BACKUP] Skipping storage: already covered by app copy."
             fi
             if [[ "$skip_storage" != true ]]; then
                 if [[ -d "$storage_src" ]]; then
@@ -180,7 +320,7 @@ run_backup() {
                     else
                         log info "[BACKUP] Staging storage via rsync -> $stage/storage/"
                         mkdir -p "$stage/storage"
-                        if ! rsync -a "$storage_src/." "$stage/storage/"; then
+                        if ! run_with_spinner "Staging storage..." rsync -a "$storage_src/." "$stage/storage/"; then
                             log warn "[BACKUP] Failed to copy storage directory."
                         fi
                     fi
@@ -195,7 +335,7 @@ run_backup() {
             local skip_uploads=false
             if [[ "$include_app" == "true" ]] && path_inside_app_tree "$uploads_src"; then
                 skip_uploads=true
-                log info "[BACKUP] Skipping uploads: already covered by app copy."
+                log debug "[BACKUP] Skipping uploads: already covered by app copy."
             fi
             if [[ "$skip_uploads" != true ]]; then
                 if [[ -d "$uploads_src" ]]; then
@@ -204,7 +344,7 @@ run_backup() {
                     else
                         log info "[BACKUP] Staging uploads via rsync -> $stage/public/uploads/"
                         mkdir -p "$stage/public/uploads"
-                        if ! rsync -a "$uploads_src/." "$stage/public/uploads/"; then
+                        if ! run_with_spinner "Staging uploads..." rsync -a "$uploads_src/." "$stage/public/uploads/"; then
                             log warn "[BACKUP] Failed to copy uploads directory."
                         fi
                     fi
@@ -230,7 +370,7 @@ run_backup() {
                         fi
                         if [[ -e "$resolved" ]]; then
                             log info "[BACKUP] Staging extra path via rsync -> $stage/extra/ (source: $resolved)"
-                            rsync -a "$resolved" "$stage/extra/" || log warn "[BACKUP] Failed to copy extra path: $resolved"
+                            run_with_spinner "Staging extra path..." rsync -a "$resolved" "$stage/extra/" || log warn "[BACKUP] Failed to copy extra path: $resolved"
                         else
                             log warn "[BACKUP] Extra path missing, skipping: $resolved"
                         fi
@@ -244,11 +384,11 @@ run_backup() {
             log info "[BACKUP] Creating bundle ($compress) at $bundle_path"
             case "$compress" in
                 tar.gz)
-                    tar -czf "$bundle_path" -C "$stage" . || { cleanup_stage; log err "[BACKUP] Failed to create tar bundle."; return 1; }
-                    ;;
-                zip)
-                    (cd "$stage" && zip -r "$bundle_path" . >/dev/null) || { cleanup_stage; log err "[BACKUP] Failed to create zip bundle."; return 1; }
-                    ;;
+                run_with_spinner "Creating tar bundle..." tar -czf "$bundle_path" -C "$stage" . || { cleanup_stage; log err "[BACKUP] Failed to create tar bundle."; return 1; }
+                ;;
+            zip)
+                run_with_spinner "Creating zip bundle..." bash -c "cd \"$stage\" && zip -r \"$bundle_path\" . >/dev/null" || { cleanup_stage; log err "[BACKUP] Failed to create zip bundle."; return 1; }
+                ;;
                 false)
                     rm -rf "$bundle_path"
                     if ! rsync -a "$stage"/ "$bundle_path"/; then
@@ -276,7 +416,18 @@ run_backup() {
             log info "[DRY-RUN] Would create checksum for $bundle_path"
         fi
 
-        log ok "[BACKUP] Bundle ready: $bundle_path"
+        local bundle_size=""
+        if [[ "$simulate" != true && -e "$bundle_path" ]]; then
+            bundle_size="$(get_path_size "$bundle_path")"
+        fi
+        if [[ -n "$bundle_size" ]]; then
+            log ok "[BACKUP] Bundle ready: $bundle_path (Size: $bundle_size)"
+        else
+            log ok "[BACKUP] Bundle ready: $bundle_path"
+        fi
+        if declare -F run_hook >/dev/null 2>&1; then
+            run_hook "post-backup" || return 1
+        fi
         return 0
     fi
 
@@ -315,13 +466,30 @@ run_backup() {
         else
             case "$compress" in
                 tar.gz)
-                    tar -czf "$env_target" -C "$(dirname "$env_source")" "$(basename "$env_source")" || log warn "[BACKUP] Could not archive .env"
+                    local env_stage
+                    env_stage="$(mktemp -d)" || { log err "[BACKUP] Could not create temp dir for .env."; return 1; }
+                    cp "$env_source" "$env_stage/.env" || { rm -rf "$env_stage"; log warn "[BACKUP] Could not copy .env"; }
+                    if [[ "$create_migration_export" == "true" ]]; then
+                        apply_migration_export "$env_stage/.env" || { rm -rf "$env_stage"; return 1; }
+                    fi
+                    tar -czf "$env_target" -C "$env_stage" ".env" || log warn "[BACKUP] Could not archive .env"
+                    rm -rf "$env_stage"
                     ;;
                 zip)
-                    (cd "$(dirname "$env_source")" && zip -j "$env_target" "$(basename "$env_source")") >/dev/null || log warn "[BACKUP] Could not archive .env"
+                    local env_stage
+                    env_stage="$(mktemp -d)" || { log err "[BACKUP] Could not create temp dir for .env."; return 1; }
+                    cp "$env_source" "$env_stage/.env" || { rm -rf "$env_stage"; log warn "[BACKUP] Could not copy .env"; }
+                    if [[ "$create_migration_export" == "true" ]]; then
+                        apply_migration_export "$env_stage/.env" || { rm -rf "$env_stage"; return 1; }
+                    fi
+                    (cd "$env_stage" && zip -j "$env_target" ".env") >/dev/null || log warn "[BACKUP] Could not archive .env"
+                    rm -rf "$env_stage"
                     ;;
                 false)
                     cp "$env_source" "$env_target" || log warn "[BACKUP] Could not copy .env"
+                    if [[ "$create_migration_export" == "true" ]]; then
+                        apply_migration_export "$env_target" || return 1
+                    fi
                     ;;
             esac
         fi
@@ -349,16 +517,16 @@ run_backup() {
                 fi
                 log info "[BACKUP] Creating storage archive ($compress) -> $storage_target"
                 case "$compress" in
-                    tar.gz)
-                        tar -czf "$storage_target" -C "$install_root" storage || { log err "[BACKUP] Archiving storage failed."; return 1; }
+                tar.gz)
+                        run_with_spinner "Archiving storage..." tar -czf "$storage_target" -C "$install_root" storage || { log err "[BACKUP] Archiving storage failed."; return 1; }
                         ;;
                     zip)
-                        (cd "$install_root" && zip -r "$storage_target" storage) >/dev/null || { log err "[BACKUP] Archiving storage failed."; return 1; }
+                        run_with_spinner "Archiving storage..." bash -c "cd \"$install_root\" && zip -r \"$storage_target\" storage >/dev/null" || { log err "[BACKUP] Archiving storage failed."; return 1; }
                         ;;
                     false)
                         rm -rf "$storage_target"
                         mkdir -p "$storage_target"
-                        rsync -a "$storage_src/." "$storage_target/" || { log err "[BACKUP] Copying storage failed."; return 1; }
+                        run_with_spinner "Copying storage..." rsync -a "$storage_src/." "$storage_target/" || { log err "[BACKUP] Copying storage failed."; return 1; }
                         ;;
                 esac
             fi
@@ -389,16 +557,16 @@ run_backup() {
                 fi
                 log info "[BACKUP] Creating uploads archive ($compress) -> $uploads_target"
                 case "$compress" in
-                    tar.gz)
-                        tar -czf "$uploads_target" -C "$install_root" public/uploads || log warn "[BACKUP] Archiving uploads failed."
+                tar.gz)
+                        run_with_spinner "Archiving uploads..." tar -czf "$uploads_target" -C "$install_root" public/uploads || log warn "[BACKUP] Archiving uploads failed."
                         ;;
                     zip)
-                        (cd "$install_root" && zip -r "$uploads_target" public/uploads) >/dev/null || log warn "[BACKUP] Archiving uploads failed."
+                        run_with_spinner "Archiving uploads..." bash -c "cd \"$install_root\" && zip -r \"$uploads_target\" public/uploads >/dev/null" || log warn "[BACKUP] Archiving uploads failed."
                         ;;
                     false)
                         rm -rf "$uploads_target"
                         mkdir -p "$uploads_target"
-                        rsync -a "$uploads_src/." "$uploads_target/" || log warn "[BACKUP] Copying uploads failed."
+                        run_with_spinner "Copying uploads..." rsync -a "$uploads_src/." "$uploads_target/" || log warn "[BACKUP] Copying uploads failed."
                         ;;
                 esac
             fi
@@ -422,15 +590,15 @@ run_backup() {
             log info "[BACKUP] Creating app archive ($compress) -> $app_target"
             case "$compress" in
                 tar.gz)
-                    tar -czf "$app_target" -C "$(dirname "$install_root")" --exclude "$(basename "$backup_dir")" --exclude ".cache" "$(basename "$install_root")" || log warn "[BACKUP] Archiving app failed."
+                    run_with_spinner "Archiving app..." tar -czf "$app_target" -C "$(dirname "$install_root")" --exclude "$(basename "$backup_dir")" --exclude ".cache" "$(basename "$install_root")" || log warn "[BACKUP] Archiving app failed."
                     ;;
                 zip)
-                    (cd "$(dirname "$install_root")" && zip -r "$app_target" "$(basename "$install_root")" -x "$(basename "$backup_dir")/*" ".cache/*") >/dev/null || log warn "[BACKUP] Archiving app failed."
+                    run_with_spinner "Archiving app..." bash -c "cd \"$(dirname "$install_root")\" && zip -r \"$app_target\" \"$(basename "$install_root")\" -x \"$(basename "$backup_dir")/*\" \".cache/*\" >/dev/null" || log warn "[BACKUP] Archiving app failed."
                     ;;
                 false)
                     rm -rf "$app_target"
                     mkdir -p "$app_target"
-                    rsync -a --exclude "$(basename "$backup_dir")" --exclude ".cache" "$install_root/." "$app_target/" || log warn "[BACKUP] Copying app failed."
+                        run_with_spinner "Copying app files..." rsync -a --exclude "$(basename "$backup_dir")" --exclude ".cache" "$install_root/." "$app_target/" || log warn "[BACKUP] Copying app failed."
                     ;;
             esac
         fi
@@ -458,17 +626,17 @@ run_backup() {
                         fi
                         if [[ -e "$resolved" ]]; then
                             log info "[BACKUP] Staging extra path via rsync -> $extra_stage/ (source: $resolved)"
-                            rsync -a "$resolved" "$extra_stage/" || log warn "[BACKUP] Failed to copy extra path: $resolved"
+                            run_with_spinner "Staging extra path..." rsync -a "$resolved" "$extra_stage/" || log warn "[BACKUP] Failed to copy extra path: $resolved"
                         else
                             log warn "[BACKUP] Extra path missing, skipping: $resolved"
                         fi
                     done
                     if [[ "$compress" == "tar.gz" ]]; then
                         log info "[BACKUP] Creating extra archive (tar.gz) -> $extra_target"
-                        tar -czf "$extra_target" -C "$extra_stage" . || log warn "[BACKUP] Archiving extras failed."
+                        run_with_spinner "Archiving extras..." tar -czf "$extra_target" -C "$extra_stage" . || log warn "[BACKUP] Archiving extras failed."
                     else
                         log info "[BACKUP] Creating extra archive (zip) -> $extra_target"
-                        (cd "$extra_stage" && zip -r "$extra_target" . >/dev/null) || log warn "[BACKUP] Archiving extras failed."
+                        run_with_spinner "Archiving extras..." bash -c "cd \"$extra_stage\" && zip -r \"$extra_target\" . >/dev/null" || log warn "[BACKUP] Archiving extras failed."
                     fi
                     rm -rf "$extra_stage"
                     ;;
@@ -484,7 +652,7 @@ run_backup() {
                         fi
                         if [[ -e "$resolved" ]]; then
                             log info "[BACKUP] Copying extra path via rsync -> $extra_target/ (source: $resolved)"
-                            rsync -a "$resolved" "$extra_target/" || log warn "[BACKUP] Failed to copy extra path: $resolved"
+                        run_with_spinner "Copying extra path..." rsync -a "$resolved" "$extra_target/" || log warn "[BACKUP] Failed to copy extra path: $resolved"
                         else
                             log warn "[BACKUP] Extra path missing, skipping: $resolved"
                         fi
@@ -517,4 +685,7 @@ run_backup() {
             log info "[BACKUP] Output: $f"
         fi
     done
+    if declare -F run_hook >/dev/null 2>&1; then
+        run_hook "post-backup" || return 1
+    fi
 }

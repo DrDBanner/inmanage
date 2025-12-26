@@ -50,6 +50,12 @@ run_installation() {
     install_parent="$(dirname "$install_path")"
     local install_name
     install_name="$(basename "$install_path")"
+    local force="${NAMED_ARGS[force]:-${force_update:-false}}"
+
+    if [ "$mode" = "Provisioned" ] && [[ "$force" != true ]]; then
+        log err "[TAR] Provisioned install is destructive. Re-run with --force."
+        return 1
+    fi
 
     if [ "$mode" = "Provisioned" ]; then
         local provision_rel="${INM_PROVISION_ENV_FILE:-.inmanage/.env.provision}"
@@ -136,9 +142,13 @@ run_installation() {
         fi
     fi
 
+    if declare -F run_hook >/dev/null 2>&1; then
+        run_hook "pre-install" || return 1
+    fi
+
     if [ -d "$install_path" ]; then
         local src_path="$install_path"
-        local dst_path="${install_parent}/_last_IN_${timestamp}"
+        local rollback_dir="${install_parent}/${install_name}_rollback_${timestamp}"
         if ! find "$install_path" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
             log warn "[TAR] App directory exists but appears empty; archiving anyway."
         fi
@@ -159,7 +169,7 @@ run_installation() {
             log info "[TAR] Forced install – archiving current version"
         fi
 
-        safe_move_or_copy_and_clean "$src_path" "$dst_path" new || {
+        safe_move_or_copy_and_clean "$src_path" "$rollback_dir" new || {
             log err "[TAR] Failed to archive old installation"
             return 1
         }
@@ -174,7 +184,7 @@ run_installation() {
 
     local extracted
     extracted="$(mktemp -d)"
-    if ! tar -xzf "$source_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
+    if ! spinner_run "Extracting Invoice Ninja..." tar -xzf "$source_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
         log err "[TAR] Failed to extract Invoice Ninja archive."
         rm -rf "$extracted"
         return 1
@@ -201,7 +211,7 @@ run_installation() {
     }
     rm -rf "$extracted"
 
-    local archived_dir="${install_parent}/_last_IN_${timestamp}"
+    local archived_dir="${install_parent}/${install_name}_rollback_${timestamp}"
     local target_dir="${install_parent}/${install_name}_temp"
 
     log debug "[TAR] Checking for .env*.inmanage files in: $archived_dir"
@@ -291,16 +301,38 @@ run_installation() {
                 log warn "[PROV] No backup found for migration hint (${INM_MIGRATION_BACKUP}); continuing with fresh setup."
             fi
         fi
+        export INM_PROVISION_FILE_USED="$env_file"
         provision_post_install || return 1
     else
-        local cron_jobs="scheduler"
+        local cron_jobs="${NAMED_ARGS[cron_jobs]:-${NAMED_ARGS[cron-jobs]:-scheduler}}"
         local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
         local cron_ok=true
-        if ! install_cronjob "user=$cron_user" "jobs=$cron_jobs"; then
-            cron_ok=false
+        local cron_skipped=false
+        local cron_mode="${NAMED_ARGS[cron_mode]:-${NAMED_ARGS[cron-mode]:-auto}}"
+        local no_cron="${NAMED_ARGS[no_cron_install]:-${NAMED_ARGS[no-cron-install]:-false}}"
+        local no_backup_cron="${NAMED_ARGS[no_backup_cron]:-${NAMED_ARGS[no-backup-cron]:-false}}"
+        local backup_time="${NAMED_ARGS[backup_time]:-${NAMED_ARGS[backup-time]:-03:24}}"
+        if [[ "$no_backup_cron" == true ]]; then
+            cron_jobs="scheduler"
         fi
-        print_wizard_summary "$cron_ok" "$cron_jobs"
+        if [[ "$no_cron" == true ]]; then
+            log info "[TAR] Cron install skipped by flag (--no-cron-install)."
+            cron_ok=false
+            cron_skipped=true
+        else
+            if ! install_cronjob "user=$cron_user" "jobs=$cron_jobs" "mode=$cron_mode" "backup_time=$backup_time"; then
+                cron_ok=false
+            fi
+        fi
+        print_wizard_summary "$cron_ok" "$cron_jobs" "$cron_skipped"
     fi
+
+    if declare -F run_hook >/dev/null 2>&1; then
+        run_hook "post-install" || return 1
+    fi
+
+    run_artisan config:clear || log warn "[TAR] artisan config:clear failed"
+    run_artisan cache:clear || log warn "[TAR] artisan cache:clear failed"
 
     cd "$INM_BASE_DIRECTORY" || return 1
     return 0

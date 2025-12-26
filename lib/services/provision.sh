@@ -132,21 +132,33 @@ spawn_provision_file() {
 provision_post_install() {
     log info "[PROV] Running provisioned post-install steps"
 
+    local force="${NAMED_ARGS[force]:-${force_update:-false}}"
+    if [[ "$force" != true ]]; then
+        log err "[PROV] Provisioning is destructive. Re-run with --force to proceed."
+        return 1
+    fi
+
+    local no_backup="${NAMED_ARGS[no_backup]:-${NAMED_ARGS[no-backup]:-false}}"
+
     # Pre-provision backup if DB already has content (safety first)
-    local table_count=""
-    if table_count=$(db_table_count 2>/dev/null); then
-        if [[ "$table_count" -gt 0 ]]; then
-            log warn "[PROV] Existing tables detected ($table_count). Creating pre-provision DB backup."
+    if [[ "$no_backup" == true ]]; then
+        log warn "[PROV] Pre-provision backup skipped by flag (--no-backup)."
+    else
+        local table_count=""
+        if table_count=$(db_table_count 2>/dev/null); then
+            if [[ "$table_count" -gt 0 ]]; then
+                log warn "[PROV] Existing tables detected ($table_count). Creating pre-provision DB backup."
+                if ! provision_prebackup_db; then
+                    log err "[PROV] Pre-provision backup failed; aborting to protect existing data."
+                    return 1
+                fi
+            fi
+        else
+            log warn "[PROV] Could not determine table count; creating pre-provision DB backup to be safe."
             if ! provision_prebackup_db; then
                 log err "[PROV] Pre-provision backup failed; aborting to protect existing data."
                 return 1
             fi
-        fi
-    else
-        log warn "[PROV] Could not determine table count; creating pre-provision DB backup to be safe."
-        if ! provision_prebackup_db; then
-            log err "[PROV] Pre-provision backup failed; aborting to protect existing data."
-            return 1
         fi
     fi
 
@@ -154,14 +166,45 @@ provision_post_install() {
         log err "[PROV] Failed to migrate and seed"
         return 1
     }
+    run_artisan ninja:translations || log warn "[PROV] Translation download failed; language list may be incomplete."
+    local seeder=""
+    if [ -f "${INM_INSTALLATION_PATH%/}/database/seeders/LanguageSeeder.php" ]; then
+        seeder="LanguageSeeder"
+    elif [ -f "${INM_INSTALLATION_PATH%/}/database/seeders/LanguagesSeeder.php" ]; then
+        seeder="LanguagesSeeder"
+    else
+        seeder="LanguageSeeder"
+    fi
+    if ! run_artisan db:seed --class="$seeder" --force; then
+        if [ "$seeder" != "LanguagesSeeder" ]; then
+            run_artisan db:seed --class=LanguagesSeeder --force || \
+                log warn "[PROV] Language seeder failed; language list may be incomplete."
+        else
+            log warn "[PROV] Language seeder failed; language list may be incomplete."
+        fi
+    fi
     if run_artisan ninja:create-account --email=admin@admin.com --password=admin; then
-        local cron_jobs="both"
+        local cron_jobs="${NAMED_ARGS[cron_jobs]:-${NAMED_ARGS[cron-jobs]:-both}}"
         local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
         local cron_ok=true
-        if ! install_cronjob "user=$cron_user" "jobs=$cron_jobs"; then
-            cron_ok=false
+        local cron_skipped=false
+        local cron_mode="${NAMED_ARGS[cron_mode]:-${NAMED_ARGS[cron-mode]:-auto}}"
+        local no_cron="${NAMED_ARGS[no_cron_install]:-${NAMED_ARGS[no-cron-install]:-false}}"
+        local no_backup_cron="${NAMED_ARGS[no_backup_cron]:-${NAMED_ARGS[no-backup-cron]:-false}}"
+        local backup_time="${NAMED_ARGS[backup_time]:-${NAMED_ARGS[backup-time]:-03:24}}"
+        if [[ "$no_backup_cron" == true ]]; then
+            cron_jobs="scheduler"
         fi
-        print_provisioned_summary "$cron_ok" "$cron_jobs"
+        if [[ "$no_cron" == true ]]; then
+            log info "[PROV] Cron install skipped by flag (--no-cron-install)."
+            cron_ok=false
+            cron_skipped=true
+        else
+            if ! install_cronjob "user=$cron_user" "jobs=$cron_jobs" "mode=$cron_mode" "backup_time=$backup_time"; then
+                cron_ok=false
+            fi
+        fi
+        print_provisioned_summary "$cron_ok" "$cron_jobs" "$cron_skipped"
     else
         log err "[PROV] Failed to create default user"
         return 1

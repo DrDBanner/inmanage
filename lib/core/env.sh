@@ -162,7 +162,7 @@ print_logo() {
         printf " _/ // /|  / / / / / / /_/ / / / / /_/ / /_/ /  __/_/  \n"
         printf "/___/_/ |_/_/ /_/ /_/\\__,_/_/ /_/\\__,_/\\__, /\\___(_)   \n"
         printf "                                      /____/           ${RESET}\n"
-        printf "${BLUE}${BOLD}INVOICE NINJA - MANAGEMENT SCRIPT!${RESET}\n\n"
+        printf "${BLUE}${BOLD}THE CLI FOR INVOICE NINJA!${RESET}\n\n"
         printf "\n\n"
     }
 }

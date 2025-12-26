@@ -220,6 +220,26 @@ run_restore() {
         fi
     fi
 
+    local user_ini_src=""
+    user_ini_src=$(find "$stage_root" -maxdepth 5 -type f -name ".user.ini" 2>/dev/null | head -n1)
+    if [[ -n "$user_ini_src" ]]; then
+        local user_ini_dest="$target/public/.user.ini"
+        if [[ "$simulate" == true ]]; then
+            log info "[DRY-RUN] Would restore .user.ini -> $user_ini_dest"
+        else
+            if [[ -f "$user_ini_dest" && "$force" != true ]]; then
+                log warn "[RESTORE] .user.ini exists at $user_ini_dest (use --force to overwrite)."
+            else
+                mkdir -p "$(dirname "$user_ini_dest")"
+                if cp "$user_ini_src" "$user_ini_dest"; then
+                    log info "[RESTORE] Restored .user.ini -> $user_ini_dest"
+                else
+                    log warn "[RESTORE] Failed to restore .user.ini."
+                fi
+            fi
+        fi
+    fi
+
     local restored_env=""
     if [[ -n "$env_part" ]]; then
         local env_dest="${target%/}/.env"

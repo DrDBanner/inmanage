@@ -17,6 +17,7 @@ declare -A default_settings=(
     ["INM_ENV_FILE"]="\${INM_BASE_DIRECTORY}\${INM_INSTALLATION_DIRECTORY}/.env"
     ["INM_CACHE_LOCAL_DIRECTORY"]="./.cache"
     ["INM_CACHE_GLOBAL_DIRECTORY"]="\${HOME}/.inmanage/cache"
+    ["INM_CACHE_SUDO_PROMPT"]="ask"
     ["INM_CACHE_GLOBAL_RETENTION"]="3"
     ["INM_DUMP_OPTIONS"]="--default-character-set=utf8mb4 --no-tablespaces --skip-add-drop-table --quick --single-transaction"
     ["INM_BACKUP_DIRECTORY"]="./.backups"

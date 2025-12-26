@@ -56,6 +56,22 @@ else
     exit 1
 fi
 
+if [ -f "${LIB_DIR}/helpers/hooks.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/hooks.sh"
+else
+    echo "[ERR] Missing hooks helper: ${LIB_DIR}/helpers/hooks.sh" >&2
+    exit 1
+fi
+
+if [ -f "${LIB_DIR}/helpers/spinner.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/spinner.sh"
+else
+    echo "[ERR] Missing spinner helper: ${LIB_DIR}/helpers/spinner.sh" >&2
+    exit 1
+fi
+
 if [ -f "${LIB_DIR}/helpers/fs.sh" ]; then
     # shellcheck source=/dev/null
     source "${LIB_DIR}/helpers/fs.sh"
@@ -377,8 +393,14 @@ dispatch_command() {
                     call_with_named_args run_installation "$mode"
                     ;;
             update)
-                if skip_if_dry_run "core update"; then return 0; fi
-                call_with_named_args run_update
+                local sub="${extra[0]:-}"
+                if [[ "$sub" == "rollback" ]]; then
+                    if skip_if_dry_run "core update rollback"; then return 0; fi
+                    call_with_named_args run_update_rollback "${extra[1]:-}"
+                else
+                    if skip_if_dry_run "core update"; then return 0; fi
+                    call_with_named_args run_update
+                fi
                 ;;
             info|health)
                 export INM_PREFLIGHT_LABEL="HEALTH"
@@ -402,6 +424,9 @@ dispatch_command() {
                 if [[ "$sub" == "install" ]]; then
                     if skip_if_dry_run "core cron install"; then return 0; fi
                     call_with_named_args install_cronjob
+                elif [[ "$sub" == "uninstall" || "$sub" == "remove" ]]; then
+                    if skip_if_dry_run "core cron uninstall"; then return 0; fi
+                    call_with_named_args uninstall_cronjob
                 else
                     log err "[core] Unknown cron action: $sub"
                     return 1
@@ -479,7 +504,6 @@ dispatch_command() {
                     NAMED_ARGS[storage]=true
                     NAMED_ARGS[uploads]=true
                     NAMED_ARGS[fullbackup]=false
-                    NAMED_ARGS[include_app]=false
                     if skip_if_dry_run "files backup"; then return 0; fi
                     call_with_named_args run_backup
                     ;;
@@ -545,6 +569,10 @@ dispatch_command() {
             # Legacy context routed to core provision
             dispatch_command core provision "$action" "${extra[@]}"
             ;;
+        update)
+            # Legacy context routed to core update
+            dispatch_command core update "$action" "${extra[@]}"
+            ;;
         "")
             if [[ -n "$LEGACY_CMD" ]]; then
                 log warn "[DISPATCH] Using legacy command: $LEGACY_CMD"
@@ -572,6 +600,7 @@ elif [[ -n "$LEGACY_CMD" ]]; then
         version) CMD_CONTEXT="core"; CMD_ACTION="version";;
         clear-cache|clear_cache) CMD_CONTEXT="core"; CMD_ACTION="clear-cache";;
         backup) CMD_CONTEXT="core"; CMD_ACTION="backup";;
+        update) CMD_CONTEXT="core"; CMD_ACTION="update";;
         cleanup|prune) CMD_CONTEXT="core"; CMD_ACTION="prune";;
         cleanup_versions|prune_versions) CMD_CONTEXT="core"; CMD_ACTION="prune_versions";;
         cleanup_backups|prune_backups) CMD_CONTEXT="core"; CMD_ACTION="prune_backups";;

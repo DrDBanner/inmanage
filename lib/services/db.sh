@@ -43,6 +43,11 @@ import_database() {
     local purge="${ARGS[purge_before_import]:-${ARGS[purge]:-true}}"
     local prebackup="${ARGS[pre_backup]:-${ARGS[pre-backup]:-true}}"
 
+    if [[ "$force" != true ]]; then
+        log err "[import_db] Import is destructive. Re-run with --force to proceed."
+        return 1
+    fi
+
     # Hydrate DB vars from app env if not set
     if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
         log debug "[import_db] Loading DB vars from app env: ${INM_ENV_FILE}"
