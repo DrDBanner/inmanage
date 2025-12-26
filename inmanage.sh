@@ -72,6 +72,14 @@ else
     exit 1
 fi
 
+if [ -f "${LIB_DIR}/helpers/install_output.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/install_output.sh"
+else
+    echo "[ERR] Missing install output helper: ${LIB_DIR}/helpers/install_output.sh" >&2
+    exit 1
+fi
+
 if [ -f "${LIB_DIR}/helpers/resolve.sh" ]; then
     # shellcheck source=/dev/null
     source "${LIB_DIR}/helpers/resolve.sh"

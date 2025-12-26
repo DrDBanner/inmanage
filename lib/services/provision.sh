@@ -89,6 +89,22 @@ spawn_provision_file() {
         return 1
     }
 
+    if ! grep -q '^# INMANAGE_PROVISION_BEGIN$' "$target" 2>/dev/null; then
+        local tmp="${target}.tmp.$$"
+        {
+            echo "# INMANAGE_PROVISION_BEGIN"
+            echo "# This file is your unattended install plan for Invoice Ninja."
+            echo "# Set any Invoice Ninja .env keys you need (APP_*, DB_*, MAIL_*, etc.)."
+            echo "# Official env docs: https://invoiceninja.github.io/en/self-host-installation/#configure-environment"
+            echo "# When you're done, run: inmanage core install --provision"
+            echo "# Result: the app is installed and configured, you get a direct login,"
+            echo "# and cron can be installed automatically if possible."
+            echo "# INMANAGE_PROVISION_END"
+            echo ""
+            cat "$target"
+        } > "$tmp" && mv "$tmp" "$target"
+    fi
+
     if ! grep -q '^DB_ELEVATED_USERNAME=' "$target" 2>/dev/null; then
         sed -i '/^DB_PORT=/a DB_ELEVATED_USERNAME=\nDB_ELEVATED_PASSWORD=' "$target" 2>/dev/null || true
     fi
@@ -121,21 +137,13 @@ provision_post_install() {
         return 1
     }
     if run_artisan ninja:create-account --email=admin@admin.com --password=admin; then
-        printf "\n${BLUE}%s${RESET}\n" "========================================"
-        printf "${GREEN}${BOLD}Setup Complete!${RESET}\n\n"
-        printf "${BOLD}Login:${RESET} ${CYAN}%s${RESET}\n" "$APP_URL"
-        printf "${BOLD}Username:${RESET} admin@admin.com\n"
-        printf "${BOLD}Password:${RESET} admin\n"
-        printf "${BLUE}%s${RESET}\n\n" "========================================"
-        printf "${WHITE}Open your browser at ${CYAN}%s${RESET} to access the application.${RESET}\n" "$APP_URL"
-        printf "The database and user are configured.\n\n"
-        printf "${YELLOW}It's a good time to make your first backup now!${RESET}\n\n"
-        printf "${BOLD}Cronjob Setup:${RESET}\n"
-        printf "  ${CYAN}* * * * * %s %s schedule:run >> /dev/null 2>&1${RESET}\n" "$INM_ENFORCED_USER" "$(artisan_cmd_string)"
-        printf "  ${CYAN}* 3 * * * %s %s -c \"%s./inmanage.sh backup\" >> /dev/null 2>&1${RESET}\n\n" "$INM_ENFORCED_USER" "$INM_ENFORCED_SHELL" "$INM_BASE_DIRECTORY"
-        printf "${BOLD}To install cronjobs automatically, use:${RESET}\n"
-        printf "  ${CYAN}./inmanage.sh install_cronjob user=%s jobs=both${RESET}\n" "$INM_ENFORCED_USER"
-        printf "  Full explanation available via ${CYAN}./inmanage.sh -h${RESET}\n\n"
+        local cron_jobs="both"
+        local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
+        local cron_ok=true
+        if ! install_cronjob "user=$cron_user" "jobs=$cron_jobs"; then
+            cron_ok=false
+        fi
+        print_provisioned_summary "$cron_ok" "$cron_jobs"
     else
         log err "[PROV] Failed to create default user"
         return 1

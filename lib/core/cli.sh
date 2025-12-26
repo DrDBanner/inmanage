@@ -163,9 +163,10 @@ show_action_help() {
                     cat <<'EOF'
 core install:
   inmanage core install [--clean] [--provision] [--version=v]
-  - Provisioned install is recommended (uses .inmanage/.env.provision)
-  - Create a provision file with: inmanage core provision spawn
-  - Wizard install only when needed
+  - Recommended: provisioned install (uses .inmanage/.env.provision)
+  - Create provision file first: inmanage core provision spawn
+  - Wizard install only if you need the interactive web setup
+  - Docs: https://github.com/DrDBanner/inmanage/blob/development/docs/index.md
 EOF
                     ;;
                 update)

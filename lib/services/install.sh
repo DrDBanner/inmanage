@@ -76,9 +76,28 @@ run_installation() {
         return 1
     fi
 
-    if [ "$mode" = "Provisioned" ] && [ ! -f "$env_file" ]; then
+    if [ "$mode" = "Provisioned" ]; then
         if [[ -t 0 ]]; then
-            if prompt_confirm "CREATE_PROVISION" "yes" "No provision file found. Create one now? [Y/n]" false 60; then
+            local must_create=false
+            local use_existing=false
+            if [ ! -f "$env_file" ]; then
+                if prompt_confirm "CREATE_PROVISION" "yes" "No provision file found. Create one now? [Y/n]" false 60; then
+                    must_create=true
+                else
+                    log info "[PROV] Provision file not created."
+                fi
+            else
+                if [[ "${NAMED_ARGS[provision]:-false}" == "true" ]]; then
+                    use_existing=true
+                    log info "[PROV] Using provision file: $env_file"
+                elif ! prompt_confirm "USE_EXISTING_PROVISION" "yes" "Provision file exists. Use it? (no = create a new one) [Y/n]" false 60; then
+                    must_create=true
+                else
+                    use_existing=true
+                fi
+            fi
+
+            if [ "$must_create" = true ]; then
                 local saved_provision_file="${NAMED_ARGS[provision_file]:-}"
                 NAMED_ARGS[provision_file]="$env_file"
                 spawn_provision_file || return 1
@@ -87,7 +106,10 @@ run_installation() {
                 else
                     unset 'NAMED_ARGS[provision_file]'
                 fi
+                use_existing=true
+            fi
 
+            if [ "$use_existing" = true ] && [ -f "$env_file" ]; then
                 local editor=""
                 if command -v nano >/dev/null 2>&1; then
                     editor="nano"
@@ -95,20 +117,18 @@ run_installation() {
                     editor="vi"
                 fi
 
-                if [ -n "$editor" ]; then
-                    if [ -f "$env_file" ]; then
-                        log info "[PROV] Opening provision file in ${editor}."
-                        log info "[PROV] If you're not familiar with ${editor}, please review its basics first."
-                        log info "[PROV] For .env values, see Invoice Ninja docs. DB_ELEVATED_* is only for creating DB/user."
-                        "$editor" "$env_file"
-                    else
-                        log warn "[PROV] Provision file not found at: $env_file"
-                    fi
-                else
+                if [ -n "$editor" ] && { [ "$must_create" = true ] || [[ "${NAMED_ARGS[provision]:-false}" != "true" ]]; }; then
+                    log info "[PROV] Opening provision file in ${editor}."
+                    log info "[PROV] If you're not familiar with ${editor}, please review its basics first."
+                    log info "[PROV] For .env values, see Invoice Ninja docs. DB_ELEVATED_* is only for creating DB/user."
+                    "$editor" "$env_file"
+                elif [ -z "$editor" ] && { [ "$must_create" = true ] || [[ "${NAMED_ARGS[provision]:-false}" != "true" ]]; }; then
                     log warn "[PROV] No editor found (nano/vi). Edit manually: $env_file"
                 fi
+            elif [ -f "$env_file" ]; then
+                log info "[PROV] Using provision file: $env_file"
             else
-                log info "[PROV] Provision file not created."
+                log warn "[PROV] Provision file not found at: $env_file"
             fi
         else
             log warn "[PROV] Provision file missing: $env_file"
@@ -149,15 +169,34 @@ run_installation() {
         return 1
     }
 
-    mkdir -p "${install_parent}/${install_name}_temp" || {
-        log err "[TAR] Failed to create temp directory"
+    local extracted
+    extracted="$(mktemp -d)"
+    if ! tar -xzf "$source_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
+        log err "[TAR] Failed to extract Invoice Ninja archive."
+        rm -rf "$extracted"
+        return 1
+    fi
+
+    local source_root="$extracted"
+    mapfile -t top_entries < <(find "$extracted" -mindepth 1 -maxdepth 1 -print)
+    if [[ ${#top_entries[@]} -eq 1 && -d "${top_entries[0]}" ]]; then
+        source_root="${top_entries[0]}"
+    fi
+
+    local temp_dir="${install_parent}/${install_name}_temp"
+    mkdir -p "$install_parent" || {
+        log err "[TAR] Failed to create install parent: $install_parent"
+        rm -rf "$extracted"
         return 1
     }
-    log info "[TAR] Copying clean installation from cache: $source_dir"
-    cp -a "$source_dir/." "${install_parent}/${install_name}_temp/" || {
-        log err "[TAR] Failed to copy files from cache"
+    rm -rf "$temp_dir"
+    log info "[TAR] Preparing clean installation from archive: $source_dir/invoiceninja_v$latest_version.tar.gz"
+    safe_move_or_copy_and_clean "$source_root" "$temp_dir" move || {
+        log err "[TAR] Failed to move/copy extracted files"
+        rm -rf "$extracted"
         return 1
     }
+    rm -rf "$extracted"
 
     local archived_dir="${install_parent}/_last_IN_${timestamp}"
     local target_dir="${install_parent}/${install_name}_temp"
@@ -181,6 +220,10 @@ run_installation() {
             log err "[TAR] Failed to place .env"
             return 1
         }
+        if [ "$mode" = "Provisioned" ]; then
+            sed -i '/^# INMANAGE_PROVISION_BEGIN$/,/^# INMANAGE_PROVISION_END$/d' \
+                "${install_parent}/${install_name}_temp/.env" 2>/dev/null || true
+        fi
         chmod 600 "${install_parent}/${install_name}_temp/.env" || \
             log warn "[TAR] chmod 600 failed on .env"
     else
@@ -247,13 +290,13 @@ run_installation() {
         fi
         provision_post_install || return 1
     else
-        printf "\n${BLUE}%s${RESET}\n" "========================================"
-        printf "${GREEN}${BOLD}Setup Complete!${RESET}\n\n"
-        printf "${WHITE}Open your browser at your configured address ${CYAN}https://your.url/setup${RESET} to complete database setup.${RESET}\n\n"
-        printf "${YELLOW}It's a good time to make your first backup now!${RESET}\n\n"
-        printf "${BOLD}To install cronjobs automatically, use:${RESET}\n"
-        printf "  ${CYAN}./inmanage.sh install_cronjob user=%s${RESET}\n" "$INM_ENFORCED_USER"
-        printf "  Full explanation available via ${CYAN}./inmanage.sh -h${RESET}\n\n"
+        local cron_jobs="scheduler"
+        local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
+        local cron_ok=true
+        if ! install_cronjob "user=$cron_user" "jobs=$cron_jobs"; then
+            cron_ok=false
+        fi
+        print_wizard_summary "$cron_ok" "$cron_jobs"
     fi
 
     cd "$INM_BASE_DIRECTORY" || return 1

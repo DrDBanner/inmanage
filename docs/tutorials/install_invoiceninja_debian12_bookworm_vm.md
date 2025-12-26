@@ -808,11 +808,7 @@ The database and user are configured.
 
 It's a good time to make your first backup now!
 
-Cronjob Setup:
-  * * * * * www-data /usr/bin/php /var/www/billing.debian12vm.local/./invoiceninja/artisan schedule:run >> /dev/null 2>&1
-
-Scheduled Backup:
-  * 3 * * * www-data /usr/bin/bash -c "/var/www/billing.debian12vm.local/./inmanage.sh backup" >> /dev/null 2>&1
+Cron installed (scheduler + backup).
 
 dd@win81:/var/www/billing.debian12vm.local$
 
@@ -961,4 +957,3 @@ Open your local browser at https://billing.debian12vm.local to access the applic
 **Password:** admin
 
 Have fun. Don't forget to star and bookmark the https://github.com/DrDBanner/inmanage/ script.
-
