@@ -24,6 +24,7 @@ install_cronjob() {
     export INM_CRON_INSTALL_TARGET=""
     local backup_time="${args[backup_time]:-${args[backup-time]:-${INM_CRON_BACKUP_TIME:-03:24}}}"
     export INM_CRON_BACKUP_TIME="$backup_time"
+    log info "[CRON] install_cronjob called (mode=${cron_mode:-auto} jobs=${jobs} backup-time=${backup_time} user=${user})"
     local backup_hour=""
     local backup_min=""
     if [[ "$backup_time" =~ ^([01]?[0-9]|2[0-3]):[0-5][0-9]$ ]]; then
@@ -50,13 +51,22 @@ install_cronjob() {
 
     check_existing_cron_entries() {
         local found=false
+        local errexit_set=false
+        [[ $- == *e* ]] && errexit_set=true
+        set +e
         if command -v crontab >/dev/null 2>&1; then
-            if crontab -l >/dev/null 2>&1; then
-                if crontab -l | grep -Eqi 'inmanage|invoiceninja|artisan schedule:run'; then
+            local crontab_out=""
+            crontab_out="$(crontab -l 2>/dev/null || true)"
+            if [[ -n "$crontab_out" ]]; then
+                if printf "%s\n" "$crontab_out" | grep -Eqi 'inmanage|invoiceninja|artisan schedule:run'; then
                     log info "[CRON] Existing user crontab entries detected (Invoice Ninja/inmanage)."
                     found=true
                 fi
+            else
+                log debug "[CRON] No user crontab entries found."
             fi
+        else
+            log debug "[CRON] crontab command not available."
         fi
         if [[ -f "$cron_file" ]]; then
             log info "[CRON] Existing cron file found at $cron_file (will be replaced)."
@@ -68,24 +78,33 @@ install_cronjob() {
             fi
         fi
         [[ "$found" == false ]] && log debug "[CRON] No existing Invoice Ninja cron entries detected."
+        $errexit_set && set -e
     }
 
+    local mode_reason="auto"
     case "$cron_mode" in
         ""|auto)
             if [[ $EUID -ne 0 ]]; then
                 if [[ "$can_sudo" == true ]]; then
                     use_user_crontab=false
+                    mode_reason="auto->system (sudo available)"
                 else
                     log warn "[CRON] sudo requires a password or is not allowed; trying user crontab."
                     use_user_crontab=true
+                    mode_reason="auto->crontab (sudo unavailable)"
                 fi
+            else
+                use_user_crontab=false
+                mode_reason="auto->system (running as root)"
             fi
             ;;
         crontab)
             use_user_crontab=true
+            mode_reason="crontab (forced)"
             ;;
         system)
             use_user_crontab=false
+            mode_reason="system (forced)"
             if [[ $EUID -ne 0 && "$can_sudo" != true ]]; then
                 log err "[CRON] System cron requested but sudo/root not available."
                 return 1
@@ -98,9 +117,33 @@ install_cronjob() {
     esac
 
     check_existing_cron_entries
+    if [[ "$use_user_crontab" == true ]]; then
+        log info "[CRON] Mode resolved: crontab (${mode_reason})"
+        log info "[CRON] Target: user crontab"
+    else
+        log info "[CRON] Mode resolved: system (${mode_reason})"
+        log info "[CRON] Target: ${cron_file}"
+    fi
+    local job_summary=""
+    if [[ "$jobs" == "scheduler" || "$jobs" == "both" ]]; then
+        job_summary="scheduler"
+    fi
+    if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
+        job_summary="${job_summary:+${job_summary}, }backup@${backup_time}"
+    fi
+    log info "[CRON] Jobs selected: ${job_summary:-none}"
+    if [[ "$jobs" == "scheduler" || "$jobs" == "both" ]]; then
+        log info "[CRON] Will set: schedule:run every minute"
+    fi
+    if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
+        log info "[CRON] Will set: backup at ${backup_time}"
+    fi
 
     local tmpfile
-    tmpfile=$(mktemp)
+    if ! tmpfile=$(mktemp 2>/dev/null); then
+        log err "[CRON] Failed to create temp file for crontab."
+        return 1
+    fi
     detect_installed_jobs() {
         local file="$1"
         local has_sched=false
@@ -131,13 +174,24 @@ install_cronjob() {
 
         local tmpclean="${tmpfile}.clean"
         if crontab -l >/dev/null 2>&1; then
-            crontab -l > "$tmpfile"
+            if ! crontab -l > "$tmpfile" 2>/dev/null; then
+                log warn "[CRON] Failed to read existing user crontab; starting fresh."
+                : > "$tmpfile"
+            fi
         else
             : > "$tmpfile"
         fi
-        awk 'BEGIN{skip=0} /^# INMANAGE CRON BEGIN/{skip=1; next} /^# INMANAGE CRON END/{skip=0; next} !skip{print}' \
-            "$tmpfile" > "$tmpclean"
-        mv -f "$tmpclean" "$tmpfile"
+        if ! awk 'BEGIN{skip=0} /^# INMANAGE CRON BEGIN/{skip=1; next} /^# INMANAGE CRON END/{skip=0; next} !skip{print}' \
+            "$tmpfile" > "$tmpclean"; then
+            log err "[CRON] Failed to prepare user crontab."
+            rm -f "$tmpfile" "$tmpclean"
+            return 1
+        fi
+        if ! mv -f "$tmpclean" "$tmpfile"; then
+            log err "[CRON] Failed to finalize user crontab."
+            rm -f "$tmpfile" "$tmpclean"
+            return 1
+        fi
 
         {
             echo "# INMANAGE CRON BEGIN"
@@ -151,12 +205,18 @@ install_cronjob() {
             echo "# INMANAGE CRON END"
         } >> "$tmpfile"
 
-        if crontab "$tmpfile"; then
+        if [[ "${DEBUG:-false}" == true ]]; then
+            log debug "[CRON] New cron block:"
+            sed -n '/^# INMANAGE CRON BEGIN/,/^# INMANAGE CRON END/p' "$tmpfile" >&2
+        fi
+
+        local crontab_out=""
+        if crontab_out=$(crontab "$tmpfile" 2>&1); then
             INM_CRON_INSTALLED_JOBS="$(detect_installed_jobs "$tmpfile")"
             INM_CRON_INSTALL_TARGET="crontab"
             log ok "[CRON] Installed cronjobs in user crontab"
         else
-            log err "[CRON] Failed to write user crontab."
+            log err "[CRON] Failed to write user crontab${crontab_out:+: $crontab_out}"
             rm -f "$tmpfile"
             return 1
         fi
@@ -164,7 +224,7 @@ install_cronjob() {
         return 0
     fi
 
-    {
+    if ! {
         echo "# Invoice Ninja cronjobs"
         if [[ "$jobs" == "scheduler" || "$jobs" == "both" ]]; then
             echo "* * * * * $user $(artisan_cmd_string) schedule:run >> /dev/null 2>&1"
@@ -173,7 +233,11 @@ install_cronjob() {
             local base_clean="${INM_BASE_DIRECTORY%/}"
             echo "${backup_cron_expr} $user $INM_ENFORCED_SHELL -c \"${base_clean}/inmanage core backup\" >> /dev/null 2>&1"
         fi
-    } > "$tmpfile"
+    } > "$tmpfile"; then
+        log err "[CRON] Failed to prepare cron file."
+        rm -f "$tmpfile"
+        return 1
+    fi
 
     local tee_cmd=("tee" "$cron_file")
     if [[ $EUID -ne 0 ]]; then
@@ -184,9 +248,17 @@ install_cronjob() {
 
     if cat "$tmpfile" | "${tee_cmd[@]}" >/dev/null; then
         if [[ $EUID -ne 0 ]]; then
-            sudo chmod 644 "$cron_file"
+            if ! sudo chmod 644 "$cron_file" >/dev/null 2>&1; then
+                log err "[CRON] Failed to chmod $cron_file."
+                rm -f "$tmpfile"
+                return 1
+            fi
         else
-            chmod 644 "$cron_file"
+            if ! chmod 644 "$cron_file" >/dev/null 2>&1; then
+                log err "[CRON] Failed to chmod $cron_file."
+                rm -f "$tmpfile"
+                return 1
+            fi
         fi
         INM_CRON_INSTALLED_JOBS="$(detect_installed_jobs "$tmpfile")"
         INM_CRON_INSTALL_TARGET="$cron_file"
