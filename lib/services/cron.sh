@@ -16,7 +16,7 @@ install_cronjob() {
     parse_named_args args "$@"
 
     local user="${args[user]:-$INM_ENFORCED_USER}"
-    local jobs="${args[jobs]:-${args[cron_jobs]:-${args[cron-jobs]:-scheduler}}}"
+    local jobs="${args[jobs]:-${args[cron_jobs]:-${args[cron-jobs]:-both}}}"
     local cron_file="/etc/cron.d/invoiceninja"
     local cron_mode="${args[cron_mode]:-${args[cron-mode]:-${args[mode]:-auto}}}"
     cron_mode="${cron_mode,,}"
