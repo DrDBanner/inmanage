@@ -107,7 +107,7 @@ check_missing_settings() {
 # Verifies required external tools and shell builtins are available.
 # ---------------------------------------------------------------------
 check_commands() {
-    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "grep" "xargs" "php" "touch" "sed" "sudo" "tee" "rsync" "awk" "jq" "git" "composer")
+    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "grep" "xargs" "php" "touch" "sed" "sudo" "tee" "rsync" "awk" "jq" "git" "composer" "zip" "unzip" "sha256sum")
     local missing_commands=()
 
     for cmd in "${commands[@]}"; do

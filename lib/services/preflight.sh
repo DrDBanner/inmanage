@@ -31,7 +31,7 @@ run_preflight() {
             FS|FILESYSTEM|DISK) echo "FS" ;;
             ENVCLI|ENVCL|CLICONFIG) echo "ENVCLI" ;;
             ENVAPP|APPENV) echo "ENVAPP" ;;
-            CMD|COMMAND|COMMANDS|TOOLS) echo "CMD" ;;
+            CMD|COMMAND|COMMANDS|TOOLS|CLICMD|CLICMDS|CLICOMMAND|CLICOMMANDS) echo "CMD" ;;
             WEB|WEBSERVER) echo "WEB" ;;
             PHP) echo "PHP" ;;
             EXT|EXTENSIONS|PHPEXT) echo "EXT" ;;
@@ -154,6 +154,21 @@ run_preflight() {
 
     local ok=0 warn=0 err=0
     log info "[${pf_label}] Starting system checks"
+
+    # Mandatory CLI command check (fail-fast message)
+    local req_cmds=(php git curl tar rsync zip unzip composer jq awk sed find xargs touch tee sha256sum)
+    local -a missing_cmds=()
+    for cmd in "${req_cmds[@]}"; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            missing_cmds+=("$cmd")
+        fi
+    done
+    if [ ${#missing_cmds[@]} -gt 0 ]; then
+        log err "[${pf_label}] Missing required CLI commands: ${missing_cmds[*]}"
+        log info "[${pf_label}] Please install missing commands to proceed."
+        $errexit_set && set -e
+        return 1
+    fi
 
     # ---- CLI self info ----
     local cli_root cli_branch cli_commit cli_dirty="" cli_source="snapshot"
@@ -301,7 +316,6 @@ run_preflight() {
     fi
 
     # ---- Command availability ----
-    local req_cmds=(php git curl tar rsync zip unzip composer jq awk sed find xargs touch tee sha256sum)
     local db_cmds_required=false
     local db_config_present=false
     if [[ -n "${DB_HOST:-}" || -n "${DB_USERNAME:-}" || -n "${DB_DATABASE:-}" ]]; then
