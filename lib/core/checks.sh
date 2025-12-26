@@ -331,6 +331,10 @@ check_envs() {
         fi
     fi
 
+    if declare -F maybe_migrate_legacy_cli >/dev/null 2>&1; then
+        maybe_migrate_legacy_cli "$@" || exit 1
+    fi
+
     enforce_user_switch --user="$INM_ENFORCED_USER" "$@"
 
     log debug "[ENV] Current working directory: $PWD"

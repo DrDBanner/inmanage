@@ -62,6 +62,7 @@ install_self() {
 
   # Allow override of the computed install directory per mode
   install_dir="$(prompt_var "INSTALL_DIR" "$install_dir" "Install directory for the inmanage app? (ENTER for default)")"
+  INM_SELF_INSTALL_DIR="$install_dir"
 
   if [[ "$(realpath "$install_dir")" == "$(realpath "$(dirname "$source_script")")" ]]; then
       log err "[SELF] Source and target install directory are the same. Choose a different target."
@@ -81,6 +82,8 @@ install_self() {
   }
 
   local bin_source="$install_dir/inmanage.sh"
+  INM_SELF_INSTALL_SCRIPT="$bin_source"
+  INM_SELF_INSTALL_MODE="$install_mode"
   local targets=("inmanage" "inm")
 
   case "$install_mode" in
@@ -285,4 +288,208 @@ self_uninstall() {
   fi
 
   log ok "[SELF] Uninstall steps completed."
+}
+
+# ---------------------------------------------------------------------
+# Legacy migration helpers
+# ---------------------------------------------------------------------
+legacy_is_interactive() {
+  [[ -t 0 && -t 1 ]]
+}
+
+legacy_resolve_path() {
+  local target="$1"
+  if declare -F resolve_script_path >/dev/null 2>&1; then
+    resolve_script_path "$target" 2>/dev/null && return
+  fi
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$target" 2>/dev/null && return
+  fi
+  printf "%s" "$target"
+}
+
+legacy_backup_dir() {
+  local base_dir="$1"
+  local legacy_dir="${INM_CONFIG_ROOT:-.inmanage}"
+  if [[ "$legacy_dir" != /* ]]; then
+    legacy_dir="${base_dir%/}/${legacy_dir#/}"
+  fi
+  legacy_dir="${legacy_dir%/}/_legacy"
+  printf "%s" "$legacy_dir"
+}
+
+legacy_backup_path() {
+  local path="$1"
+  local base_dir="$2"
+  local legacy_dir
+  legacy_dir="$(legacy_backup_dir "$base_dir")"
+  mkdir -p "$legacy_dir" 2>/dev/null || true
+  local ts
+  ts="$(date +%Y%m%d_%H%M%S)"
+  local dest="${legacy_dir%/}/$(basename "$path").${ts}"
+
+  if [[ -L "$path" && ! -e "$path" ]]; then
+    mv "$path" "$dest" 2>/dev/null && log info "[SELF] Archived legacy link: $path -> $dest"
+    return 0
+  fi
+
+  if declare -F safe_move_or_copy_and_clean >/dev/null 2>&1; then
+    if safe_move_or_copy_and_clean "$path" "$dest" move; then
+      return 0
+    fi
+  else
+    if mv "$path" "$dest" 2>/dev/null; then
+      log info "[SELF] Archived legacy path: $path -> $dest"
+      return 0
+    fi
+  fi
+  log warn "[SELF] Failed to archive legacy path: $path"
+  return 1
+}
+
+legacy_link_path() {
+  local target="$1"
+  local new_script="$2"
+  local base_dir="$3"
+  local new_resolved
+  new_resolved="$(legacy_resolve_path "$new_script")"
+
+  if [[ -e "$target" || -L "$target" ]]; then
+    local current
+    current="$(legacy_resolve_path "$target")"
+    if [[ -n "$current" && "$current" == "$new_resolved" ]]; then
+      return 0
+    fi
+    legacy_backup_path "$target" "$base_dir"
+  fi
+
+  mkdir -p "$(dirname "$target")" 2>/dev/null || true
+  ln -sf "$new_script" "$target" && log info "[SELF] Legacy symlink: $target -> $new_script"
+}
+
+legacy_warn_shell_alias() {
+  local rc_files=("$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile")
+  local found=false
+  for rc in "${rc_files[@]}"; do
+    if [[ -f "$rc" ]] && grep -qE 'inmanage\(\)|inmanage\.sh' "$rc" 2>/dev/null; then
+      found=true
+      break
+    fi
+  done
+  if [[ "$found" == true ]]; then
+    log warn "[SELF] Shell alias/function detected for inmanage in your rc files."
+    log warn "[SELF] Remove legacy lines like: inmanage() { cd /base && sudo -u www-data ./inmanage.sh \"$@\"; }"
+  fi
+}
+
+legacy_create_symlinks() {
+  local base_dir="$1"
+  local new_script="$2"
+  local targets=(
+    "${base_dir%/}/inmanage.sh"
+    "${base_dir%/}/inmanage"
+    "${base_dir%/}/inm"
+    "${base_dir%/}/.inmanage/inmanage.sh"
+  )
+  for target in "${targets[@]}"; do
+    legacy_link_path "$target" "$new_script" "$base_dir"
+  done
+}
+
+maybe_migrate_legacy_cli() {
+  local args=("$@")
+  local compat="${INM_CLI_COMPATIBILITY:-}"
+  if [[ -n "${INM_LEGACY_MIGRATION_DONE:-}" ]]; then
+    return 0
+  fi
+  local legacy_mode="${NAMED_ARGS[legacy_migration]:-${NAMED_ARGS[legacy-migration]:-${INM_LEGACY_MIGRATION:-}}}"
+  if [[ "$compat" == "new" ]]; then
+    return 0
+  fi
+  if [[ "$compat" == "legacy" || "$compat" == "old" ]] && [[ ! "${legacy_mode,,}" =~ ^(force|yes|y)$ ]]; then
+    return 0
+  fi
+  if [[ "${legacy_mode,,}" =~ ^(0|no|false|off|skip)$ ]]; then
+    return 0
+  fi
+  if [[ "$CMD_CONTEXT" == "self" || "$CMD_CONTEXT" == "help" || "$SHOW_FUNCTION_HELP" == true ]]; then
+    return 0
+  fi
+
+  local base_dir="${INM_BASE_DIRECTORY:-$PWD}"
+  base_dir="${base_dir%/}"
+  local script_path
+  script_path="$(legacy_resolve_path "$0")"
+
+  local legacy_detected=false
+  if [[ -e "${base_dir%/}/inmanage.sh" || -L "${base_dir%/}/inmanage.sh" ]]; then
+    legacy_detected=true
+  fi
+  if [[ -e "${base_dir%/}/.inmanage/inmanage.sh" || -L "${base_dir%/}/.inmanage/inmanage.sh" ]]; then
+    legacy_detected=true
+  fi
+  if [[ "$script_path" == "${base_dir%/}/"* ]]; then
+    legacy_detected=true
+  fi
+
+  if [[ "$legacy_detected" != true ]]; then
+    return 0
+  fi
+
+  local current_user
+  current_user="$(whoami)"
+  if [[ -n "${INM_ENFORCED_USER:-}" && "$current_user" == "${INM_ENFORCED_USER}" && -n "${SUDO_USER:-}" && "$SUDO_USER" != "$current_user" ]]; then
+    log warn "[SELF] Legacy CLI detected while running as ${INM_ENFORCED_USER}. Re-run as your admin user to migrate."
+    legacy_warn_shell_alias
+    return 0
+  fi
+
+  if ! legacy_is_interactive; then
+    log warn "[SELF] Legacy CLI detected but no TTY available. Run 'inmanage self install' to migrate."
+    legacy_warn_shell_alias
+    return 0
+  fi
+
+  local do_migrate=false
+  if [[ "${legacy_mode,,}" =~ ^(force|yes|y)$ ]]; then
+    do_migrate=true
+  else
+    if prompt_confirm "LEGACY_MIGRATE" "yes" "Legacy inmanage install detected. Migrate to the new CLI now? (yes/no):" false 120; then
+      do_migrate=true
+    fi
+  fi
+
+  if [[ "$do_migrate" != true ]]; then
+    if declare -F env_set >/dev/null 2>&1 && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
+      env_set cli "INM_CLI_COMPATIBILITY=\"legacy\"" >/dev/null 2>&1 || true
+    fi
+    log info "[SELF] Staying on legacy bootstrap. To migrate later: inmanage self install"
+    legacy_warn_shell_alias
+    return 0
+  fi
+
+  log info "[SELF] Migrating legacy install to new CLI..."
+  install_self || {
+    log err "[SELF] Migration failed during install."
+    return 1
+  }
+
+  local new_script="${INM_SELF_INSTALL_SCRIPT:-}"
+  if [[ -z "$new_script" || ! -f "$new_script" ]]; then
+    log err "[SELF] Cannot locate new CLI script after install."
+    return 1
+  fi
+
+  legacy_create_symlinks "$base_dir" "$new_script"
+
+  if declare -F env_set >/dev/null 2>&1 && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
+    env_set cli "INM_CLI_COMPATIBILITY=\"new\"" >/dev/null 2>&1 || true
+  fi
+  export INM_CLI_COMPATIBILITY="new"
+  legacy_warn_shell_alias
+
+  log ok "[SELF] Migration complete. Re-launching..."
+  export INM_LEGACY_MIGRATION_DONE=1
+  export INM_CHILD_REEXEC=1
+  exec "$new_script" "${args[@]}"
 }
