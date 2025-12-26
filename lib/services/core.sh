@@ -227,7 +227,11 @@ download_ninja() {
     fi
     if curl "${curl_opts[@]}" "${resume_flag[@]}" "$download_url" -o "$temp_file"; then
         if [ "$(wc -c < "$temp_file")" -gt 1048576 ]; then
-            safe_move_or_copy_and_clean "$temp_file" "$target_file" move
+            if ! safe_move_or_copy_and_clean "$temp_file" "$target_file" move; then
+                log err "[DN] Failed to finalize download: $temp_file -> $target_file"
+                rm -f "$temp_file"
+                exit 1
+            fi
             # Store checksum for future verification
             local sum_dl
             sum_dl="$(compute_sha256 "$target_file")"

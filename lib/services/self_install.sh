@@ -76,7 +76,7 @@ install_self() {
   log debug "[SELF] Installing to: $install_dir"
   mkdir -p "$install_dir" || { log err "[SELF] Cannot create $install_dir"; return 1; }
 
-  safe_move_or_copy_and_clean "$(dirname "$source_script")" "$install_dir" --mode=copy --clean || {
+  safe_move_or_copy_and_clean "$(dirname "$source_script")" "$install_dir" copy || {
     log err "[SELF] Failed to copy files"; return 1;
   }
 

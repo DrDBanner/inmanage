@@ -19,6 +19,25 @@ safe_move_or_copy_and_clean() {
         log err "[SMO] Source or destination missing."
         return 1
     fi
+    if [ -f "$src" ]; then
+        if [ -d "$dst" ] || [[ "$dst" == */ ]]; then
+            log err "[SMO] Destination is a directory for file source: $dst"
+            return 1
+        fi
+        if [ "$mode" = "move" ] || [ "$mode" = "new" ]; then
+            if mv "$src" "$dst"; then
+                log ok "[SMO] Moved file $src to $dst"
+                return 0
+            fi
+        else
+            if cp -a "$src" "$dst"; then
+                log ok "[SMO] Copied file $src to $dst"
+                return 0
+            fi
+        fi
+        log err "[SMO] File move/copy failed: $src -> $dst"
+        return 1
+    fi
     if [ ! -d "$src" ]; then
         log err "[SMO] Source is not a directory: $src"
         return 1
@@ -36,6 +55,12 @@ safe_move_or_copy_and_clean() {
         log warn "[SMO] mv failed, trying rsync copy..."
     fi
 
+    if [ ! -d "$dst" ]; then
+        mkdir -p "$dst" || {
+            log err "[SMO] Failed to create destination directory: $dst"
+            return 1
+        }
+    fi
     rsync -a --delete "$src/" "$dst/" || {
         log err "[SMO] rsync failed from $src to $dst"
         return 1
