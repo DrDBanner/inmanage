@@ -468,7 +468,8 @@ maybe_migrate_legacy_cli() {
     return 0
   fi
 
-  log info "[SELF] Migrating legacy install to new CLI..."
+  log info "[SELF] Migrating legacy install to new CLI (fast)."
+  log info "[SELF] Note: replace old cronjobs to use the new CLI paths after migration."
   install_self || {
     log err "[SELF] Migration failed during install."
     return 1
