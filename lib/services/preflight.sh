@@ -8,7 +8,7 @@ __SERVICE_PREFLIGHT_LOADED=1
 # run_preflight()
 # Performs environment checks for inmanage/Invoice Ninja.
 # Flags via NAMED_ARGS:
-#   --checks=TAG1,TAG2  Only run selected check groups (e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
+#   --checks=TAG1,TAG2  Only run selected check groups (e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,MAIL,APP,CRON,SNAPPDF)
 # ---------------------------------------------------------------------
 run_preflight() {
     local errexit_set=false
@@ -20,7 +20,7 @@ run_preflight() {
     parse_named_args ARGS "$@"
     local pf_label="${INM_PREFLIGHT_LABEL:-PREFLIGHT}"
 
-    # Optional check filter (CSV of tags, e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
+    # Optional check filter (CSV of tags, e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,MAIL,APP,CRON,SNAPPDF)
     normalize_check_tag() {
         local raw="$1"
         local tag="${raw^^}"
@@ -37,6 +37,7 @@ run_preflight() {
             EXT|EXTENSIONS|PHPEXT) echo "EXT" ;;
             WEBPHP|WEBPH) echo "WEBPHP" ;;
             NET|NETWORK|DNS) echo "NET" ;;
+            MAIL|SMTP|EMAIL) echo "MAIL" ;;
             DB|DATABASE|MYSQL|MARIADB) echo "DB" ;;
             APP|APPLICATION) echo "APP" ;;
             CRON|SCHEDULER) echo "CRON" ;;
@@ -116,18 +117,26 @@ run_preflight() {
         done
         if [[ ${#unknown_checks[@]} -gt 0 ]]; then
             log err "[${pf_label}] Unknown check tags: ${unknown_checks[*]}"
-            log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,DB,APP,CRON,SNAPPDF"
+            log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF"
             $errexit_set && set -e
             return 1
         fi
         if [[ ${#PF_ALLOW[@]} -eq 0 ]]; then
             log err "[${pf_label}] No valid check tags in --checks=$checks_filter"
-            log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,DB,APP,CRON,SNAPPDF"
+            log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF"
             $errexit_set && set -e
             return 1
         fi
         log debug "[${pf_label}] Checks filter active: $checks_filter"
     fi
+
+    should_run() {
+        local tag="$1"
+        if [[ -z "$checks_filter" ]]; then
+            return 0
+        fi
+        [[ -n "${PF_ALLOW[$tag]:-}" ]]
+    }
 
     # Results collector
     local -a PF_STATUS=()
@@ -153,23 +162,31 @@ run_preflight() {
     local fix_permissions="${NAMED_ARGS[fix_permissions]:-${NAMED_ARGS[fix-permissions]:-${ARGS[fix_permissions]:-${ARGS[fix-permissions]:-false}}}}"
 
     local ok=0 warn=0 err=0
+    local phpv=""
     log info "[${pf_label}] Starting system checks"
 
     # Mandatory CLI command check (fail-fast message)
     local req_cmds=(php git curl tar rsync zip unzip composer jq awk sed find xargs touch tee sha256sum)
-    local -a missing_cmds=()
-    for cmd in "${req_cmds[@]}"; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
-            missing_cmds+=("$cmd")
+    if should_run "CMD"; then
+        local -a missing_cmds=()
+        for cmd in "${req_cmds[@]}"; do
+            if ! command -v "$cmd" >/dev/null 2>&1; then
+                missing_cmds+=("$cmd")
+            fi
+        done
+        if [ ${#missing_cmds[@]} -gt 0 ]; then
+            log err "[${pf_label}] Missing required CLI commands: ${missing_cmds[*]}"
+            log info "[${pf_label}] Please install missing commands to proceed."
+            $errexit_set && set -e
+            return 1
         fi
-    done
-    if [ ${#missing_cmds[@]} -gt 0 ]; then
-        log err "[${pf_label}] Missing required CLI commands: ${missing_cmds[*]}"
-        log info "[${pf_label}] Please install missing commands to proceed."
-        $errexit_set && set -e
-        return 1
     fi
 
+    if declare -F spinner_start >/dev/null 2>&1; then
+        spinner_start "Running ${pf_label} checks..."
+    fi
+
+    if should_run "CLI"; then
     # ---- CLI self info ----
     local cli_root cli_branch cli_commit cli_dirty="" cli_source="snapshot"
     cli_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -232,6 +249,8 @@ run_preflight() {
         fi
     fi
 
+    fi
+    if should_run "SYS"; then
     # ---- System details ----
     local host os kernel arch cpu memtotal=""
     host="$(hostname 2>/dev/null || true)"
@@ -262,22 +281,20 @@ run_preflight() {
     else
         add_result INFO "SYS" "Container: not detected"
     fi
-    # Disk info for base dir
-    if [ -n "${INM_BASE_DIRECTORY:-}" ] && df -h "$INM_BASE_DIRECTORY" >/dev/null 2>&1; then
-        local diskline
-        diskline=$(df -hP "$INM_BASE_DIRECTORY" | awk 'NR==2{print "avail:"$4" used:"$3" mount:"$6}')
-        add_result INFO "FS" "$diskline (Disk @base)"
     fi
 
     # Hydrate APP_URL from app .env if missing
-    if [ -z "${APP_URL:-}" ] && [ -f "${INM_ENV_FILE:-}" ]; then
-        local app_url
-        app_url=$(grep -E '^APP_URL=' "$INM_ENV_FILE" 2>/dev/null | head -n1 | sed -E 's/^APP_URL=//' | tr -d '"'\'' ')
-        if [ -n "$app_url" ]; then
-            APP_URL="$app_url"
+    if should_run "NET" || should_run "WEBPHP"; then
+        if [ -z "${APP_URL:-}" ] && [ -f "${INM_ENV_FILE:-}" ]; then
+            local app_url
+            app_url=$(grep -E '^APP_URL=' "$INM_ENV_FILE" 2>/dev/null | head -n1 | sed -E 's/^APP_URL=//' | tr -d '"'\'' ')
+            if [ -n "$app_url" ]; then
+                APP_URL="$app_url"
+            fi
         fi
     fi
 
+    if should_run "WEB"; then
     # ---- Webserver detection ----
     local web_is_apache=false
     if pgrep -x apache2 >/dev/null 2>&1 || pgrep -x apache24 >/dev/null 2>&1 || pgrep -x httpd >/dev/null 2>&1; then
@@ -314,7 +331,9 @@ run_preflight() {
         netstat -lnt 2>/dev/null | grep -q ":80 " && add_result INFO "WEB" "Port 80 open"
         netstat -lnt 2>/dev/null | grep -q ":443 " && add_result INFO "WEB" "Port 443 open"
     fi
+    fi
 
+    if should_run "CMD" || should_run "DB" || should_run "APP"; then
     # ---- Command availability ----
     local db_cmds_required=false
     local db_config_present=false
@@ -389,13 +408,15 @@ run_preflight() {
         db_dump="mariadb-dump"
     fi
 
-    for cmd in "${req_cmds[@]}"; do
-        if command -v "$cmd" >/dev/null 2>&1; then
-            add_result OK "CMD" "$cmd"
-        else
-            add_result ERR "CMD" "$cmd missing"
-        fi
-    done
+    if should_run "CMD"; then
+        for cmd in "${req_cmds[@]}"; do
+            if command -v "$cmd" >/dev/null 2>&1; then
+                add_result OK "CMD" "$cmd"
+            else
+                add_result ERR "CMD" "$cmd missing"
+            fi
+        done
+    fi
 
     if [ "$have_mysql" = true ] || [ "$have_mariadb" = true ]; then
         if [ "$have_mysql" = true ] && [ "$have_mariadb" = true ]; then
@@ -416,7 +437,9 @@ run_preflight() {
     else
         add_result "$db_missing_status" "CMD" "DB dump tool missing (need mysqldump or mariadb-dump)${db_scope_note}"
     fi
+    fi
 
+    if should_run "APP"; then
     # ---- App sanity & permissions ----
     local app_cfg_hint=""
     if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
@@ -431,11 +454,6 @@ run_preflight() {
     fi
     if [ -n "${INM_INSTALLATION_PATH:-}" ] && [ -d "${INM_INSTALLATION_PATH%/}" ]; then
         local app_dir="${INM_INSTALLATION_PATH%/}"
-        if command -v du >/dev/null 2>&1; then
-            local app_sz
-            app_sz=$(du -sh "$app_dir" 2>/dev/null | awk '{print $1}')
-            [[ -n "$app_sz" ]] && add_result INFO "FS" "App footprint: ${app_sz} at ${app_dir}"
-        fi
 
         local app_missing=()
         local app_warn=()
@@ -492,62 +510,81 @@ run_preflight() {
             add_result WARN "APP" "Config found (${app_cfg_hint}) but app directory is missing. Fix: move existing app to ${INM_INSTALLATION_PATH%/} or run 'inmanage core install --provision' (recommended). For guidance, run 'inmanage core install --help'."
         fi
     fi
+    fi
 
+    if should_run "PHP" || should_run "EXT" || should_run "WEBPHP"; then
     # ---- PHP version / ini ----
-    local phpv
     phpv=$(php -r 'echo PHP_VERSION;' 2>/dev/null)
     if [ -z "$phpv" ]; then
-        add_result ERR "PHP" "php CLI not available"
+        if should_run "PHP"; then
+            add_result ERR "PHP" "php CLI not available"
+        fi
+        if should_run "EXT"; then
+            add_result ERR "EXT" "php CLI not available"
+        fi
     else
-        add_result OK "PHP" "CLI $phpv"
-        local cli_ini
-        cli_ini=$(php -r 'echo php_ini_loaded_file();' 2>/dev/null)
-        add_result INFO "PHP" "CLI ini: ${cli_ini:-<none>}"
-        if printf '%s\n' "$phpv" "8.1.0" | sort -V | head -n1 | grep -qx "8.1.0"; then
-            add_result OK "PHP" ">= 8.1"
-        else
-            add_result ERR "PHP" "Needs >= 8.1"
-        fi
-        local mem mem_mb
-        mem=$(php -r "echo ini_get('memory_limit');" 2>/dev/null)
-        mem_mb="$(mem_to_mb "$mem")"
-        if [ "$mem" = "-1" ]; then
-            add_result OK "PHP" "memory_limit unlimited (-1)"
-        elif [ -n "$mem_mb" ] && [ "$mem_mb" -ge 256 ] 2>/dev/null; then
-            add_result OK "PHP" "memory_limit ${mem:-unset}"
-        else
-            add_result WARN "PHP" "memory_limit too low (${mem:-unset})"
-        fi
-        local inputvars
-        inputvars=$(php -r "echo ini_get('max_input_vars');" 2>/dev/null)
-        if [ -n "$inputvars" ] && [ "$inputvars" -ge 2000 ] 2>/dev/null; then
-            add_result OK "PHP" "max_input_vars $inputvars"
-        else
-            add_result WARN "PHP" "max_input_vars <2000 (${inputvars:-unset})"
-        fi
-        local opc
-        opc=$(php -r "echo (extension_loaded('Zend OPcache') && ini_get('opcache.enable')) ? 'enabled' : 'disabled';" 2>/dev/null)
-        if [ "$opc" = "enabled" ]; then
-            add_result OK "PHP" "OPcache enabled"
-        else
-            add_result WARN "PHP" "OPcache disabled"
+        if should_run "PHP"; then
+            add_result OK "PHP" "CLI $phpv"
+            local cli_ini
+            cli_ini=$(php -r 'echo php_ini_loaded_file();' 2>/dev/null)
+            add_result INFO "PHP" "CLI ini: ${cli_ini:-<none>}"
+            if printf '%s\n' "$phpv" "8.1.0" | sort -V | head -n1 | grep -qx "8.1.0"; then
+                add_result OK "PHP" ">= 8.1"
+            else
+                add_result ERR "PHP" "Needs >= 8.1"
+            fi
+            local mem mem_mb
+            mem=$(php -r "echo ini_get('memory_limit');" 2>/dev/null)
+            mem_mb="$(mem_to_mb "$mem")"
+            if [ "$mem" = "-1" ]; then
+                add_result OK "PHP" "memory_limit unlimited (-1)"
+            elif [ -n "$mem_mb" ] && [ "$mem_mb" -ge 256 ] 2>/dev/null; then
+                add_result OK "PHP" "memory_limit ${mem:-unset}"
+            else
+                add_result WARN "PHP" "memory_limit too low (${mem:-unset})"
+            fi
+            local inputvars
+            inputvars=$(php -r "echo ini_get('max_input_vars');" 2>/dev/null)
+            if [ -n "$inputvars" ] && [ "$inputvars" -ge 2000 ] 2>/dev/null; then
+                add_result OK "PHP" "max_input_vars $inputvars"
+            else
+                add_result WARN "PHP" "max_input_vars <2000 (${inputvars:-unset})"
+            fi
+            local opc
+            opc=$(php -r "echo (extension_loaded('Zend OPcache') && ini_get('opcache.enable')) ? 'enabled' : 'disabled';" 2>/dev/null)
+            if [ "$opc" = "enabled" ]; then
+                add_result OK "PHP" "OPcache enabled"
+            else
+                add_result WARN "PHP" "OPcache disabled"
+            fi
         fi
 
-        # Extensions
-        local exts=(pdo_mysql openssl tokenizer xml gd mbstring bcmath curl zip fileinfo intl)
-        for ext in "${exts[@]}"; do
-            if php -m | grep -qi "^$ext$"; then
-                add_result OK "EXT" "$ext"
-            else
-                add_result ERR "EXT" "$ext missing"
-            fi
-        done
+        if should_run "EXT"; then
+            # Extensions
+            local exts=(pdo_mysql openssl tokenizer xml gd mbstring bcmath curl zip fileinfo intl)
+            for ext in "${exts[@]}"; do
+                if php -m | grep -qi "^$ext$"; then
+                    add_result OK "EXT" "$ext"
+                else
+                    add_result ERR "EXT" "$ext missing"
+                fi
+            done
+        fi
+    fi
     fi
 
     # ---- Web PHP check ----
-    check_web_php "$phpv" add_result
+    if should_run "WEBPHP"; then
+        check_web_php "$phpv" add_result
+    fi
 
+    if should_run "FS"; then
     # ---- Filesystem perms ----
+    if [ -n "${INM_BASE_DIRECTORY:-}" ] && df -h "$INM_BASE_DIRECTORY" >/dev/null 2>&1; then
+        local diskline
+        diskline=$(df -hP "$INM_BASE_DIRECTORY" | awk 'NR==2{print "avail:"$4" used:"$3" mount:"$6}')
+        add_result INFO "FS" "$diskline (Disk @base)"
+    fi
     # Base, app, backup directories
     local fs_items=(
         "$INM_BASE_DIRECTORY|Base dir"
@@ -645,6 +682,7 @@ run_preflight() {
             add_result ERR "FS" "${cache_local_detail} (no writable cache directories)"
         fi
     fi
+    fi
 
     # ---- ENV (CLI / APP) ----
     read_env_value() {
@@ -652,27 +690,32 @@ run_preflight() {
         grep -E "^${key}=" "$file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ' || true
     }
 
-    if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_SELF_ENV_FILE" ]; then
-        local cli_keys=(INM_ENFORCED_USER INM_BASE_DIRECTORY INM_INSTALLATION_DIRECTORY INM_BACKUP_DIRECTORY INM_CACHE_GLOBAL_DIRECTORY INM_CACHE_LOCAL_DIRECTORY)
-        for k in "${cli_keys[@]}"; do
-            local v="${!k}"
-            add_result INFO "ENVCLI" "${k}=${v:-<unset>}"
-        done
-    else
-        add_result WARN "ENVCLI" "Not installed (yet) – CLI env missing (${INM_SELF_ENV_FILE:-unset})"
+    if should_run "ENVCLI"; then
+        if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_SELF_ENV_FILE" ]; then
+            local cli_keys=(INM_ENFORCED_USER INM_BASE_DIRECTORY INM_INSTALLATION_DIRECTORY INM_BACKUP_DIRECTORY INM_CACHE_GLOBAL_DIRECTORY INM_CACHE_LOCAL_DIRECTORY)
+            for k in "${cli_keys[@]}"; do
+                local v="${!k}"
+                add_result INFO "ENVCLI" "${k}=${v:-<unset>}"
+            done
+        else
+            add_result WARN "ENVCLI" "Not installed (yet) – CLI env missing (${INM_SELF_ENV_FILE:-unset})"
+        fi
     fi
 
-    if [ -n "${INM_ENV_FILE:-}" ] && [ -f "$INM_ENV_FILE" ]; then
-        local app_keys=(APP_NAME APP_URL PDF_GENERATOR APP_DEBUG)
-        for k in "${app_keys[@]}"; do
-            local v
-            v=$(read_env_value "$INM_ENV_FILE" "$k")
-            add_result INFO "ENVAPP" "${k}=${v:-<unset>}"
-        done
-    else
-        add_result WARN "ENVAPP" "Not installed (yet) – app .env missing (${INM_ENV_FILE:-unset})"
+    if should_run "ENVAPP"; then
+        if [ -n "${INM_ENV_FILE:-}" ] && [ -f "$INM_ENV_FILE" ]; then
+            local app_keys=(APP_NAME APP_URL PDF_GENERATOR APP_DEBUG)
+            for k in "${app_keys[@]}"; do
+                local v
+                v=$(read_env_value "$INM_ENV_FILE" "$k")
+                add_result INFO "ENVAPP" "${k}=${v:-<unset>}"
+            done
+        else
+            add_result WARN "ENVAPP" "Not installed (yet) – app .env missing (${INM_ENV_FILE:-unset})"
+        fi
     fi
 
+    if should_run "DB" || should_run "APP"; then
     # Try to hydrate DB vars from app .env if missing
     if [ -z "${DB_HOST:-}" ] && [ -f "${INM_ENV_FILE:-}" ]; then
         set -a
@@ -711,6 +754,33 @@ run_preflight() {
             if [ -n "$DB_DATABASE" ]; then
                 if "$db_client" -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} -e "USE \`$DB_DATABASE\`;" >/dev/null 2>&1; then
                     add_result OK "DB" "Database '$DB_DATABASE' exists."
+                    local lang_table=""
+                    if "$db_client" -N -B -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} \
+                        -e "SELECT table_name FROM information_schema.tables WHERE table_schema='${DB_DATABASE}' AND table_name='languages' LIMIT 1;" 2>/dev/null | grep -q "^languages$"; then
+                        lang_table="languages"
+                    elif "$db_client" -N -B -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} \
+                        -e "SELECT table_name FROM information_schema.tables WHERE table_schema='${DB_DATABASE}' AND table_name='language' LIMIT 1;" 2>/dev/null | grep -q "^language$"; then
+                        lang_table="language"
+                    fi
+
+                    if [ -n "$lang_table" ]; then
+                        local lang_count=""
+                        lang_count=$("$db_client" -N -B -h "$DB_HOST" -P "${DB_PORT:-3306}" -u "$DB_USERNAME" ${DB_PASSWORD:+-p"$DB_PASSWORD"} \
+                            -e "SELECT COUNT(*) FROM \`${DB_DATABASE}\`.\`${lang_table}\`;" 2>/dev/null | head -n1)
+                        if [[ "$lang_count" =~ ^[0-9]+$ ]]; then
+                            if [ "$lang_count" -eq 0 ]; then
+                                add_result ERR "APP" "Languages loaded: 0 (run ninja:translations + db:seed --class=LanguageSeeder)"
+                            elif [ "$lang_count" -lt 10 ]; then
+                                add_result WARN "APP" "Languages loaded: ${lang_count} (expected more; run ninja:translations + db:seed --class=LanguageSeeder)"
+                            else
+                                add_result OK "APP" "Languages loaded: ${lang_count}"
+                            fi
+                        else
+                            add_result WARN "APP" "Languages count unavailable (query failed)"
+                        fi
+                    else
+                        add_result WARN "APP" "Languages table missing; run migrations/seed (ninja:translations + db:seed --class=LanguageSeeder)"
+                    fi
                 else
                     local hint="Database '$DB_DATABASE' not found or no access."
                     hint+=" Set DB_ELEVATED_USERNAME/PASSWORD in .env.provision and rerun provision to create it."
@@ -735,19 +805,75 @@ run_preflight() {
             add_result WARN "DB" "DB config not set; skipping connectivity checks"
         fi
     fi
+    fi
 
+    if should_run "CRON"; then
     # ---- Cron presence ----
     if pgrep -x cron >/dev/null 2>&1 || pgrep -x crond >/dev/null 2>&1 || pgrep -x systemd >/dev/null 2>&1; then
         add_result OK "CRON" "Scheduler service present"
     else
         add_result WARN "CRON" "No cron service detected"
     fi
-    if crontab -l 2>/dev/null | grep -q "artisan schedule:run"; then
+    local cron_file="/etc/cron.d/invoiceninja"
+    local cron_lines=""
+    if command -v crontab >/dev/null 2>&1; then
+        if crontab -l >/dev/null 2>&1; then
+            cron_lines="$(crontab -l 2>/dev/null)"
+        fi
+    fi
+    if [[ -r "$cron_file" ]]; then
+        cron_lines+=$'\n'"$(cat "$cron_file")"
+    fi
+    local cron_scope="$cron_lines"
+    local base_clean="${INM_BASE_DIRECTORY%/}"
+    local app_clean="${INM_INSTALLATION_PATH%/}"
+    if [ -n "$base_clean" ] || [ -n "$app_clean" ]; then
+        escape_regex() {
+            printf '%s' "$1" | sed -E 's/[][\\.^$*+?(){}|]/\\&/g'
+        }
+        local base_re="" app_re="" scope_re=""
+        [ -n "$base_clean" ] && base_re="$(escape_regex "$base_clean")"
+        [ -n "$app_clean" ] && app_re="$(escape_regex "$app_clean")"
+        if [ -n "$base_re" ] && [ -n "$app_re" ]; then
+            scope_re="${base_re}|${app_re}"
+        else
+            scope_re="${base_re}${app_re}"
+        fi
+        if [ -n "$scope_re" ]; then
+            cron_scope="$(printf "%s\n" "$cron_lines" | grep -E "$scope_re" || true)"
+        fi
+    fi
+    if echo "$cron_scope" | grep -q "artisan schedule:run"; then
         add_result OK "CRON" "artisan schedule:run present"
     else
-        add_result WARN "CRON" "artisan schedule missing; run: inmanage core cron install"
+        add_result WARN "CRON" "artisan schedule missing; run: inmanage core cron install --jobs=scheduler"
     fi
 
+    extract_cron_time() {
+        local line="$1"
+        local min hour
+        min="$(awk '{print $1}' <<<"$line")"
+        hour="$(awk '{print $2}' <<<"$line")"
+        if [[ "$min" =~ ^[0-5]?[0-9]$ && "$hour" =~ ^([01]?[0-9]|2[0-3])$ ]]; then
+            printf "%02d:%02d" "$hour" "$min"
+        fi
+    }
+    if echo "$cron_scope" | grep -q "inmanage core backup"; then
+        local backup_line backup_time
+        backup_line="$(echo "$cron_scope" | grep -E "inmanage core backup" | head -n1)"
+        backup_time="$(extract_cron_time "$backup_line")"
+        if [[ -n "$backup_time" ]]; then
+            add_result OK "CRON" "backup cron present (${backup_time})"
+        else
+            add_result OK "CRON" "backup cron present"
+        fi
+    else
+        local default_time="${INM_CRON_BACKUP_TIME:-03:24}"
+        add_result WARN "CRON" "backup cron missing; run: inmanage core cron install --jobs=backup --backup-time=${default_time}"
+    fi
+    fi
+
+    if should_run "SNAPPDF"; then
     # ---- Snappdf presence (only if enabled) ----
     if [ "$fast" != true ] && [ "$skip_snappdf" != true ]; then
         local pdf_gen="${PDF_GENERATOR:-}"
@@ -758,25 +884,150 @@ run_preflight() {
             add_result INFO "SNAPPDF" "PDF_GENERATOR not 'snappdf' (current: ${pdf_gen:-unset}); check skipped"
         else
             local snap_dir="${INM_INSTALLATION_PATH%/}/vendor/beganovich/snappdf"
-            local tmp_pdf="${INM_CACHE_LOCAL_DIRECTORY:-/tmp}/snappdf_probe.pdf"
+            local snappdf_cli="${INM_INSTALLATION_PATH%/}/vendor/bin/snappdf"
             if [ ! -d "$snap_dir" ]; then
                 add_result WARN "SNAPPDF" "Not present; run do_snappdf/update"
             elif [ -z "${INM_INSTALLATION_PATH:-}" ] || [ ! -f "${INM_INSTALLATION_PATH%/}/vendor/autoload.php" ]; then
                 add_result WARN "SNAPPDF" "Vendor/autoload missing; cannot test snappdf"
             else
-                # Try to render a tiny PDF
-                local php_probe
-                php_probe=$(php -r "require '${INM_INSTALLATION_PATH%/}/vendor/autoload.php'; if (class_exists('Beganovich\\Snappdf\\Snappdf')) { try { \$pdf=new Beganovich\\Snappdf\\Snappdf; \$pdf->generate('<h1>probe</h1>', '${tmp_pdf}'); echo 'OK'; } catch (Throwable \$e) { echo 'ERR:' . \$e->getMessage(); } }" 2>/dev/null || true)
-                if echo "$php_probe" | grep -q "^OK" && [ -s "$tmp_pdf" ]; then
-                    add_result OK "SNAPPDF" "Render ok (${tmp_pdf})"
-                    rm -f "$tmp_pdf"
+                if [ ! -x "$snappdf_cli" ]; then
+                    add_result WARN "SNAPPDF" "snappdf CLI missing: $snappdf_cli"
+                fi
+                local chromium_path=""
+                if [ -n "${SNAPPDF_EXECUTABLE_PATH:-}" ]; then
+                    chromium_path="$SNAPPDF_EXECUTABLE_PATH"
+                    if [ ! -x "$chromium_path" ]; then
+                        add_result WARN "SNAPPDF" "SNAPPDF_EXECUTABLE_PATH not executable: $chromium_path"
+                    else
+                        add_result INFO "SNAPPDF" "Chromium path: $chromium_path (SNAPPDF_EXECUTABLE_PATH)"
+                    fi
+                elif [ -n "${SNAPPDF_CHROMIUM_PATH:-}" ]; then
+                    chromium_path="$SNAPPDF_CHROMIUM_PATH"
+                    if [ ! -x "$chromium_path" ]; then
+                        add_result WARN "SNAPPDF" "SNAPPDF_CHROMIUM_PATH not executable: $chromium_path"
+                    else
+                        add_result INFO "SNAPPDF" "Chromium path: $chromium_path (SNAPPDF_CHROMIUM_PATH)"
+                    fi
                 else
-                    add_result WARN "SNAPPDF" "Render failed (${php_probe:-unknown}); run do_snappdf/update"
+                    chromium_path="$(find "$snap_dir/versions" -type f -perm -u+x '(' -name Chromium -o -name chrome -o -name chromium ')' 2>/dev/null | head -n1)"
+                    if [ -n "$chromium_path" ]; then
+                        add_result INFO "SNAPPDF" "Chromium path: $chromium_path"
+                    fi
+                fi
+
+                if [[ "${SNAPPDF_SKIP_DOWNLOAD:-}" == "true" || "${SNAPPDF_SKIP_DOWNLOAD:-}" == "1" ]]; then
+                    add_result INFO "SNAPPDF" "SNAPPDF_SKIP_DOWNLOAD=true"
+                fi
+
+                local probe_dir="${INM_CACHE_LOCAL_DIRECTORY:-/tmp}"
+                if [[ -n "$probe_dir" ]]; then
+                    mkdir -p "$probe_dir" 2>/dev/null || true
+                fi
+                if [[ -z "$probe_dir" || ! -w "$probe_dir" ]]; then
+                    probe_dir="/tmp"
+                fi
+                if [[ ! -w "$probe_dir" ]]; then
+                    add_result WARN "SNAPPDF" "Probe dir not writable; set INM_CACHE_LOCAL_DIRECTORY to a writable path."
+                else
+                local tmp_pdf="${probe_dir%/}/snappdf_probe.pdf"
+                # Try to render a tiny PDF
+                local php_probe php_exec probe_file
+                php_exec="${INM_PHP_EXECUTABLE:-php}"
+                probe_file="$(mktemp "${probe_dir%/}/snappdf_probe_XXXX.php" 2>/dev/null || true)"
+                if [[ -z "$probe_file" ]]; then
+                    probe_file="$(mktemp "/tmp/snappdf_probe_XXXX.php" 2>/dev/null || true)"
+                fi
+                if [[ -z "$probe_file" ]]; then
+                    add_result WARN "SNAPPDF" "Failed to create probe file; cannot verify snappdf."
+                else
+                    cat > "$probe_file" <<PHP
+<?php
+require '${INM_INSTALLATION_PATH%/}/vendor/autoload.php';
+if (class_exists('Beganovich\\Snappdf\\Snappdf')) {
+    try {
+        \$pdf = new Beganovich\\Snappdf\\Snappdf;
+        if (method_exists(\$pdf, 'setHtml')) {
+            \$pdf->setHtml('<h1>probe</h1>');
+        }
+        if (method_exists(\$pdf, 'save')) {
+            \$pdf->save('${tmp_pdf}');
+            if (is_file('${tmp_pdf}') && filesize('${tmp_pdf}') > 0) {
+                echo 'OK';
+            } else {
+                echo 'ERR:save did not create file';
+            }
+        } elseif (method_exists(\$pdf, 'generate')) {
+            \$out = \$pdf->generate();
+            if (!is_string(\$out) || \$out === '') {
+                echo 'ERR:generate returned empty';
+            } elseif (file_put_contents('${tmp_pdf}', \$out) === false) {
+                echo 'ERR:write failed';
+            } else {
+                echo 'OK';
+            }
+        } else {
+            echo 'ERR:No save/generate method';
+        }
+    } catch (Throwable \$e) {
+        echo 'ERR:' . \$e->getMessage();
+    }
+} else {
+    echo 'ERR:Snappdf class not found';
+}
+PHP
+                    log debug "[SNAPPDF] Probe cmd: $php_exec $probe_file"
+                fi
+                if [[ -n "$probe_file" ]]; then
+                    if [[ "${DEBUG:-false}" == true ]]; then
+                        php_probe=$("$php_exec" "$probe_file" 2>&1 || true)
+                    else
+                        php_probe=$("$php_exec" "$probe_file" 2>/dev/null || true)
+                    fi
+                    log debug "[SNAPPDF] Probe output: ${php_probe:-<empty>}"
+                    rm -f "$probe_file" 2>/dev/null || true
+                else
+                    php_probe=""
+                fi
+                if echo "$php_probe" | grep -q "^OK"; then
+                    if [ -s "$tmp_pdf" ]; then
+                        add_result OK "SNAPPDF" "Render ok (probe at ${tmp_pdf})"
+                        rm -f "$tmp_pdf"
+                    else
+                        add_result WARN "SNAPPDF" "Probe returned OK but output missing (probe dir writable: ${probe_dir}). See https://github.com/beganovich/snappdf (use --debug for details)"
+                        if [ -n "$chromium_path" ] && command -v ldd >/dev/null 2>&1; then
+                            local missing_libs
+                            missing_libs=$(ldd "$chromium_path" 2>/dev/null | awk '/not found/ {print $1}' | xargs)
+                            if [ -n "$missing_libs" ]; then
+                                add_result WARN "SNAPPDF" "Chromium missing libs: ${missing_libs}"
+                            fi
+                        fi
+                    fi
+                elif [[ "$php_probe" == ERR:* ]]; then
+                    add_result WARN "SNAPPDF" "Render failed (${php_probe}). See https://github.com/beganovich/snappdf (use --debug for details)"
+                    if [ -n "$chromium_path" ] && command -v ldd >/dev/null 2>&1; then
+                        local missing_libs
+                        missing_libs=$(ldd "$chromium_path" 2>/dev/null | awk '/not found/ {print $1}' | xargs)
+                        if [ -n "$missing_libs" ]; then
+                            add_result WARN "SNAPPDF" "Chromium missing libs: ${missing_libs}"
+                        fi
+                    fi
+                else
+                    add_result WARN "SNAPPDF" "Render failed (no output). See https://github.com/beganovich/snappdf (use --debug for details)"
+                    if [ -n "$chromium_path" ] && command -v ldd >/dev/null 2>&1; then
+                        local missing_libs
+                        missing_libs=$(ldd "$chromium_path" 2>/dev/null | awk '/not found/ {print $1}' | xargs)
+                        if [ -n "$missing_libs" ]; then
+                            add_result WARN "SNAPPDF" "Chromium missing libs: ${missing_libs}"
+                        fi
+                    fi
+                fi
                 fi
             fi
         fi
     fi
+    fi
 
+    if should_run "NET"; then
     # ---- GitHub reachability ----
     if [ "$fast" != true ] && [ "$skip_github" != true ]; then
         if curl -Is --connect-timeout 5 https://github.com >/dev/null 2>&1; then
@@ -816,10 +1067,65 @@ run_preflight() {
             fi
         fi
     fi
+    fi
+
+    if should_run "MAIL"; then
+    # ---- SMTP reachability ----
+    if [ -n "${INM_ENV_FILE:-}" ] && [ -f "$INM_ENV_FILE" ]; then
+        local smtp_mailer smtp_host smtp_port
+        smtp_mailer=$(read_env_value "$INM_ENV_FILE" "MAIL_MAILER")
+        if [ -z "$smtp_mailer" ]; then
+            smtp_mailer=$(read_env_value "$INM_ENV_FILE" "MAIL_DRIVER")
+        fi
+        smtp_host=$(read_env_value "$INM_ENV_FILE" "MAIL_HOST")
+        smtp_port=$(read_env_value "$INM_ENV_FILE" "MAIL_PORT")
+        if [ -n "$smtp_mailer" ] && [ "$smtp_mailer" != "smtp" ]; then
+            add_result INFO "MAIL" "Mail: ${smtp_mailer} currently active (SMTP check skipped)"
+        elif [ -n "$smtp_host" ]; then
+            smtp_port="${smtp_port:-587}"
+            local smtp_out smtp_detail
+            if [ "${DEBUG:-false}" = true ]; then
+                smtp_out=$(INM_SMTP_HOST="$smtp_host" INM_SMTP_PORT="$smtp_port" php -r '
+$host = getenv("INM_SMTP_HOST");
+$port = (int) getenv("INM_SMTP_PORT");
+$timeout = 3;
+$errno = 0;
+$errstr = "";
+$fp = @fsockopen($host, $port, $errno, $errstr, $timeout);
+if ($fp) { fclose($fp); echo "OK"; } else { echo "ERR:" . $errstr; }' 2>&1 || true)
+            else
+                smtp_out=$(INM_SMTP_HOST="$smtp_host" INM_SMTP_PORT="$smtp_port" php -r '
+$host = getenv("INM_SMTP_HOST");
+$port = (int) getenv("INM_SMTP_PORT");
+$timeout = 3;
+$errno = 0;
+$errstr = "";
+$fp = @fsockopen($host, $port, $errno, $errstr, $timeout);
+if ($fp) { fclose($fp); echo "OK"; } else { echo "ERR:" . $errstr; }' 2>/dev/null || true)
+            fi
+            if echo "$smtp_out" | grep -q "^OK"; then
+                add_result OK "MAIL" "SMTP reachable: ${smtp_host}:${smtp_port}"
+            else
+                if [ "${DEBUG:-false}" = true ] && echo "$smtp_out" | grep -q "^ERR:"; then
+                    smtp_detail="SMTP not reachable: ${smtp_host}:${smtp_port} (${smtp_out#ERR:})"
+                else
+                    smtp_detail="SMTP not reachable: ${smtp_host}:${smtp_port}"
+                fi
+                add_result WARN "MAIL" "$smtp_detail"
+            fi
+        else
+            add_result INFO "MAIL" "Mail: not configured (MAIL_MAILER/MAIL_HOST unset)"
+        fi
+    fi
+    fi
+
+    if declare -F spinner_stop >/dev/null 2>&1; then
+        spinner_stop
+    fi
 
     # Summary table (grouped)
     printf "\n"
-    local groups=("SYS" "FS" "APP" "ENVCLI" "ENVAPP" "CLI" "CMD" "WEB" "PHP" "WEBPHP" "EXT" "NET" "DB" "CRON" "SNAPPDF")
+    local groups=("SYS" "FS" "APP" "ENVCLI" "ENVAPP" "CLI" "CMD" "WEB" "PHP" "WEBPHP" "EXT" "NET" "MAIL" "DB" "CRON" "SNAPPDF")
     local idx g printed
     local green="${GREEN:-}"
     local yellow="${YELLOW:-}"
@@ -836,6 +1142,7 @@ run_preflight() {
             ENVAPP) echo "ENV APP" ;;
             CMD) echo "CLI Commands" ;;
             NET) echo "Network" ;;
+            MAIL) echo "Mail Route" ;;
             WEB) echo "Web Server" ;;
             PHP) echo "PHP CLI" ;;
             EXT) echo "PHP Extensions" ;;
@@ -984,7 +1291,7 @@ PHP
         return 1
     fi
 
-    local web_php_ver web_php_ini web_mem web_opc web_input web_max_exec web_post_max web_upload_max
+    local web_php_ver web_php_ini web_user_ini web_mem web_opc web_input web_max_exec web_post_max web_upload_max
     web_php_ver=$(echo "$web_php_out" | grep '^PHP_VERSION=' | cut -d= -f2)
     web_php_ini=$(echo "$web_php_out" | grep '^PHP_INI=' | cut -d= -f2)
     web_user_ini=$(echo "$web_php_out" | grep '^USER_INI=' | cut -d= -f2)
@@ -995,9 +1302,18 @@ PHP
     web_post_max=$(echo "$web_php_out" | grep '^POST_MAX=' | cut -d= -f2)
     web_upload_max=$(echo "$web_php_out" | grep '^UPLOAD_MAX=' | cut -d= -f2)
 
+    local web_user_ini_detail="${web_user_ini:-<none>}"
+    if [ -n "$web_user_ini" ]; then
+        if [ -f "${webroot%/}/$web_user_ini" ]; then
+            web_user_ini_detail="${web_user_ini} (public: present)"
+        else
+            web_user_ini_detail="${web_user_ini} (public: missing)"
+        fi
+    fi
+
     ${add_fn:-log info} INFO "WEBPHP" "Version $web_php_ver (CLI ${php_cli_version:-unknown})"
     ${add_fn:-log info} INFO "WEBPHP" "php.ini $web_php_ini"
-    ${add_fn:-log info} INFO "WEBPHP" ".user.ini ${web_user_ini:-<none>}"
+    ${add_fn:-log info} INFO "WEBPHP" ".user.ini $web_user_ini_detail"
 
     # Evaluate memory_limit / input_vars similar to CLI thresholds
     local web_mem_mb=""
