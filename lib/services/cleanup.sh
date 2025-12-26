@@ -17,14 +17,15 @@ cleanup_old_versions() {
     local rollback_dirs
     local install_parent
     local install_name
+    local keep="${INM_KEEP_BACKUPS:-2}"
     install_parent="$(dirname "${INM_INSTALLATION_PATH%/}")"
     install_name="$(basename "${INM_INSTALLATION_PATH%/}")"
     if [ -z "$install_name" ] || [ "$install_name" = "." ]; then
         install_name="$(basename "${INM_INSTALLATION_DIRECTORY}")"
     fi
 
-    update_dirs=$(find "$install_parent" -maxdepth 1 -type d -name "${install_name}_*" ! -name "${install_name}_rollback_*" 2>/dev/null | sort -r | tail -n +$((INM_KEEP_BACKUPS + 1)))
-    rollback_dirs=$(find "$install_parent" -maxdepth 1 -type d -name "${install_name}_rollback_*" 2>/dev/null | sort -r | tail -n +$((INM_KEEP_BACKUPS + 1)))
+    update_dirs=$(find "$install_parent" -maxdepth 1 -type d -name "${install_name}_*" ! -name "${install_name}_rollback_*" 2>/dev/null | sort -r | tail -n +$((keep + 1)))
+    rollback_dirs=$(find "$install_parent" -maxdepth 1 -type d -name "${install_name}_rollback_*" 2>/dev/null | sort -r | tail -n +$((keep + 1)))
 
     if [ -n "$update_dirs" ]; then
         echo "$update_dirs" | xargs -r rm -rf || {
@@ -51,8 +52,9 @@ cleanup_old_backups() {
     log info "[COB] Cleaning up old backups."
     local backup_path="$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY"
     local backup_items
+    local keep="${INM_KEEP_BACKUPS:-2}"
 
-    backup_items=$(find "$backup_path" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) | sort -r | tail -n +$((INM_KEEP_BACKUPS + 1)))
+    backup_items=$(find "$backup_path" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) | sort -r | tail -n +$((keep + 1)))
 
     if [ -n "$backup_items" ]; then
         echo "$backup_items" | xargs -r rm -rf || {
@@ -71,7 +73,9 @@ cleanup() {
         log info "[DRY-RUN] Skipping cleanup."
         return 0
     fi
-    log info "[CLEAN] Removing old versions/backups/cache"
+    local keep="${INM_KEEP_BACKUPS:-2}"
+    local cache_keep="${INM_CACHE_GLOBAL_RETENTION:-3}"
+    log info "[CLEAN] Removing old versions/backups/cache (keep backups/rollbacks: ${keep}, cache: ${cache_keep})"
     cleanup_old_versions
     cleanup_old_backups
     cleanup_cache

@@ -304,7 +304,7 @@ cleanup_cache() {
             rm -f "$file"
         done
 
-    log ok "[CC] Cleanup of cached versions completed. Keeping the last $INM_CACHE_GLOBAL_RETENTION versions."
+    log ok "[CC] Cleanup of cached versions completed."
 }
 
 # ---------------------------------------------------------------------
