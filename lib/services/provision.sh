@@ -132,6 +132,24 @@ spawn_provision_file() {
 provision_post_install() {
     log info "[PROV] Running provisioned post-install steps"
 
+    # Pre-provision backup if DB already has content (safety first)
+    local table_count=""
+    if table_count=$(db_table_count 2>/dev/null); then
+        if [[ "$table_count" -gt 0 ]]; then
+            log warn "[PROV] Existing tables detected ($table_count). Creating pre-provision DB backup."
+            if ! provision_prebackup_db; then
+                log err "[PROV] Pre-provision backup failed; aborting to protect existing data."
+                return 1
+            fi
+        fi
+    else
+        log warn "[PROV] Could not determine table count; creating pre-provision DB backup to be safe."
+        if ! provision_prebackup_db; then
+            log err "[PROV] Pre-provision backup failed; aborting to protect existing data."
+            return 1
+        fi
+    fi
+
     run_artisan migrate:fresh --seed --force || {
         log err "[PROV] Failed to migrate and seed"
         return 1
@@ -148,6 +166,41 @@ provision_post_install() {
         log err "[PROV] Failed to create default user"
         return 1
     fi
+    return 0
+}
+
+# ---------------------------------------------------------------------
+# provision_prebackup_db()
+# Creates a DB-only backup before destructive provisioning steps.
+# ---------------------------------------------------------------------
+provision_prebackup_db() {
+    # Hydrate DB vars from app env if not set
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
+        log debug "[PROV] Loading DB vars from app env: $INM_ENV_FILE"
+        set -a
+        # shellcheck disable=SC1090
+        . "$INM_ENV_FILE"
+        set +a
+    fi
+
+    if [[ -z "${DB_DATABASE:-}" || -z "${DB_USERNAME:-}" ]]; then
+        log err "[PROV] Missing DB_DATABASE/DB_USERNAME; cannot create pre-provision backup."
+        return 1
+    fi
+
+    local backup_dir="${INM_BACKUP_DIRECTORY:-./.backups}"
+    mkdir -p "$backup_dir" 2>/dev/null || {
+        log err "[PROV] Cannot create backup directory: $backup_dir"
+        return 1
+    }
+
+    local target_file="${backup_dir%/}/${DB_DATABASE}_preprovision_$(date +%Y%m%d-%H%M%S).sql"
+    log info "[PROV] Creating pre-provision DB backup: $target_file"
+    if ! dump_database "$target_file"; then
+        log err "[PROV] Pre-provision backup failed: $target_file"
+        return 1
+    fi
+    log ok "[PROV] Pre-provision backup saved: $target_file"
     return 0
 }
 

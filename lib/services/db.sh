@@ -169,6 +169,47 @@ import_database() {
 }
 
 # ---------------------------------------------------------------------
+# db_table_count()
+# Returns the number of tables in the current DB. Prints count on success.
+# ---------------------------------------------------------------------
+db_table_count() {
+    # Hydrate DB vars from app env if not set
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
+        log debug "[db_count] Loading DB vars from app env: $INM_ENV_FILE"
+        set -a
+        # shellcheck disable=SC1090
+        . "$INM_ENV_FILE"
+        set +a
+    fi
+
+    if [[ -z "${DB_DATABASE:-}" || -z "${DB_USERNAME:-}" ]]; then
+        log warn "[db_count] Missing DB_DATABASE/DB_USERNAME; cannot count tables."
+        return 1
+    fi
+
+    local db_client=""
+    db_client="$(select_db_client false true)"
+    if [[ -z "$db_client" ]]; then
+        log err "[db_count] No MySQL/MariaDB client found."
+        return 1
+    fi
+
+    local db_host="${DB_HOST:-localhost}"
+    local db_port="${DB_PORT:-3306}"
+    local db_cmd=("$db_client" "-h" "$db_host" "-P" "$db_port" "-u" "$DB_USERNAME")
+    [[ -n "${DB_PASSWORD:-}" ]] && db_cmd+=("-p$DB_PASSWORD")
+
+    local table_count=""
+    if table_count=$("${db_cmd[@]}" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_DATABASE}'" 2>/dev/null); then
+        printf "%s" "$table_count"
+        return 0
+    fi
+
+    log warn "[db_count] Could not determine table count (permissions?)."
+    return 1
+}
+
+# ---------------------------------------------------------------------
 # dump_database()
 # Creates a database dump to the given target file, honoring .my.cnf or
 # prompting for password when needed.

@@ -139,6 +139,9 @@ run_installation() {
     if [ -d "$install_path" ]; then
         local src_path="$install_path"
         local dst_path="${install_parent}/_last_IN_${timestamp}"
+        if ! find "$install_path" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
+            log warn "[TAR] App directory exists but appears empty; archiving anyway."
+        fi
 
         # shellcheck disable=SC2154
         if [ "$force_update" != true ]; then
