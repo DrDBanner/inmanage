@@ -72,6 +72,12 @@ inmanage core health
 | `--dry-run` | `false` | Show planned actions without changing anything. |
 | `--override-enforced-user` | `false` | Skip enforced user switch for this run. |
 | `--no-cli-clear` | `false` | Keep terminal output (skip clear + logo). |
+| `--ninja-location=path` | unset | Use a specific app directory (must contain `.env`). |
+| `--config=path` | unset | Use a specific CLI config file (`.env.inmanage`). |
+| `--config-root=dir` | `.inmanage` | Override the CLI config directory root. |
+| `--auto-create-config=true/false` | `false` | Auto‑persist derived CLI config when missing. |
+| `--auto-select=true/false` | `false` | Auto‑select defaults when no TTY is available. |
+| `--select-timeout=secs` | `60` | Timeout for interactive selections (seconds). |
 
 ## Hooks (pre/post)
 
@@ -156,6 +162,7 @@ Install switches (`inmanage core install`):
 | `--cron-jobs=scheduler / backup / both` | `both` | Which cron jobs to install during setup. |
 | `--no-backup-cron` | `false` | Skip the backup cron job during setup. |
 | `--backup-time=HH:MM` | `03:24` | Backup cron schedule (24h). |
+| `--bypass-check-sha` | `false` | Skip release digest verification (not recommended). |
 | `--version=v` | latest | Reserved: install currently uses latest release. |
 
 Provision spawn switches (`inmanage core provision spawn`):
@@ -171,6 +178,7 @@ Notes:
 - A clean `.env.example` is bundled and used to seed `.env.provision`.
 - `DB_ELEVATED_USERNAME` / `DB_ELEVATED_PASSWORD` are required only if the script should create the DB/user; otherwise the DB must already exist and match the `DB_*` values.
 - Elevated credentials are removed from `.env.provision` after a successful provision.
+- Migration restore can also be driven by `INM_MIGRATION_BACKUP` in `.env.provision` or `.env.inmanage` (set to `LATEST` or a backup path).
 
 What happens on a provisioned install:
 - Create the database and user (when elevated creds are provided).
@@ -179,6 +187,27 @@ What happens on a provisioned install:
 - Generate app key, run migrations/seed, warm cache.
 - Create an admin user.
 - Install cronjobs when possible (unless `--no-cron-install` or `--no-backup-cron`).
+- If `INM_MIGRATION_BACKUP` is set, restore that backup after deploy (or continue fresh if not found).
+
+Migration flow (provisioned install):
+
+1) Create a migration backup on the source host:
+
+```bash
+inmanage core backup --name=migration --compress=tar.gz --include-app=true
+```
+
+Optionally write target-ready values into the backup `.env`:
+
+```bash
+inmanage core backup --create-migration-export
+```
+
+2) On the target host, point provision to the backup:
+
+- `inmanage core provision spawn --backup-file=/path/to/backup.tar.gz`
+- or `inmanage core provision spawn --latest-backup`
+- or set `INM_MIGRATION_BACKUP=LATEST` (or a path) in `.env.provision` / `.env.inmanage`
 
 ### Install flow (under the hood)
 
@@ -198,13 +227,14 @@ Provisioned install (high‑level):
 - Optional hooks: `post-install`.
 - Final cache cleanup: `config:clear` + `cache:clear`.
 
-Wizard install (high‑level):
+Clean install (high‑level):
 
 - Resolve base/app paths and load CLI/app config.
 - Optional hooks: `pre-install`.
 - Archive existing app directory if present.
 - Download Invoice Ninja release and unpack into a temp directory.
 - Deploy the new app into the install path.
+- Place a default, unconfigured `.env` for the web wizard to fill in.
 - Run artisan tasks: `key:generate`, `optimize`, `up`, `ninja:translations`, snappdf setup.
 - Optional cron install (scheduler only by default).
 - Optional hooks: `post-install`.
@@ -224,13 +254,13 @@ https://invoiceninja.github.io/en/self-host-installation/#configure-environment
 
 ### Wizard install
 
-Use this if you’re fine with the extra web-setup step (context switch happens in the wizard):
+Starts the wizard and lets you choose between provisioned and clean install:
 
 ```bash
 inmanage core install
 ```
 
-The wizard installs the app but leaves database setup to the web UI.
+The wizard installs the app and drops a default `.env`. You must complete the web setup to write DB/app values, then manually review `.env` for settings the GUI doesn’t cover.
 
 ### Clean/forced install
 
@@ -258,6 +288,7 @@ Update switches (`inmanage core update`):
 | `--cache-only` | `false` | Download package to cache only (no install). |
 | `--preserve-paths=a,b` | unset | Extra paths to preserve from the previous install (comma‑separated, relative to app root). Env: `INM_PRESERVE_PATHS`. |
 | `--no-db-backup` | `false` | Skip the mandatory pre-update DB backup (not recommended). |
+| `--bypass-check-sha` | `false` | Skip release digest verification (not recommended). |
 
 Rollback:
 
@@ -347,6 +378,22 @@ DB restore switches (`inmanage db restore`):
 | `--file=path` | unset | Path to SQL file or bundle. |
 | `--force` | `false` | Required (destructive). |
 | `--purge=true/false` | `true` | Drop existing tables before import. |
+
+DB create:
+
+```bash
+inmanage db create
+```
+
+DB create switches (`inmanage db create`):
+
+| Switch | Default | Description |
+| --- | --- | --- |
+| `--db-host=host` | `DB_HOST` | Override DB host for creation. |
+| `--db-port=port` | `DB_PORT` | Override DB port for creation. |
+| `--db-name=name` | `DB_DATABASE` | Override DB name for creation. |
+| `--db-user=user` | `DB_USERNAME` | Override DB user for creation. |
+| `--db-pass=pass` | `DB_PASSWORD` | Override DB password for creation. |
 
 ## Health checks
 
@@ -466,6 +513,7 @@ If `sudo` is not available:
 - **Config missing**: run any command from the base directory and create `.inmanage/.env.inmanage` when prompted.
 - **Permission errors**: ensure the enforced user matches your web server user, or use `--override-enforced-user` for a run.
 - **DB ambiguity**: set `INM_DB_CLIENT` explicitly.
+- **Health overview**: run `inmanage core health` (or `inmanage core health --checks=CRON,DB,WEB`) for a quick scan.
 
 ## Docker notes
 

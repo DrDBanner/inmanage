@@ -19,21 +19,26 @@ core:
                               --clean --provision --version=<v>
                               --cron-mode=auto|system|crontab --no-cron-install
                               --cron-jobs=scheduler|backup|both --no-backup-cron --backup-time=HH:MM
+                              --bypass-check-sha
                               Provisioned install is recommended (uses .inmanage/.env.provision; create with core provision spawn)
 
   update                      Update Invoice Ninja
-                              --version=<v> --force --cache-only --no-db-backup
+                              --version=<v> --force --cache-only --no-db-backup --preserve-paths=a,b
+                              --bypass-check-sha
                               rollback [last|<dir>]
 
   backup                      Full backup (db+files)
-                              --compress=tar.gz|zip|false --name=<label> --extra-paths=a,b --create-migration-export
+                              --compress=tar.gz|zip|false --name=<label> --extra-paths=a,b|--extra=a,b
+                              --create-migration-export
 
   restore                     Restore from bundle
                               --file=<bundle> --force --target=<path>
                               --autofill-missing[=1|0] --autofill-missing-app=1|0 --autofill-missing-db=1|0
+                              --latest --auto-select=true|false
 
   health (info)               Preflight/health check
-                              --checks=TAG1,TAG2 (e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
+                              --checks=TAG1,TAG2 --check=TAG1,TAG2 --fix-permissions
+                              (e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
 
   version                     Show installed/latest/cached version
 
@@ -59,7 +64,8 @@ db:
 
 files:
   backup                      Files-only backup (storage/uploads)
-                              --compress=tar.gz|zip|false --name=<label>
+                              --compress=tar.gz|zip|false --name=<label> --include-app=true|false
+                              --extra-paths=a,b|--extra=a,b
   prune                       Cleanup old file backups
 
 self:
@@ -83,6 +89,12 @@ Global Flags:
   --dry-run                      Log intended actions, skip execution
   --override-enforced-user       Skip enforced user switch for this run
   --no-cli-clear                 Skip clearing terminal and logo output
+  --ninja-location=path          Use a specific app directory (must contain .env)
+  --config=path                  Use a specific CLI config file (.env.inmanage)
+  --config-root=dir              Override CLI config directory root (default .inmanage)
+  --auto-create-config=true|false Auto-persist derived CLI config when missing
+  --auto-select=true|false       Auto-select defaults when no TTY is available
+  --select-timeout=secs          Timeout for interactive selections (seconds)
   -h, --help                     Show this help
 
 Args:
@@ -103,20 +115,20 @@ show_context_help() {
         core)
             cat <<'EOF'
 core actions:
-  install [--clean] [--provision] [--version=v]
+  install [--clean] [--provision] [--version=v] [--bypass-check-sha]
          # Provisioned install is recommended; wizard install only when needed.
-  update [--version=v] [--force] [--cache-only]
+  update [--version=v] [--force] [--cache-only] [--no-db-backup] [--preserve-paths=a,b] [--bypass-check-sha]
          rollback [last|<dir>]
   backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false] [--extra-paths=a,b]
-         [--create-migration-export]
+         [--create-migration-export] [--extra=a,b]
          # Default: single full bundle (app+env+db). Flags narrow scope or add extras.
-  restore --file=... [--force] [--include-app=true|false] [--target=...]
+  restore --file=... [--force] [--include-app=true|false] [--target=...] [--latest] [--auto-select=true|false]
          # DB import requires --force.
-  health | info
+  health | info [--checks=TAG1,TAG2] [--check=TAG1,TAG2] [--fix-permissions]
   version
   prune [--override-enforced-user] | prune_versions | prune_backups
   clear-cache
-  cron install|uninstall [--user=name] [--jobs=scheduler|backup|both] [--mode=auto|system|crontab]
+  cron install|uninstall [--user=name] [--jobs=scheduler|backup|both] [--mode=auto|system|crontab] [--backup-time=HH:MM]
   provision spawn [--provision-file=path] [--backup-file=path|--latest-backup]
 EOF
             ;;
@@ -186,6 +198,7 @@ core install:
   - Optional: --cron-jobs=scheduler|backup|both to override installed cron jobs
   - Optional: --no-backup-cron to skip the backup cron job
   - Optional: --backup-time=HH:MM for the backup cron schedule (default 03:24)
+  - Optional: --bypass-check-sha to skip release digest verification (not recommended)
   - Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
                     ;;
@@ -193,6 +206,7 @@ EOF
                     cat <<'EOF'
 core update:
   inmanage core update [--version=v] [--force] [--cache-only] [--no-db-backup]
+                      [--preserve-paths=a,b] [--bypass-check-sha]
   inmanage core update rollback [last|<dir>]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
@@ -203,7 +217,8 @@ EOF
 core backup:
   inmanage core backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false]
                        [--bundle=true|false] [--db=true|false] [--storage=true|false] [--uploads=true|false]
-                       [--fullbackup=true|false] [--extra-paths=a,b] [--create-migration-export]
+                       [--fullbackup=true|false] [--extra-paths=a,b] [--extra=a,b]
+                       [--create-migration-export]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -213,6 +228,7 @@ EOF
 core restore:
   inmanage core restore --file=... [--force] [--include-app=true|false] [--target=...]
   --autofill-missing[=1|0] --autofill-missing-app=1|0 --autofill-missing-db=1|0
+  --latest --auto-select=true|false
   - DB import requires --force
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
@@ -221,7 +237,8 @@ EOF
                 health|info)
                     cat <<'EOF'
 core health (info):
-  inmanage core health [--checks=TAG1,TAG2]
+  inmanage core health [--checks=TAG1,TAG2] [--check=TAG1,TAG2] [--fix-permissions]
+                       [--no-cli-clear]
   Tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
@@ -313,7 +330,8 @@ EOF
                 create)
                     cat <<'EOF'
 db create:
-  inmanage db create
+  inmanage db create [--db-host=host] [--db-port=port] [--db-name=name]
+                     [--db-user=user] [--db-pass=pass]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -330,7 +348,7 @@ EOF
 files backup:
   inmanage files backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false]
                         [--bundle=true|false] [--storage=true|false] [--uploads=true|false]
-                        [--extra-paths=a,b]
+                        [--extra-paths=a,b] [--extra=a,b]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
