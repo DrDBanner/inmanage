@@ -74,12 +74,101 @@ spinner_stop() {
     SPINNER_STYLE=""
 }
 
+run_with_watchdog() {
+    local timeout="$1"
+    local heartbeat="$2"
+    local msg="$3"
+    shift 3
+
+    local errexit_set=false
+    [[ $- == *e* ]] && errexit_set=true
+    set +e
+    local interrupted=false
+    local cmd_pid=""
+    local old_int old_term
+    old_int="$(trap -p INT)"
+    old_term="$(trap -p TERM)"
+    trap 'interrupted=true; if [ -n "$cmd_pid" ]; then kill "$cmd_pid" 2>/dev/null || true; fi; spinner_stop' INT TERM
+
+    "$@" &
+    cmd_pid=$!
+    local start now last_beat
+    start="$(date +%s)"
+    last_beat="$start"
+    local timed_out=false
+
+    while kill -0 "$cmd_pid" 2>/dev/null; do
+        sleep 1
+        now="$(date +%s)"
+        if [ "$interrupted" = true ]; then
+            break
+        fi
+        if [[ "$heartbeat" =~ ^[0-9]+$ ]] && [ "$heartbeat" -gt 0 ]; then
+            if [ $((now - last_beat)) -ge "$heartbeat" ]; then
+                if declare -F log >/dev/null 2>&1; then
+                    log info "[WAIT] ${msg:-Working}..."
+                else
+                    printf "%s [INFO] [WAIT] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "${msg:-Working}" >&2
+                fi
+                last_beat="$now"
+            fi
+        fi
+        if [[ "$timeout" =~ ^[0-9]+$ ]] && [ "$timeout" -gt 0 ]; then
+            if [ $((now - start)) -ge "$timeout" ]; then
+                timed_out=true
+                kill "$cmd_pid" 2>/dev/null || true
+                sleep 2
+                kill -9 "$cmd_pid" 2>/dev/null || true
+                break
+            fi
+        fi
+    done
+
+    local rc=0
+    if [ "$interrupted" = true ]; then
+        wait "$cmd_pid" 2>/dev/null || true
+        rc=130
+    elif [ "$timed_out" = true ]; then
+        wait "$cmd_pid" 2>/dev/null || true
+        if declare -F log >/dev/null 2>&1; then
+            log err "[TIMEOUT] ${msg:-Command} exceeded ${timeout}s; aborted."
+        else
+            printf "%s [ERR] [TIMEOUT] %s exceeded %ss; aborted.\n" "$(date '+%Y-%m-%d %H:%M:%S')" "${msg:-Command}" "$timeout" >&2
+        fi
+        rc=124
+    else
+        wait "$cmd_pid"
+        rc=$?
+    fi
+
+    if [ -n "$old_int" ]; then
+        eval "$old_int"
+    else
+        trap - INT
+    fi
+    if [ -n "$old_term" ]; then
+        eval "$old_term"
+    else
+        trap - TERM
+    fi
+    $errexit_set && set -e
+    return $rc
+}
+
 spinner_run() {
     local msg="${1:-}"
     shift
     spinner_start "$msg"
-    "$@"
-    local rc=$?
+    local timeout="${INM_SPINNER_TIMEOUT:-0}"
+    local heartbeat="${INM_SPINNER_HEARTBEAT:-20}"
+    local rc=0
+    if [[ "$timeout" =~ ^[0-9]+$ ]] && [ "$timeout" -gt 0 ] || [[ "$heartbeat" =~ ^[0-9]+$ ]] && [ "$heartbeat" -gt 0 ]; then
+        run_with_watchdog "$timeout" "$heartbeat" "$msg" "$@"
+        rc=$?
+    else
+        "$@"
+        rc=$?
+    fi
     spinner_stop
     return $rc
 }

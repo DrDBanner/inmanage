@@ -288,6 +288,64 @@ run_preflight() {
     fi
     add_result INFO "SYS" "Host: ${host:-unknown} | OS: ${os:-unknown}"
     add_result INFO "SYS" "Kernel: ${kernel:-?} | Arch: ${arch:-?} | CPU cores: ${cpu:-?} | RAM: ${memtotal:-unknown}"
+    resolve_primary_ip4() {
+        local ip=""
+        if command -v ip >/dev/null 2>&1; then
+            ip=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}')
+        fi
+        if [ -z "$ip" ] && command -v hostname >/dev/null 2>&1; then
+            ip=$(hostname -I 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i !~ /^127\./) {print $i; exit}}')
+        fi
+        if [ -z "$ip" ] && command -v route >/dev/null 2>&1; then
+            local iface=""
+            iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')
+            if [ -z "$iface" ]; then
+                iface=$(route -n get -inet default 2>/dev/null | awk '/interface:/{print $2; exit}')
+            fi
+            if [ -z "$iface" ]; then
+                iface=$(route -n get 1.1.1.1 2>/dev/null | awk '/interface:/{print $2; exit}')
+            fi
+            if [ -n "$iface" ] && command -v ifconfig >/dev/null 2>&1; then
+                ip=$(ifconfig "$iface" 2>/dev/null | awk '/inet / {print $2; exit}')
+            fi
+            if [ -z "$ip" ]; then
+                ip=$(route -n get default 2>/dev/null | awk '/if address:/{print $3; exit}')
+            fi
+        fi
+        if [ -z "$ip" ] && command -v ifconfig >/dev/null 2>&1; then
+            ip=$(ifconfig 2>/dev/null | awk '/inet / {for(i=1;i<=NF;i++){if($i=="inet"){print $(i+1); exit} if($i ~ /^addr:/){sub(/^addr:/,"",$i); print $i; exit}}}')
+        fi
+        if [[ "$ip" == 127.* || "$ip" == 0.0.0.0 ]]; then
+            ip=""
+        fi
+        printf "%s" "$ip"
+    }
+    resolve_primary_ip6() {
+        local ip6=""
+        if command -v ip >/dev/null 2>&1; then
+            ip6=$(ip -6 route get 2001:4860:4860::8888 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}')
+        fi
+        if [ -z "$ip6" ] && command -v hostname >/dev/null 2>&1; then
+            ip6=$(hostname -I 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i ~ /:/ && $i !~ /^fe80:/) {print $i; exit}}')
+        fi
+        if [ -z "$ip6" ] && command -v ifconfig >/dev/null 2>&1; then
+            ip6=$(ifconfig 2>/dev/null | awk '/inet6 / {for(i=1;i<=NF;i++){if($i=="inet6"){print $(i+1); exit} if($i ~ /^addr:/){sub(/^addr:/,"",$i); print $i; exit}}}' | awk '$1 !~ /^fe80:/ {print $1; exit}')
+        fi
+        printf "%s" "$ip6"
+    }
+    local ip4 ip6
+    ip4="$(resolve_primary_ip4)"
+    ip6="$(resolve_primary_ip6)"
+    if [ -n "$ip4" ]; then
+        add_result INFO "SYS" "IPv4: $ip4"
+    else
+        add_result INFO "SYS" "IPv4: not detected"
+    fi
+    if [ -n "$ip6" ]; then
+        add_result INFO "SYS" "IPv6: $ip6"
+    else
+        add_result INFO "SYS" "IPv6: not detected"
+    fi
     # Container/virt hint
     local virt=""
     if command -v systemd-detect-virt >/dev/null 2>&1; then
@@ -612,6 +670,26 @@ run_preflight() {
         "$INM_INSTALLATION_PATH|App dir"
         "$INM_BACKUP_DIRECTORY|Backup dir"
     )
+    fs_du_timeout() {
+        local dir="$1"
+        local base=5
+        local max=120
+        local extra=0
+        if [ -n "${INM_BACKUP_DIRECTORY:-}" ] && [ "$dir" = "$INM_BACKUP_DIRECTORY" ]; then
+            if [ -d "$dir" ]; then
+                local count
+                count=$(find "$dir" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')
+                if [[ "$count" =~ ^[0-9]+$ ]]; then
+                    extra="$count"
+                fi
+            fi
+        fi
+        local timeout=$((base + extra))
+        if [ "$timeout" -gt "$max" ]; then
+            timeout="$max"
+        fi
+        printf "%s" "$timeout"
+    }
     for entry in "${fs_items[@]}"; do
         local dir label
         dir="${entry%%|*}"
@@ -620,7 +698,23 @@ run_preflight() {
         mkdir -p "$dir" 2>/dev/null
         local sz=""
         if [ -d "$dir" ] && command -v du >/dev/null 2>&1; then
-            sz=$(du -sh "$dir" 2>/dev/null | awk '{print $1}')
+            if command -v timeout >/dev/null 2>&1; then
+                local du_timeout du_out du_rc=0
+                du_timeout="$(fs_du_timeout "$dir")"
+                local errexit_set=false
+                [[ $- == *e* ]] && errexit_set=true
+                set +e
+                du_out=$(timeout "$du_timeout" du -sh "$dir" 2>/dev/null)
+                du_rc=$?
+                $errexit_set && set -e
+                if [ "$du_rc" -eq 0 ]; then
+                    sz=$(echo "$du_out" | awk '{print $1}')
+                elif [ "$du_rc" -eq 124 ]; then
+                    log debug "[FS] Size check timed out for $dir; skipping size."
+                fi
+            else
+                sz=$(du -sh "$dir" 2>/dev/null | awk '{print $1}')
+            fi
         fi
         if touch "$dir/.inm_perm_test" 2>/dev/null; then
             rm -f "$dir/.inm_perm_test"
