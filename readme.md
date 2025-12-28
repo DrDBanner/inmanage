@@ -1,6 +1,6 @@
 # INMANAGE – Invoice Ninja CLI
 
-inm (alias: inmanage) – CLI for Invoice Ninja
+inmanage (inm) – CLI for Invoice Ninja
 
 **Backup. Update. Install. Done.**
 
