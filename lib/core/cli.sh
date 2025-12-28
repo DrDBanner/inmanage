@@ -511,9 +511,20 @@ parse_options() {
         # shellcheck disable=SC2034
         CMD_EXTRA=("${positionals[@]:2}")
     elif [[ ${#positionals[@]} -eq 1 ]]; then
-        # Legacy single-word command
-        # shellcheck disable=SC2034
-        LEGACY_CMD="${positionals[0]}"
+        case "${positionals[0]}" in
+            core|db|files|env|self)
+                # Show context help when only a context is provided.
+                # shellcheck disable=SC2034
+                CMD_CONTEXT="${positionals[0]}"
+                # shellcheck disable=SC2034
+                SHOW_FUNCTION_HELP=true
+                ;;
+            *)
+                # Legacy single-word command
+                # shellcheck disable=SC2034
+                LEGACY_CMD="${positionals[0]}"
+                ;;
+        esac
     elif [[ "$version_only" == true ]]; then
         # shellcheck disable=SC2034
         LEGACY_CMD="version"
