@@ -9,7 +9,7 @@ REPO_URL="https://github.com/DrDBanner/inmanage.git"
 INSTALLER_BRANCH="${INSTALLER_BRANCH:-development}"
 BRANCH="${BRANCH:-$INSTALLER_BRANCH}"
 
-MODE="${MODE:-system}"          # system|user|project
+MODE="${MODE:-user}"            # system|user|project
 TARGET_DIR="${TARGET_DIR:-}"
 SYMLINK_DIR="${SYMLINK_DIR:-}"
 SOURCE_DIR="${SOURCE_DIR:-}"    # optional: use existing checkout instead of git clone
@@ -28,8 +28,8 @@ inmanage installer
 Usage: bash install_inmanage.sh [--mode system|user|project] [--target DIR] [--symlink-dir DIR] [--branch BRANCH] [--source PATH]
 
 Modes:
-  system  (default) install to /usr/local/share/inmanage, symlinks to /usr/local/bin (requires sudo)
-  user            install to ~/.inmanage_app, symlinks to ~/.local/bin
+  system          install to /usr/local/share/inmanage, symlinks to /usr/local/bin (requires sudo)
+  user  (default) install to ~/.inmanage_app, symlinks to ~/.local/bin
   project         install to ./ .inmanage_app, symlinks locally
 
 Options:
