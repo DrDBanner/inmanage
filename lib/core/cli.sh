@@ -40,7 +40,7 @@ core:
                               --checks=TAG1,TAG2 --check=TAG1,TAG2 --fix-permissions
                               (e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
 
-  version                     Show installed/latest/cached version
+  versions                    Show installed/latest/cached app versions
 
   prune                       Prune versions/backups/cache
                               --override-enforced-user (skip enforced switch)
@@ -71,6 +71,7 @@ files:
 self:
   install                     Install this CLI (global/local/project)
   update                      Update this CLI (git pull if checkout)
+  version                     Show CLI version/metadata
   switch-mode                 Reinstall in another mode (optionally clean old)
   uninstall                   Remove CLI symlinks; optionally delete install dir
 
@@ -95,6 +96,7 @@ Global Flags:
   --auto-create-config=true|false Auto-persist derived CLI config when missing
   --auto-select=true|false       Auto-select defaults when no TTY is available
   --select-timeout=secs          Timeout for interactive selections (seconds)
+  -v                            Show CLI version (alias: self version)
   -h, --help                     Show this help
 
 Args:
@@ -125,7 +127,7 @@ core actions:
   restore --file=... [--force] [--include-app=true|false] [--target=...] [--latest] [--auto-select=true|false]
          # DB import requires --force.
   health | info [--checks=TAG1,TAG2] [--check=TAG1,TAG2] [--fix-permissions]
-  version
+  versions
   prune [--override-enforced-user] | prune_versions | prune_backups
   clear-cache
   cron install|uninstall [--user=name] [--jobs=scheduler|backup|both] [--mode=auto|system|crontab] [--backup-time=HH:MM]
@@ -155,6 +157,7 @@ EOF
 self actions:
   install
   update
+  version
   switch-mode    # reinstall in another mode; optionally clean old install/symlinks
   uninstall      # remove symlinks; optionally delete install dir
 EOF
@@ -187,9 +190,9 @@ show_action_help() {
                 install)
                     cat <<'EOF'
 core install:
-  inmanage core install [--clean] [--provision] [--version=v]
+  inm core install [--clean] [--provision] [--version=v]
   - Recommended: provisioned install (uses .inmanage/.env.provision)
-  - Create provision file first: inmanage core provision spawn
+  - Create provision file first: inm core provision spawn
   - Wizard install only if you need the interactive web setup
   - Provisioned installs require --force (destructive)
   - Optional: --no-backup to skip pre-provision DB backup
@@ -205,9 +208,9 @@ EOF
                 update)
                     cat <<'EOF'
 core update:
-  inmanage core update [--version=v] [--force] [--cache-only] [--no-db-backup]
+  inm core update [--version=v] [--force] [--cache-only] [--no-db-backup]
                       [--preserve-paths=a,b] [--bypass-check-sha]
-  inmanage core update rollback [last|<dir>]
+  inm core update rollback [last|<dir>]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -215,7 +218,7 @@ EOF
                 backup)
                     cat <<'EOF'
 core backup:
-  inmanage core backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false]
+  inm core backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false]
                        [--bundle=true|false] [--db=true|false] [--storage=true|false] [--uploads=true|false]
                        [--fullbackup=true|false] [--extra-paths=a,b] [--extra=a,b]
                        [--create-migration-export]
@@ -226,7 +229,7 @@ EOF
                 restore)
                     cat <<'EOF'
 core restore:
-  inmanage core restore --file=... [--force] [--include-app=true|false] [--target=...]
+  inm core restore --file=... [--force] [--include-app=true|false] [--target=...]
   --autofill-missing[=1|0] --autofill-missing-app=1|0 --autofill-missing-db=1|0
   --latest --auto-select=true|false
   - DB import requires --force
@@ -237,7 +240,7 @@ EOF
                 health|info)
                     cat <<'EOF'
 core health (info):
-  inmanage core health [--checks=TAG1,TAG2] [--check=TAG1,TAG2] [--fix-permissions]
+  inm core health [--checks=TAG1,TAG2] [--check=TAG1,TAG2] [--fix-permissions]
                        [--no-cli-clear]
   Tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF
   
@@ -247,7 +250,16 @@ EOF
                 version)
                     cat <<'EOF'
 core version:
-  inmanage core version
+  inm core version
+  - Deprecated: use "inm core versions"
+
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
+EOF
+                    ;;
+                versions)
+                    cat <<'EOF'
+core versions:
+  inm core versions
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -255,7 +267,7 @@ EOF
                 prune)
                     cat <<'EOF'
 core prune:
-  inmanage core prune [--override-enforced-user]
+  inm core prune [--override-enforced-user]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -263,7 +275,7 @@ EOF
                 prune_versions|prune-versions)
                     cat <<'EOF'
 core prune-versions:
-  inmanage core prune-versions
+  inm core prune-versions
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -271,7 +283,7 @@ EOF
                 prune_backups|prune-backups)
                     cat <<'EOF'
 core prune-backups:
-  inmanage core prune-backups
+  inm core prune-backups
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -279,10 +291,10 @@ EOF
                 cron)
                     cat <<'EOF'
 core cron install:
-  inmanage core cron install [--user=name] [--jobs=scheduler|backup|both]
+  inm core cron install [--user=name] [--jobs=scheduler|backup|both]
                              [--mode=auto|system|crontab] [--cron-file=path]
                              [--backup-time=HH:MM]
-  inmanage core cron uninstall [--mode=auto|system|crontab] [--cron-file=path]
+  inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -290,7 +302,7 @@ EOF
                 clear-cache|clear_cache)
                     cat <<'EOF'
 core clear-cache:
-  inmanage core clear-cache
+  inm core clear-cache
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -298,7 +310,7 @@ EOF
                 provision)
                     cat <<'EOF'
 core provision spawn:
-  inmanage core provision spawn [--provision-file=path] [--backup-file=path|--latest-backup]
+  inm core provision spawn [--provision-file=path] [--backup-file=path|--latest-backup]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -313,7 +325,7 @@ EOF
                 backup)
                     cat <<'EOF'
 db backup:
-  inmanage db backup [--compress=tar.gz|zip|false] [--name=...]
+  inm db backup [--compress=tar.gz|zip|false] [--name=...]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -321,7 +333,7 @@ EOF
                 restore)
                     cat <<'EOF'
 db restore:
-  inmanage db restore --file=path [--force] [--purge=true]
+  inm db restore --file=path [--force] [--purge=true]
   - Requires --force (destructive)
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
@@ -330,7 +342,7 @@ EOF
                 create)
                     cat <<'EOF'
 db create:
-  inmanage db create [--db-host=host] [--db-port=port] [--db-name=name]
+  inm db create [--db-host=host] [--db-port=port] [--db-name=name]
                      [--db-user=user] [--db-pass=pass]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
@@ -346,7 +358,7 @@ EOF
                 backup)
                     cat <<'EOF'
 files backup:
-  inmanage files backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false]
+  inm files backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false]
                         [--bundle=true|false] [--storage=true|false] [--uploads=true|false]
                         [--extra-paths=a,b] [--extra=a,b]
   
@@ -356,7 +368,7 @@ EOF
                 prune)
                     cat <<'EOF'
 files prune:
-  inmanage files prune
+  inm files prune
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -368,13 +380,14 @@ EOF
             ;;
         self)
             case "$action" in
-                install|update|switch-mode|switch_mode|uninstall)
+                install|update|switch-mode|switch_mode|uninstall|version)
                     cat <<'EOF'
 self commands:
-  inmanage self install
-  inmanage self update
-  inmanage self switch-mode
-  inmanage self uninstall
+  inm self install
+  inm self update
+  inm self version
+  inm self switch-mode
+  inm self uninstall
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -389,10 +402,10 @@ EOF
                 set|get|unset|show)
                     cat <<'EOF'
 env commands:
-  inmanage env set <app|cli> KEY VALUE
-  inmanage env get <app|cli> KEY
-  inmanage env unset <app|cli> KEY
-  inmanage env show [app|cli]
+  inm env set <app|cli> KEY VALUE
+  inm env get <app|cli> KEY
+  inm env unset <app|cli> KEY
+  inm env show [app|cli]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
@@ -435,6 +448,7 @@ parse_options() {
     LEGACY_CMD=""
 
     local positionals=()
+    local version_only=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -443,6 +457,9 @@ parse_options() {
                 SHOW_FUNCTION_HELP=true
                 shift
                 continue
+                ;;
+            -v)
+                version_only=true
                 ;;
             --no-cli-clear)
                 NAMED_ARGS[no_cli_clear]=true
@@ -470,10 +487,10 @@ parse_options() {
                 DRY_RUN=true
                 ;;
             --override_enforced_user)
-                NAMED_ARGS[override_enforced_user]=true
+                NAMED_ARGS["override_enforced_user"]=true
                 ;;
             --override-enforced-user)
-                NAMED_ARGS[override_enforced_user]=true
+                NAMED_ARGS["override_enforced_user"]=true
                 ;;
             *)
                 # Only treat as positional if it is not an option (starts with -- or -)
@@ -487,12 +504,19 @@ parse_options() {
 
     # Subcommand detection
     if [[ ${#positionals[@]} -ge 2 ]]; then
+        # shellcheck disable=SC2034
         CMD_CONTEXT="${positionals[0]}"
+        # shellcheck disable=SC2034
         CMD_ACTION="${positionals[1]}"
+        # shellcheck disable=SC2034
         CMD_EXTRA=("${positionals[@]:2}")
     elif [[ ${#positionals[@]} -eq 1 ]]; then
         # Legacy single-word command
+        # shellcheck disable=SC2034
         LEGACY_CMD="${positionals[0]}"
+    elif [[ "$version_only" == true ]]; then
+        # shellcheck disable=SC2034
+        LEGACY_CMD="version"
     fi
 
     # Export well-known flags so downstream helpers see them

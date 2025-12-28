@@ -62,8 +62,6 @@ install_self() {
 
   # Allow override of the computed install directory per mode
   install_dir="$(prompt_var "INSTALL_DIR" "$install_dir" "Install directory for the inmanage app? (ENTER for default)")"
-  INM_SELF_INSTALL_DIR="$install_dir"
-
   resolve_path() {
     if declare -F resolve_script_path >/dev/null 2>&1; then
       resolve_script_path "$1" 2>/dev/null && return
@@ -223,6 +221,10 @@ self_update() {
     log warn "[SELF] No git metadata found at $root; re-run installer to update."
     return 1
   fi
+  if [[ ! -w "$root" || ! -w "$root/.git" ]] && [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+    log err "[SELF] No write access to $root. Re-run with sudo or change ownership."
+    return 1
+  fi
   if [[ "${DRY_RUN:-false}" == true ]]; then
     log info "[DRY-RUN] Would run git pull in $root"
     return 0
@@ -316,6 +318,59 @@ self_uninstall() {
 }
 
 # ---------------------------------------------------------------------
+# self_version()
+# Shows CLI version/metadata.
+# ---------------------------------------------------------------------
+self_version() {
+  local root
+  root="$(cd "$(dirname "$0")" && pwd)"
+
+  log info "[SELF] CLI path: $root"
+  if [ -f "$root/VERSION" ]; then
+    local cli_ver
+    cli_ver="$(<"$root/VERSION")"
+    log info "[SELF] Version file: $cli_ver"
+  fi
+  if command -v git >/dev/null 2>&1 && [ -d "$root/.git" ]; then
+    local branch commit dirty=""
+    branch="$(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    commit="$(git -C "$root" rev-parse --short HEAD 2>/dev/null || true)"
+    git -C "$root" status --porcelain >/dev/null 2>&1 && \
+      git -C "$root" status --porcelain | grep -q . && dirty="*"
+    branch="${branch:-unknown}"
+    commit="${commit:-unknown}"
+    log info "[SELF] Source: git checkout (branch=${branch} commit=${commit}${dirty})"
+    local commit_date
+    commit_date="$(git -C "$root" log -1 --format=%cd --date=iso 2>/dev/null || true)"
+    [[ -n "$commit_date" ]] && log info "[SELF] Last commit date: $commit_date"
+  else
+    log warn "[SELF] Source: no git metadata (tarball/snapshot install)"
+  fi
+
+  local mode="unknown"
+  if [ -n "${INM_SELF_INSTALL_MODE:-}" ]; then
+    case "${INM_SELF_INSTALL_MODE}" in
+      1|system) mode="system" ;;
+      2|local|user) mode="user" ;;
+      3|project) mode="project" ;;
+    esac
+  fi
+  if [ "$mode" = "unknown" ]; then
+    if [[ "$root" == "/usr/local/share/inmanage" ]]; then
+      mode="system"
+    elif [[ -n "${HOME:-}" && "$root" == "${HOME%/}/.inmanage_app" ]]; then
+      mode="user"
+    elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$root" == "${INM_BASE_DIRECTORY%/}/.inmanage_app" ]]; then
+      mode="project"
+    elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$root" == "${INM_BASE_DIRECTORY%/}"* ]]; then
+      mode="project"
+    fi
+  fi
+  log info "[SELF] Install mode: ${mode}"
+  log info "[SELF] App versions: run 'inm core versions'"
+}
+
+# ---------------------------------------------------------------------
 # Legacy migration helpers
 # ---------------------------------------------------------------------
 legacy_is_interactive() {
@@ -351,7 +406,8 @@ legacy_backup_path() {
   mkdir -p "$legacy_dir" 2>/dev/null || true
   local ts
   ts="$(date +%Y%m%d_%H%M%S)"
-  local dest="${legacy_dir%/}/$(basename "$path").${ts}"
+  local dest
+  dest="${legacy_dir%/}/$(basename "$path").${ts}"
 
   if [[ -L "$path" && ! -e "$path" ]]; then
     mv "$path" "$dest" 2>/dev/null && log info "[SELF] Archived legacy link: $path -> $dest"
@@ -403,7 +459,7 @@ legacy_warn_shell_alias() {
   done
   if [[ "$found" == true ]]; then
     log warn "[SELF] Shell alias/function detected for inmanage in your rc files."
-    log warn "[SELF] Remove legacy lines like: inmanage() { cd /base && sudo -u www-data ./inmanage.sh \"$@\"; }"
+    log warn '[SELF] Remove legacy lines like: inmanage() { cd /base && sudo -u www-data ./inmanage.sh "$@"; }'
   fi
 }
 

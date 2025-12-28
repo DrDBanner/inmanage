@@ -6,12 +6,15 @@ set -euo pipefail
 
 APP_NAME="inmanage"
 REPO_URL="https://github.com/DrDBanner/inmanage.git"
-BRANCH="${BRANCH:-main}"
+INSTALLER_BRANCH="${INSTALLER_BRANCH:-development}"
+BRANCH="${BRANCH:-$INSTALLER_BRANCH}"
 
 MODE="${MODE:-system}"          # system|user|project
 TARGET_DIR="${TARGET_DIR:-}"
 SYMLINK_DIR="${SYMLINK_DIR:-}"
 SOURCE_DIR="${SOURCE_DIR:-}"    # optional: use existing checkout instead of git clone
+MODE_SET=false
+ORIG_ARGS=()
 
 log() {
   local level="$1"; shift
@@ -41,7 +44,7 @@ EOF
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --mode) MODE="$2"; shift 2 ;;
+      --mode) MODE="$2"; MODE_SET=true; shift 2 ;;
       --target) TARGET_DIR="$2"; shift 2 ;;
       --symlink-dir) SYMLINK_DIR="$2"; shift 2 ;;
       --branch) BRANCH="$2"; shift 2 ;;
@@ -56,15 +59,46 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || { log ERR "Missing required command: $1"; exit 1; }
 }
 
+rerun_with_sudo() {
+  if ! command -v sudo >/dev/null 2>&1; then
+    log ERR "System mode requires sudo. Please rerun with sudo."
+    exit 1
+  fi
+  if [[ -f "${BASH_SOURCE[0]}" ]]; then
+    log INFO "Re-running installer with sudo (system mode)."
+    exec sudo --preserve-env=BRANCH,INSTALLER_BRANCH,TARGET_DIR,SYMLINK_DIR,SOURCE_DIR \
+      bash "${BASH_SOURCE[0]}" --mode system "${ORIG_ARGS[@]}"
+  fi
+  log ERR "System mode requires sudo. Please rerun with sudo."
+  exit 1
+}
+
 pick_defaults() {
+  if [[ "$MODE" == "system" && ${EUID:-$(id -u)} -ne 0 ]]; then
+    if [[ "$MODE_SET" == true ]]; then
+      log ERR "System mode requires root (sudo). Please rerun with sudo."
+      exit 1
+    fi
+    if [[ -t 0 && -t 1 ]]; then
+      log WARN "System mode requires root. Select another mode:"
+      printf "  [1] User (no sudo)\n  [2] Project (current dir)\n  [3] System (requires sudo)\n"
+      read -r -p "[1] > " choice
+      case "${choice:-1}" in
+        1) MODE="user" ;;
+        2) MODE="project" ;;
+        3) rerun_with_sudo ;;
+        *) log ERR "Invalid selection: $choice"; exit 1 ;;
+      esac
+    else
+      log ERR "System mode requires root (sudo). Use --mode user or --mode project."
+      exit 1
+    fi
+  fi
+
   case "$MODE" in
     system)
       TARGET_DIR="${TARGET_DIR:-/usr/local/share/${APP_NAME}}"
       SYMLINK_DIR="${SYMLINK_DIR:-/usr/local/bin}"
-      if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
-        log ERR "System mode requires root (sudo). Please rerun with sudo."
-        exit 1
-      fi
       ;;
     user)
       TARGET_DIR="${TARGET_DIR:-$HOME/.inmanage_app}"
@@ -146,12 +180,12 @@ warn_shadowing() {
 }
 
 main() {
+  ORIG_ARGS=("$@")
   parse_args "$@"
-  log INFO "Mode: $MODE | Branch: $BRANCH"
-
   require_cmd git
   warn_shadowing
   pick_defaults
+  log INFO "Mode: $MODE | Branch: $BRANCH"
   log INFO "Target: $TARGET_DIR | Symlinks: $SYMLINK_DIR"
 
   ensure_dirs

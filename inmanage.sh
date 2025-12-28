@@ -236,7 +236,7 @@ fi
 function_caller() {
     case "$1" in
     clean_install)
-        NAMED_ARGS[clean]=true
+        NAMED_ARGS["clean"]=true
         force_update=true
         run_installation
         ;;
@@ -302,7 +302,7 @@ if [[ "$SHOW_FUNCTION_HELP" == true ]]; then
     if [[ -z "$help_ctx" && -n "$LEGACY_CMD" ]]; then
         case "$LEGACY_CMD" in
             info|health) help_ctx="core"; help_action="health";;
-            version) help_ctx="core"; help_action="version";;
+            version) help_ctx="self"; help_action="version";;
             clear-cache|clear_cache) help_ctx="core"; help_action="clear-cache";;
             backup) help_ctx="core"; help_action="backup";;
             cleanup|prune) help_ctx="core"; help_action="prune";;
@@ -336,7 +336,16 @@ fi
 if [[ "$CMD_CONTEXT" == "env" ]]; then
     skip_clear_logo=true
 fi
+if [[ "$CMD_CONTEXT" == "self" && "$CMD_ACTION" == "version" ]]; then
+    skip_clear_logo=true
+fi
 if [[ "$CMD_CONTEXT" == "core" && "$CMD_ACTION" == "version" ]]; then
+    skip_clear_logo=true
+fi
+if [[ "$CMD_CONTEXT" == "core" && "$CMD_ACTION" == "versions" ]]; then
+    skip_clear_logo=true
+fi
+if [[ "${LEGACY_CMD:-}" == "version" ]]; then
     skip_clear_logo=true
 fi
 if [[ "$SHOW_FUNCTION_HELP" == true || "$CMD_ACTION" == "help" || "$CMD_CONTEXT" == "help" ]]; then
@@ -407,11 +416,14 @@ dispatch_command() {
                 call_with_named_args run_preflight
                 ;;
             version)
-                local ver
+                log warn "[core] 'core version' is deprecated; use 'core versions'."
+                call_with_named_args show_versions_summary
+                ;;
+            versions)
                 call_with_named_args show_versions_summary
                 ;;
             backup)
-                NAMED_ARGS[fullbackup]=true
+                NAMED_ARGS["fullbackup"]=true
                 if skip_if_dry_run "core backup"; then return 0; fi
                 call_with_named_args run_backup
                 ;;
@@ -471,11 +483,11 @@ dispatch_command() {
         db)
             case "$action" in
                 backup)
-                    NAMED_ARGS[db]=true
-                    NAMED_ARGS[fullbackup]=false
-                    NAMED_ARGS[include_app]=false
-                    NAMED_ARGS[storage]=false
-                    NAMED_ARGS[uploads]=false
+                    NAMED_ARGS["db"]=true
+                    NAMED_ARGS["fullbackup"]=false
+                    NAMED_ARGS["include_app"]=false
+                    NAMED_ARGS["storage"]=false
+                    NAMED_ARGS["uploads"]=false
                     if skip_if_dry_run "db backup"; then return 0; fi
                     call_with_named_args run_backup
                     ;;
@@ -500,10 +512,10 @@ dispatch_command() {
         files)
             case "$action" in
                 backup)
-                    NAMED_ARGS[db]=false
-                    NAMED_ARGS[storage]=true
-                    NAMED_ARGS[uploads]=true
-                    NAMED_ARGS[fullbackup]=false
+                    NAMED_ARGS["db"]=false
+                    NAMED_ARGS["storage"]=true
+                    NAMED_ARGS["uploads"]=true
+                    NAMED_ARGS["fullbackup"]=false
                     if skip_if_dry_run "files backup"; then return 0; fi
                     call_with_named_args run_backup
                     ;;
@@ -526,6 +538,9 @@ dispatch_command() {
                 update)
                     if skip_if_dry_run "self update"; then return 0; fi
                     call_with_named_args self_update
+                    ;;
+                version)
+                    call_with_named_args self_version
                     ;;
                 switch-mode|switch)
                     if skip_if_dry_run "self switch-mode"; then return 0; fi
@@ -597,7 +612,7 @@ elif [[ -n "$LEGACY_CMD" ]]; then
     # Map known single-word legacy actions to contexts
     case "$LEGACY_CMD" in
         info|health) CMD_CONTEXT="core"; CMD_ACTION="health";;
-        version) CMD_CONTEXT="core"; CMD_ACTION="version";;
+        version) CMD_CONTEXT="self"; CMD_ACTION="version";;
         clear-cache|clear_cache) CMD_CONTEXT="core"; CMD_ACTION="clear-cache";;
         backup) CMD_CONTEXT="core"; CMD_ACTION="backup";;
         update) CMD_CONTEXT="core"; CMD_ACTION="update";;
