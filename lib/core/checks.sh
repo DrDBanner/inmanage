@@ -205,24 +205,23 @@ check_envs() {
         log debug "[ENV] Skipping project config checks for self commands."
         return 0
     fi
+    local allow_missing_config=false
+    local skip_config_load=false
+    if [[ "${CMD_CONTEXT:-}" == "core" && ( "${CMD_ACTION:-}" == "health" || "${CMD_ACTION:-}" == "info" ) ]]; then
+        allow_missing_config=true
+    fi
+    if [[ "${LEGACY_CMD:-}" == "health" || "${LEGACY_CMD:-}" == "info" ]]; then
+        allow_missing_config=true
+    fi
 
-    check_base_directory_valid_and_enter || {
-        log err "[ENV] Base directory check failed. Aborting."
-        exit 1
-    }
+    if [[ "$allow_missing_config" != true && -n "${INM_BASE_DIRECTORY:-}" ]]; then
+        check_base_directory_valid_and_enter || {
+            log err "[ENV] Base directory check failed. Aborting."
+            exit 1
+        }
+    fi
 
     resolve_env_paths
-
-    # If base directory was empty initially but got derived from .env,
-    # try to enter it now. This keeps backward compat with explicit --base-directory
-    # while allowing auto-derivation. Remove this block if we make base mandatory again.
-    if [ -n "$INM_BASE_DIRECTORY" ] && [ "$PWD/" != "${INM_BASE_DIRECTORY%/}/" ]; then
-        if ! cd "$INM_BASE_DIRECTORY"; then
-            log err "[ENV] Failed to enter derived base directory: $INM_BASE_DIRECTORY"
-            exit 1
-        fi
-        log debug "[ENV] Changed into derived base directory: $INM_BASE_DIRECTORY"
-    fi
 
     log debug "[ENV] Current config target: ${INM_SELF_ENV_FILE:-<unset>}"
     if [ -n "${INM_SELF_ENV_FILE:-}" ]; then
@@ -260,46 +259,60 @@ check_envs() {
     if [ -z "${INM_SELF_ENV_FILE:-}" ] || [ ! -f "$INM_SELF_ENV_FILE" ]; then
         log note "[ENV] Project config file not found."
 
-        if [ "${NAMED_ARGS[auto_create_config]}" = true ]; then
-            log note "[ENV] Creating project config because --auto_create_config=true was passed."
-            create_own_config
-        else
-            local auto_create_answer
-            auto_create_answer=$(prompt_var "AUTO_CREATE_CONFIG" "no" \
-                "No project config found. Do you want to create a new configuration now?" false 60) || {
-                log err "[ENV] Timeout or error while prompting for config creation."
-                exit 1
-            }
+        if [[ "$allow_missing_config" == true ]]; then
+            log info "[ENV] Continuing without project config (health mode)."
+            skip_config_load=true
+        fi
 
-            if [[ "$auto_create_answer" =~ ^([yY][eE][sS]|[jJ][aA]|[yY])$ ]]; then
-                create_own_config || {
-                    log err "[ENV] Project configuration creation failed!"
+        if [[ "$skip_config_load" != true ]]; then
+            if [ "${NAMED_ARGS[auto_create_config]}" = true ]; then
+                log note "[ENV] Creating project config because --auto_create_config=true was passed."
+                create_own_config
+            else
+                local auto_create_answer
+                auto_create_answer=$(prompt_var "AUTO_CREATE_CONFIG" "no" \
+                    "No project config found. Do you want to create a new configuration now?" false 60) || {
+                    log err "[ENV] Timeout or error while prompting for config creation."
                     exit 1
                 }
-            else
-                log err "[ENV] Project configuration creation declined. Aborting."
-                exit 1
+
+                if [[ "$auto_create_answer" =~ ^([yY][eE][sS]|[jJ][aA]|[yY])$ ]]; then
+                    create_own_config || {
+                        log err "[ENV] Project configuration creation failed!"
+                        exit 1
+                    }
+                else
+                    log err "[ENV] Project configuration creation declined. Aborting."
+                    exit 1
+                fi
             fi
         fi
     fi
 
-    persist_derived_config
+    if [[ "$skip_config_load" != true ]]; then
+        persist_derived_config
 
-    # Config was found or created – validate and load
-    if [ ! -r "$INM_SELF_ENV_FILE" ]; then
-        log err "[ENV] Project config file '$INM_SELF_ENV_FILE' is not readable. Aborting."
-        exit 1
-    fi
+        # Config was found or created – validate and load
+        if [ ! -r "$INM_SELF_ENV_FILE" ]; then
+            log err "[ENV] Project config file '$INM_SELF_ENV_FILE' is not readable. Aborting."
+            exit 1
+        fi
 
-    log debug "[ENV] Loading project configuration from: $INM_SELF_ENV_FILE"
-    load_env_file_raw "$INM_SELF_ENV_FILE" || {
-        log err "[ENV] Failed to load project configuration."
-        exit 1
-    }
-    if declare -F should_suppress_pre_switch_logs >/dev/null 2>&1 && should_suppress_pre_switch_logs; then
-        log debug "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
-    else
-        log info "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
+        log debug "[ENV] Loading project configuration from: $INM_SELF_ENV_FILE"
+        load_env_file_raw "$INM_SELF_ENV_FILE" || {
+            log err "[ENV] Failed to load project configuration."
+            exit 1
+        }
+        if declare -F should_suppress_pre_switch_logs >/dev/null 2>&1 && should_suppress_pre_switch_logs; then
+            log debug "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
+        else
+            log info "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
+        fi
+
+        check_base_directory_valid_and_enter || {
+            log err "[ENV] Base directory check failed. Aborting."
+            exit 1
+        }
     fi
 
     # Expand placeholders in key paths after all loads (allows ${INM_BASE_DIRECTORY} style) without eval
@@ -386,8 +399,10 @@ check_envs() {
     log debug "[ENV] Current configuration file: $INM_SELF_ENV_FILE"
     log debug "[ENV] Enforced user: ${INM_ENFORCED_USER:-<not set>}"
 
-    check_missing_settings
-    check_provision_file
+    if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_SELF_ENV_FILE" ]; then
+        check_missing_settings
+        check_provision_file
+    fi
 }
 
 # ---------------------------------------------------------------------

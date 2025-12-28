@@ -239,18 +239,15 @@ run_preflight() {
         local user_data_home="${XDG_DATA_HOME:-${HOME%/}/.local/share}"
         user_data_home="${user_data_home%/}"
         local user_dir_default="${user_data_home}/inmanage"
-        local legacy_user_dir="${HOME%/}/.inmanage_app"
         local project_dir_default=""
-        local legacy_project_dir=""
         if [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
             project_dir_default="${INM_BASE_DIRECTORY%/}/.inmanage/cli"
-            legacy_project_dir="${INM_BASE_DIRECTORY%/}/.inmanage_app"
         fi
         if [[ "$cli_root" == "/usr/local/share/inmanage" ]]; then
             cli_install_mode="system"
-        elif [[ -n "${HOME:-}" && ( "$cli_root" == "$user_dir_default" || "$cli_root" == "$legacy_user_dir" ) ]]; then
+        elif [[ -n "${HOME:-}" && "$cli_root" == "$user_dir_default" ]]; then
             cli_install_mode="user"
-        elif [[ -n "${INM_BASE_DIRECTORY:-}" && ( "$cli_root" == "$project_dir_default" || "$cli_root" == "$legacy_project_dir" ) ]]; then
+        elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$cli_root" == "$project_dir_default" ]]; then
             cli_install_mode="project"
         elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$cli_root" == "${INM_BASE_DIRECTORY%/}"* ]]; then
             cli_install_mode="project"
@@ -782,12 +779,22 @@ run_preflight() {
         diskline=$(df -hP "$INM_BASE_DIRECTORY" | awk 'NR==2{print "avail:"$4" used:"$3" mount:"$6}')
         add_result INFO "FS" "$diskline (Disk @base)"
     fi
+    local cli_config_present=false
+    if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
+        cli_config_present=true
+    fi
+
     # Base, app, backup directories
-    local fs_items=(
-        "$INM_BASE_DIRECTORY|Base dir"
-        "$INM_INSTALLATION_PATH|App dir"
-        "$INM_BACKUP_DIRECTORY|Backup dir"
-    )
+    local fs_items=()
+    if [ "$cli_config_present" = true ]; then
+        fs_items=(
+            "$INM_BASE_DIRECTORY|Base dir"
+            "$INM_INSTALLATION_PATH|App dir"
+            "$INM_BACKUP_DIRECTORY|Backup dir"
+        )
+    else
+        add_result INFO "FS" "Not installed (yet) – base/app/backup checks skipped (CLI config missing)"
+    fi
     fs_du_timeout() {
         local dir="$1"
         local base=5
