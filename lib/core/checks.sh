@@ -118,7 +118,21 @@ check_missing_settings() {
 # Verifies required external tools and shell builtins are available.
 # ---------------------------------------------------------------------
 check_commands() {
+    local mode="${1:-full}"
     local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "grep" "xargs" "php" "touch" "sed" "sudo" "tee" "rsync" "awk" "jq" "git" "composer" "zip" "unzip" "sha256sum")
+    if [ "$mode" = "self" ]; then
+        local filtered=()
+        local cmd=""
+        for cmd in "${commands[@]}"; do
+            case "$cmd" in
+                php|jq|composer|sudo) continue ;;
+            esac
+            filtered+=("$cmd")
+        done
+        commands=("${filtered[@]}")
+    elif [ "$mode" = "self_update" ]; then
+        commands=("git")
+    fi
     local missing_commands=()
 
     for cmd in "${commands[@]}"; do
@@ -127,15 +141,17 @@ check_commands() {
         fi
     done
 
-    local db_client=""
-    local db_dump=""
-    db_client="$(select_db_client false false)"
-    db_dump="$(select_db_dump "$db_client")"
-    if [ -z "$db_client" ]; then
-        missing_commands+=("mysql/mariadb")
-    fi
-    if [ -z "$db_dump" ]; then
-        missing_commands+=("mysqldump/mariadb-dump")
+    if [ "$mode" = "full" ]; then
+        local db_client=""
+        local db_dump=""
+        db_client="$(select_db_client false false)"
+        db_dump="$(select_db_dump "$db_client")"
+        if [ -z "$db_client" ]; then
+            missing_commands+=("mysql/mariadb")
+        fi
+        if [ -z "$db_dump" ]; then
+            missing_commands+=("mysqldump/mariadb-dump")
+        fi
     fi
 
     local shell_builtins=("read")

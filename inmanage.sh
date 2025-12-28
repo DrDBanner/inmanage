@@ -322,7 +322,17 @@ if [[ "$SHOW_FUNCTION_HELP" == true ]]; then
     exit 0
 fi
 
-check_commands
+cmd_check_mode="full"
+if [[ "$CMD_CONTEXT" == "self" ]]; then
+    if [[ "$CMD_ACTION" == "update" ]]; then
+        cmd_check_mode="self_update"
+    else
+        cmd_check_mode="self"
+    fi
+elif [[ "${LEGACY_CMD:-}" == "version" ]]; then
+    cmd_check_mode="self"
+fi
+check_commands "$cmd_check_mode"
 check_envs "$@"
 check_gh_credentials
 
