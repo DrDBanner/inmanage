@@ -15,14 +15,14 @@ Inmanage is the CLI for self-hosted Invoice Ninja. Focus: **save time**, **less 
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | bash
 ```
 
-With a TTY, the installer will ask for the install mode. Non-interactive runs default to user mode.
+The installer auto-selects the install mode (system when run as root, otherwise user).
 - Full install: system-wide (requires sudo/root)
 - Local install: user context (~/.local/bin)
 - Project install: once per project
 
 If you choose project mode, run the installer from your base directory.
 For system installs via curl|bash, add `--mode system` and run with sudo.
-User installs live in `~/.local/share/inmanage` (XDG); legacy `~/.inmanage_app` stays supported.
+User installs live in `~/.local/share/inmanage` (XDG).
 
 Then go to your base directory and run the first command:
 

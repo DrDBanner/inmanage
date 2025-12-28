@@ -51,10 +51,10 @@ Inmanage is the CLI for self-hosted Invoice Ninja. It is built for **convenience
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | bash
 ```
 
-If run with a TTY, the installer asks for an install mode and creates symlinks (`inm`, `inmanage`) if possible.
+The installer auto-selects the install mode (system when run as root, otherwise user) and creates symlinks (`inm`, `inmanage`) if possible.
 If you choose project mode, run the installer from your base directory.
 System mode requires sudo.
-Non-interactive runs default to user mode; ensure the symlink dir is on `PATH` if `inm` is not found.
+Ensure the symlink dir is on `PATH` if `inm` is not found.
 Default paths:
 - System: `/usr/local/share/inmanage` (symlinks in `/usr/local/bin`)
 - User: `~/.local/share/inmanage` (symlinks in `~/.local/bin`)
@@ -64,7 +64,7 @@ Installer options (`install_inmanage.sh`):
 
 | Switch | Default | Description |
 | --- | --- | --- |
-| `--mode system / user / project` | `user` | Install mode (system requires sudo). |
+| `--mode system / user / project` | auto | Install mode (system when run as root, otherwise user). |
 | `--target DIR` | mode default | Install directory. |
 | `--symlink-dir DIR` | mode default | Where to place `inm`/`inmanage` symlinks. |
 | `--run-user USER` | auto | User that will run CLI/cron tasks (used for user installs). |

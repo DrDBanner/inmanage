@@ -32,8 +32,7 @@ Modes:
   project         install to ./.inmanage/cli, symlinks locally
 
 Notes:
-  - With a TTY, the installer asks for the mode.
-  - Non-interactive runs default to user mode.
+  - Auto mode: system when run as root, otherwise user.
   - Use --run-user for user installs (e.g., www-data).
 
 Options:
@@ -62,12 +61,6 @@ parse_args() {
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || { log ERR "Missing required command: $1"; exit 1; }
-}
-
-maybe_default_mode() {
-  if [[ -z "$MODE" && ! -t 0 && ! -t 1 ]]; then
-    MODE="user"
-  fi
 }
 
 maybe_default_run_user() {
@@ -129,7 +122,6 @@ run_self_install() {
 main() {
   parse_args "$@"
   auto_source_dir
-  maybe_default_mode
   maybe_default_run_user
   prepare_source
   trap cleanup EXIT
