@@ -53,8 +53,10 @@ run_installation() {
     local force="${NAMED_ARGS[force]:-${force_update:-false}}"
 
     if [ "$mode" = "Provisioned" ] && [[ "$force" != true ]]; then
-        log err "[TAR] Provisioned install is destructive. Re-run with --force."
-        return 1
+        if [[ -n "$install_path" && -d "$install_path" ]] && find "$install_path" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
+            log err "[TAR] Provisioned install is destructive. Re-run with --force."
+            return 1
+        fi
     fi
 
     if [ "$mode" = "Provisioned" ]; then
