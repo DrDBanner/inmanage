@@ -9,11 +9,15 @@ REPO_URL="https://github.com/DrDBanner/inmanage.git"
 INSTALLER_BRANCH="${INSTALLER_BRANCH:-development}"
 BRANCH="${BRANCH:-$INSTALLER_BRANCH}"
 
+MODE_SET=false
+MODE_SET_BY_ENV=false
+if [[ -n "${MODE+x}" ]]; then
+  MODE_SET_BY_ENV=true
+fi
 MODE="${MODE:-user}"            # system|user|project
 TARGET_DIR="${TARGET_DIR:-}"
 SYMLINK_DIR="${SYMLINK_DIR:-}"
 SOURCE_DIR="${SOURCE_DIR:-}"    # optional: use existing checkout instead of git clone
-MODE_SET=false
 ORIG_ARGS=()
 
 log() {
@@ -55,6 +59,40 @@ parse_args() {
   done
 }
 
+can_prompt() {
+  [[ -t 0 && -t 1 ]]
+}
+
+prompt_tty() {
+  local prompt="$1"
+  local __outvar="$2"
+  local choice=""
+
+  read -r -p "$prompt" choice || true
+  printf -v "$__outvar" "%s" "$choice"
+}
+
+path_has_dir() {
+  local dir="$1"
+  case ":${PATH}:" in
+    *":${dir}:"*) return 0 ;;
+  esac
+  return 1
+}
+
+pick_user_symlink_dir() {
+  local dir=""
+  IFS=':' read -ra path_parts <<< "$PATH"
+  for dir in "${path_parts[@]}"; do
+    [[ -z "$dir" ]] && continue
+    if [[ "$dir" == /* && -d "$dir" && -w "$dir" ]]; then
+      printf "%s" "$dir"
+      return 0
+    fi
+  done
+  printf "%s" "$HOME/.local/bin"
+}
+
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || { log ERR "Missing required command: $1"; exit 1; }
 }
@@ -74,21 +112,26 @@ rerun_with_sudo() {
 }
 
 pick_defaults() {
+  if [[ "$MODE_SET" == false && "$MODE_SET_BY_ENV" == false ]] && can_prompt; then
+    local choice=""
+    log INFO "Select install mode:"
+    printf "  [1] User (default, no sudo)\n  [2] Project (current dir)\n  [3] System (requires sudo)\n" >&2
+    prompt_tty "[1] > " choice
+    case "${choice:-1}" in
+      1) MODE="user" ;;
+      2) MODE="project" ;;
+      3) MODE="system" ;;
+      *) log ERR "Invalid selection: $choice"; exit 1 ;;
+    esac
+  fi
+
   if [[ "$MODE" == "system" && ${EUID:-$(id -u)} -ne 0 ]]; then
-    if [[ "$MODE_SET" == true ]]; then
+    if [[ "$MODE_SET" == true || "$MODE_SET_BY_ENV" == true ]]; then
       log ERR "System mode requires root (sudo). Please rerun with sudo."
       exit 1
     fi
-    if [[ -t 0 && -t 1 ]]; then
-      log WARN "System mode requires root. Select another mode:"
-      printf "  [1] User (no sudo)\n  [2] Project (current dir)\n  [3] System (requires sudo)\n"
-      read -r -p "[1] > " choice
-      case "${choice:-1}" in
-        1) MODE="user" ;;
-        2) MODE="project" ;;
-        3) rerun_with_sudo ;;
-        *) log ERR "Invalid selection: $choice"; exit 1 ;;
-      esac
+    if can_prompt; then
+      rerun_with_sudo
     else
       log ERR "System mode requires root (sudo). Use --mode user or --mode project."
       exit 1
@@ -102,7 +145,7 @@ pick_defaults() {
       ;;
     user)
       TARGET_DIR="${TARGET_DIR:-$HOME/.inmanage_app}"
-      SYMLINK_DIR="${SYMLINK_DIR:-$HOME/.local/bin}"
+      SYMLINK_DIR="${SYMLINK_DIR:-$(pick_user_symlink_dir)}"
       ;;
     project)
       TARGET_DIR="${TARGET_DIR:-$(pwd)/.inmanage_app}"
@@ -154,6 +197,13 @@ install_symlinks() {
   done
 }
 
+warn_path_hint() {
+  if [[ "$MODE" == "user" && -n "$SYMLINK_DIR" ]] && ! path_has_dir "$SYMLINK_DIR"; then
+    log WARN "Symlink dir is not on PATH: $SYMLINK_DIR"
+    log INFO "Add it to PATH (restart shell): export PATH=\"$SYMLINK_DIR:\$PATH\""
+  fi
+}
+
 post_message() {
   cat <<EOF
 
@@ -191,6 +241,7 @@ main() {
   ensure_dirs
   clone_or_update
   install_symlinks
+  warn_path_hint
   post_message
 }
 
