@@ -45,8 +45,44 @@ persist_derived_config() {
 
     chmod 644 "$INM_SELF_ENV_FILE" 2>/dev/null
     log ok "[PDC] Config persisted successfully"
+    warn_cli_config_owner_mismatch "$INM_SELF_ENV_FILE"
 
     return 0
+}
+
+config_expected_owner() {
+    local config_file="$1"
+    local user group
+    user="$(grep -E '^INM_ENFORCED_USER=' "$config_file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"')"
+    if [[ -z "$user" ]]; then
+        return 0
+    fi
+    group="$(grep -E '^INM_ENFORCED_GROUP=' "$config_file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"')"
+    if [[ -z "$group" ]]; then
+        group="$(id -gn "$user" 2>/dev/null || true)"
+        [[ -z "$group" ]] && group="$user"
+    fi
+    printf "%s:%s" "$user" "$group"
+}
+
+warn_cli_config_owner_mismatch() {
+    local config_file="$1"
+    if [[ -z "$config_file" || ! -f "$config_file" ]]; then
+        return 0
+    fi
+    local expected current
+    expected="$(config_expected_owner "$config_file")"
+    if [[ -z "$expected" ]]; then
+        return 0
+    fi
+    if declare -F _fs_get_owner >/dev/null 2>&1; then
+        current="$(_fs_get_owner "$config_file")"
+    else
+        current="$(stat -c '%U:%G' "$config_file" 2>/dev/null || stat -f '%Su:%Sg' "$config_file" 2>/dev/null || echo "")"
+    fi
+    if [[ -n "$current" && "$current" != "$expected" ]]; then
+        log warn "[CFG] Config owner mismatch: $config_file (owner=$current, expected=$expected). Consider: sudo chown $expected \"$config_file\""
+    fi
 }
 
 # ---------------------------------------------------------------------
@@ -130,6 +166,7 @@ create_own_config() {
     log ok "$INM_SELF_ENV_FILE has been created and configured."
 
     load_env_file_raw "$INM_SELF_ENV_FILE"
+    warn_cli_config_owner_mismatch "$INM_SELF_ENV_FILE"
 
     if [ -z "$INM_BASE_DIRECTORY" ]; then
         log err "[COC] 'INM_BASE_DIRECTORY' is empty. Aborting."
