@@ -20,7 +20,27 @@ Inmanage is the CLI for self-hosted Invoice Ninja. It is built for **convenience
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | bash
 ```
 
-The installer asks for an install mode and creates symlinks (`inmanage`, `inm`) if possible.
+The installer asks for an install mode and creates symlinks (`inm`, `inmanage`) if possible.
+If you choose project mode, run the installer from your base directory.
+System mode requires sudo; the installer can rerun with sudo if selected.
+
+Installer options (`install_inmanage.sh`):
+
+| Switch | Default | Description |
+| --- | --- | --- |
+| `--mode system / user / project` | `system` | Install mode (system requires sudo). |
+| `--target DIR` | mode default | Install directory. |
+| `--symlink-dir DIR` | mode default | Where to place `inm`/`inmanage` symlinks. |
+| `--branch BRANCH` | fetched branch | Git branch to install. |
+| `--source PATH` | unset | Use an existing checkout (rsync with `--delete`). |
+| `-h` / `--help` | | Show installer help. |
+
+Installer env vars:
+- `BRANCH` (branch to install)
+- `INSTALLER_BRANCH` (default branch when not set; usually matches the fetched script)
+- `MODE` / `TARGET_DIR` / `SYMLINK_DIR` / `SOURCE_DIR` (same as switches)
+
+Use `--source` when you already have a local checkout (e.g., mounted dev workspace or offline/air‑gapped install) and want to sync it into the install target.
 
 ### Install from a different branch
 
@@ -53,14 +73,14 @@ git checkout development
 git pull --ff-only
 ```
 
-Note: `inmanage self update` only pulls the current branch; it does not switch branches.
+Note: `inm self update` only pulls the current branch; it does not switch branches.
 
 ## First run
 
 Run any command from the base directory. If no CLI config exists, you will be prompted to create it.
 
 ```bash
-inmanage core health
+inm core health
 ```
 
 ## Global switches
@@ -78,6 +98,13 @@ inmanage core health
 | `--auto-create-config=true/false` | `false` | Auto‑persist derived CLI config when missing. |
 | `--auto-select=true/false` | `false` | Auto‑select defaults when no TTY is available. |
 | `--select-timeout=secs` | `60` | Timeout for interactive selections (seconds). |
+
+Permissions defaults (CLI config, used by `--fix-permissions`):
+- `INM_ENFORCED_USER` and optional `INM_ENFORCED_GROUP` for ownership.
+- `INM_DIR_MODE` for app directories (default `750`).
+- `INM_FILE_MODE` for app files (default `640`, skips executable files).
+- `INM_ENV_MODE` for app `.env` (default `600`).
+- `INM_CACHE_DIR_MODE` / `INM_CACHE_FILE_MODE` for cache permissions (defaults: 775/664 when a group is set, otherwise 750/640).
 
 ## Hooks (pre/post)
 
@@ -122,8 +149,8 @@ Example: post-install hook to inject custom app keys:
 set -e
 
 # in .inmanage/hooks/post-install
-inmanage env set app CUSTOM_FEATURE_FLAG true
-inmanage env set app CUSTOM_BRANDING_NAME "Acme Co"
+inm env set app CUSTOM_FEATURE_FLAG true
+inm env set app CUSTOM_BRANDING_NAME "Acme Co"
 ```
 
 ## Install Invoice Ninja
@@ -132,24 +159,19 @@ inmanage env set app CUSTOM_BRANDING_NAME "Acme Co"
 
 Repeatable and unattended. Best for staging/production.
 
-1) Generate a provision file:
-
-```bash
-inmanage core provision spawn
-```
-
-`spawn` creates a ready-to-edit `.env.provision` from the bundled `.env.example` (or app `.env` if present).
-
-2) Edit `.inmanage/.env.provision` (DB creds, APP_URL, etc.)
+1. Generate a provision file:
+   ```bash
+   inm core provision spawn
+   ```
+   `spawn` creates a ready-to-edit `.env.provision` from the bundled `.env.example` (or app `.env` if present).
+2. Edit `.inmanage/.env.provision` (DB creds, APP_URL, etc.)
    - `DB_ELEVATED_USERNAME` and `DB_ELEVATED_PASSWORD` are only used to create the DB/user if needed and are removed after success.
+3. Install:
+   ```bash
+   inm core install --provision
+   ```
 
-3) Install:
-
-```bash
-inmanage core install --provision
-```
-
-Install switches (`inmanage core install`):
+Install switches (`inm core install`):
 
 | Switch | Default | Description |
 | --- | --- | --- |
@@ -165,7 +187,7 @@ Install switches (`inmanage core install`):
 | `--bypass-check-sha` | `false` | Skip release digest verification (not recommended). |
 | `--version=v` | latest | Reserved: install currently uses latest release. |
 
-Provision spawn switches (`inmanage core provision spawn`):
+Provision spawn switches (`inm core provision spawn`):
 
 | Switch | Default | Description |
 | --- | --- | --- |
@@ -191,23 +213,18 @@ What happens on a provisioned install:
 
 Migration flow (provisioned install):
 
-1) Create a migration backup on the source host:
-
-```bash
-inmanage core backup --name=migration --compress=tar.gz --include-app=true
-```
-
-Optionally write target-ready values into the backup `.env`:
-
-```bash
-inmanage core backup --create-migration-export
-```
-
-2) On the target host, point provision to the backup:
-
-- `inmanage core provision spawn --backup-file=/path/to/backup.tar.gz`
-- or `inmanage core provision spawn --latest-backup`
-- or set `INM_MIGRATION_BACKUP=LATEST` (or a path) in `.env.provision` / `.env.inmanage`
+1. Create a migration backup on the source host:
+   ```bash
+   inm core backup --name=migration --compress=tar.gz --include-app=true
+   ```
+   Optionally write target-ready values into the backup `.env`:
+   ```bash
+   inm core backup --create-migration-export
+   ```
+2. On the target host, point provision to the backup:
+   - `inm core provision spawn --backup-file=/path/to/backup.tar.gz`
+   - or `inm core provision spawn --latest-backup`
+   - or set `INM_MIGRATION_BACKUP=LATEST` (or a path) in `.env.provision` / `.env.inmanage`
 
 ### Install flow (under the hood)
 
@@ -217,7 +234,7 @@ Provisioned install (high‑level):
 - Optional hooks: `pre-install`.
 - Archive existing app directory if present.
 - Download Invoice Ninja release and unpack into a temp directory.
-- Place `.env` from `.env.provision`, remove the inmanage header block.
+- Place `.env` from `.env.provision`, remove the inm header block.
 - Deploy the new app into the install path.
 - Run artisan tasks: `key:generate`, `optimize`, `up`, `ninja:translations`, snappdf setup.
 - Pre‑provision DB backup if tables exist (unless `--no-backup`).
@@ -250,14 +267,14 @@ Mandatory settings to review (common):
 - Mail settings: `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_ENCRYPTION`, `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`
 
 Optional: set any other Invoice Ninja `.env` keys you need. Official env reference:
-https://invoiceninja.github.io/en/self-host-installation/#configure-environment
+<https://invoiceninja.github.io/en/self-host-installation/#configure-environment>
 
 ### Wizard install
 
 Starts the wizard and lets you choose between provisioned and clean install:
 
 ```bash
-inmanage core install
+inm core install
 ```
 
 The wizard installs the app and drops a default `.env`. You must complete the web setup to write DB/app values, then manually review `.env` for settings the GUI doesn’t cover.
@@ -265,7 +282,7 @@ The wizard installs the app and drops a default `.env`. You must complete the we
 ### Clean/forced install
 
 ```bash
-inmanage core install --clean
+inm core install --clean
 ```
 
 This renames the existing app directory before deploying a fresh version.
@@ -273,13 +290,13 @@ This renames the existing app directory before deploying a fresh version.
 ## Updates
 
 ```bash
-inmanage core update
+inm core update
 ```
 
 - Updates keep the previous version for rollback side by side with the app directory; DB backups land in the backup directory, since DB rollback is needed less often.
 - Uses less RAM than web-based updates, especially on small servers.
 
-Update switches (`inmanage core update`):
+Update switches (`inm core update`):
 
 | Switch | Default | Description |
 | --- | --- | --- |
@@ -302,10 +319,10 @@ inm update rollback invoiceninja_rollback_YYYYMMDD_HHMMSS
 Full bundle (db + storage + uploads; optional app + extras):
 
 ```bash
-inmanage core backup --name=pre_migration --compress=tar.gz --include-app=true --extra-paths=custom1,custom2
+inm core backup --name=pre_migration --compress=tar.gz --include-app=true --extra-paths=custom1,custom2
 ```
 
-Backup switches (`inmanage core backup`):
+Backup switches (`inm core backup`):
 
 | Switch | Default | Description |
 | --- | --- | --- |
@@ -323,15 +340,15 @@ Backup switches (`inmanage core backup`):
 DB-only and files-only backups:
 
 ```bash
-inmanage db backup --name=label
-inmanage files backup --name=label
+inm db backup --name=label
+inm files backup --name=label
 ```
 
 These commands accept the same switches as above, but the defaults are scoped:
 - `db backup` forces DB-only.
 - `files backup` defaults to app + storage + uploads (DB off). Use `--include-app=false` to exclude the app files.
 
-Files backup switches (`inmanage files backup`):
+Files backup switches (`inm files backup`):
 
 | Switch | Default | Description |
 | --- | --- | --- |
@@ -346,10 +363,10 @@ Files backup switches (`inmanage files backup`):
 ## Restore
 
 ```bash
-inmanage core restore --file=path --force
+inm core restore --file=path --force
 ```
 
-Restore switches (`inmanage core restore`):
+Restore switches (`inm core restore`):
 
 | Switch | Default | Description |
 | --- | --- | --- |
@@ -368,10 +385,10 @@ Restore switches (`inmanage core restore`):
 DB-only restore:
 
 ```bash
-inmanage db restore --file=path --force --purge=true
+inm db restore --file=path --force --purge=true
 ```
 
-DB restore switches (`inmanage db restore`):
+DB restore switches (`inm db restore`):
 
 | Switch | Default | Description |
 | --- | --- | --- |
@@ -382,10 +399,10 @@ DB restore switches (`inmanage db restore`):
 DB create:
 
 ```bash
-inmanage db create
+inm db create
 ```
 
-DB create switches (`inmanage db create`):
+DB create switches (`inm db create`):
 
 | Switch | Default | Description |
 | --- | --- | --- |
@@ -398,10 +415,10 @@ DB create switches (`inmanage db create`):
 ## Health checks
 
 ```bash
-inmanage core health
+inm core health
 ```
 
-Health switches (`inmanage core health`):
+Health switches (`inm core health`):
 
 | Switch | Default | Description |
 | --- | --- | --- |
@@ -415,14 +432,14 @@ Health switches (`inmanage core health`):
 
 Filter tags:
 
-```
+```text
 CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF
 ```
 
 ## Cron
 
 ```bash
-inmanage core cron install
+inm core cron install
 ```
 
 This installs artisan schedule + backup cron jobs.
@@ -430,10 +447,10 @@ This installs artisan schedule + backup cron jobs.
 Short form (same behavior):
 
 ```bash
-inmanage cron install
+inm cron install
 ```
 
-Cron switches (`inmanage core cron install`):
+Cron switches (`inm core cron install`):
 
 | Switch | Default | Description |
 | --- | --- | --- |
@@ -446,29 +463,31 @@ Cron switches (`inmanage core cron install`):
 Cron uninstall:
 
 ```bash
-inmanage core cron uninstall [--mode=auto|system|crontab] [--cron-file=path]
+inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path]
 ```
 
 Short form:
 
 ```bash
-inmanage cron uninstall
+inm cron uninstall
 ```
 
 ## Environment helper
 
 ```bash
-inmanage env show cli
-inmanage env show app
-inmanage env set app APP_URL https://example.test
+inm env show cli
+inm env show app
+inm env set app APP_URL https://example.test
 ```
+
+If the target env file is not readable/writable, `inm env get/set/unset/show` will prompt to use sudo (or fail in non‑interactive mode).
 
 ## Cache and downloads
 
 - Global cache: `${INM_CACHE_GLOBAL_DIRECTORY}` (default: `${HOME}/.inmanage/cache`)
 - Local cache: `${INM_CACHE_LOCAL_DIRECTORY}` (default: `./.cache`)
 
-If the global cache is not writable, inmanage falls back to local cache and may ask to fix permissions with sudo.
+If the global cache is not writable, inm falls back to local cache and may ask to fix permissions with sudo.
 
 ## Database client selection
 
@@ -481,6 +500,11 @@ INM_DB_CLIENT=mariadb
 ```
 
 ## Debugging
+
+Version info:
+- `inm version` (CLI)
+- `inm self version` (same as above)
+- `inm core versions` (Invoice Ninja versions: installed/latest/cached)
 
 See the Global switches table for `--debug` and `--dry-run`.
 
@@ -499,7 +523,7 @@ If `sudo` is not available:
 
 - **Use with existing installs?** Yes. Run a backup, then use `core update`.
 - **Deletes anything?** No silent deletes; old versions are moved aside.
-- **Web updates okay?** Yes, but inmanage gives you versioned backups and rollback.
+- **Web updates okay?** Yes, but inm gives you versioned backups and rollback.
 - **Docker?** Yes, with correct mounts and a real shell for the enforced user.
 - **Failed install?** Retry or rollback to the previous version directory.
 - **Config wrong/old?** Edit or delete `.inmanage/.env.inmanage` to regenerate.
@@ -513,7 +537,7 @@ If `sudo` is not available:
 - **Config missing**: run any command from the base directory and create `.inmanage/.env.inmanage` when prompted.
 - **Permission errors**: ensure the enforced user matches your web server user, or use `--override-enforced-user` for a run.
 - **DB ambiguity**: set `INM_DB_CLIENT` explicitly.
-- **Health overview**: run `inmanage core health` (or `inmanage core health --checks=CRON,DB,WEB`) for a quick scan.
+- **Health overview**: run `inm core health` (or `inm core health --checks=CRON,DB,WEB`) for a quick scan.
 
 ## Docker notes
 
@@ -521,14 +545,14 @@ If `sudo` is not available:
 - Give the enforced user a real shell (e.g., `/bin/bash`) if it defaults to `nologin`.
 - Install required CLI tools inside the container (mysql/mariadb client + dump, rsync, zip).
 - Cron is often better handled by the host; otherwise use a cron-enabled container.
-- inmanage updates use less RAM than web-based updates, which helps on small containers.
+- inm updates use less RAM than web-based updates, which helps on small containers.
 - One-command backups, updates, and restores reduce manual container exec steps.
 - Provision files make setup repeatable across staging/production containers.
 - Health checks give a quick system/app/DB overview without manual probing.
 
 ### Docker backups with backup_remote_job.sh
 
-`backup_remote_job.sh` is a helper script generated by inmanage to pull backup bundles from a server to another machine (local or remote). It standardizes rsync/scp, optional hooks, and file paths so you get consistent, repeatable off-box backups.
+`backup_remote_job.sh` is a helper script generated by inm to pull backup bundles from a server to another machine (local or remote). It standardizes rsync/scp, optional hooks, and file paths so you get consistent, repeatable off-box backups.
 
 In Docker, this is especially useful because it avoids relying on container snapshots and gives you **app‑level** bundles (DB + files) that can be restored anywhere.
 
@@ -545,7 +569,7 @@ How it works with Docker:
 
 Why this is better than container snapshots:
 
-- **App-level consistency**: inmanage bundles DB + files in a controlled order.
+- **App-level consistency**: inm bundles DB + files in a controlled order.
 - **Portability**: one bundle restores outside Docker or into a fresh container.
 - **Clear rollback**: you know exactly which backup was created and when.
 
@@ -555,4 +579,4 @@ How to run it:
 2) Configure it to point at your mounted backup path.
 3) Run it from the destination machine to pull the bundles automatically.
 
-Tip: set `REMOTE_PRE_HOOK` to `docker exec <container> inmanage core backup` so the backup is created just before the pull.
+Tip: set `REMOTE_PRE_HOOK` to `docker exec <container> inm core backup` so the backup is created just before the pull.
