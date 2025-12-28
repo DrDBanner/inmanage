@@ -83,9 +83,23 @@ Use `--source` when you already have a local checkout (e.g., mounted dev workspa
 
 Install from `development`:
 
+*System-wide installation*
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/development/install_inmanage.sh | sudo BRANCH=development bash -s -- --mode system
 ```
+*User-wide installation*
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/development/install_inmanage.sh | BRANCH=development bash -s -- --mode user
+```
+
+*Project installation*
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/development/install_inmanage.sh | BRANCH=development bash -s -- --mode project
+```
+
 
 You can also pass the branch flag explicitly:
 

@@ -307,6 +307,17 @@ run_preflight() {
         # shellcheck disable=SC1091
         . /etc/os-release
         os="${PRETTY_NAME:-$NAME $VERSION_ID}"
+    elif command -v freebsd-version >/dev/null 2>&1; then
+        os="FreeBSD $(freebsd-version 2>/dev/null | head -n1)"
+    elif command -v uname >/dev/null 2>&1; then
+        local os_name os_release
+        os_name="$(uname -s 2>/dev/null || true)"
+        os_release="$(uname -r 2>/dev/null || true)"
+        if [ -n "$os_name" ] && [ -n "$os_release" ]; then
+            os="${os_name} ${os_release}"
+        else
+            os="${os_name:-unknown}"
+        fi
     fi
     add_result INFO "SYS" "Host: ${host:-unknown} | OS: ${os:-unknown}"
     add_result INFO "SYS" "Kernel: ${kernel:-?} | Arch: ${arch:-?} | CPU cores: ${cpu:-?} | RAM: ${memtotal:-unknown}"
