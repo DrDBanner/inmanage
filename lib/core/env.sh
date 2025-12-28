@@ -110,7 +110,16 @@ setup_environment() {
         local current_user=""
 
         if [ -f "$self_env_file" ]; then
-            enforced_user="$(grep -E '^INM_ENFORCED_USER=' "$self_env_file" | tail -n1 | cut -d= -f2- | tr -d '"')"
+            local line val
+            line="$(grep -E '^INM_ENFORCED_USER=' "$self_env_file" | tail -n1)"
+            if [ -n "$line" ]; then
+                val="${line#*=}"
+                val="${val%%#*}"
+                val="$(printf "%s" "$val" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+                val="${val%\"}"
+                val="${val#\"}"
+                enforced_user="$val"
+            fi
         fi
 
         current_user="$(id -un 2>/dev/null || true)"

@@ -93,14 +93,28 @@ persist_derived_config() {
     return 0
 }
 
+_config_read_value() {
+    local key="$1"
+    local file="$2"
+    local line val
+    line="$(grep -E "^${key}=" "$file" 2>/dev/null | tail -n1)"
+    [[ -z "$line" ]] && return 0
+    val="${line#*=}"
+    val="${val%%#*}"
+    val="$(printf "%s" "$val" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    val="${val%\"}"
+    val="${val#\"}"
+    printf "%s" "$val"
+}
+
 config_expected_owner() {
     local config_file="$1"
     local user group
-    user="$(grep -E '^INM_ENFORCED_USER=' "$config_file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"')"
+    user="$(_config_read_value "INM_ENFORCED_USER" "$config_file")"
     if [[ -z "$user" ]]; then
         return 0
     fi
-    group="$(grep -E '^INM_ENFORCED_GROUP=' "$config_file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"')"
+    group="$(_config_read_value "INM_ENFORCED_GROUP" "$config_file")"
     if [[ -z "$group" ]]; then
         group="$(id -gn "$user" 2>/dev/null || true)"
         [[ -z "$group" ]] && group="$user"
@@ -232,7 +246,12 @@ create_own_config() {
         }
 
     if [ -f "$INM_ENV_EXAMPLE_FILE" ]; then
-        sed -i '/^DB_PORT=/a DB_ELEVATED_USERNAME=\nDB_ELEVATED_PASSWORD=' "$INM_ENV_EXAMPLE_FILE"
+        local sed_expr='/^DB_PORT=/a DB_ELEVATED_USERNAME=\nDB_ELEVATED_PASSWORD='
+        if ! sed -i '' -e "$sed_expr" "$INM_ENV_EXAMPLE_FILE" 2>/dev/null; then
+            sed -i -e "$sed_expr" "$INM_ENV_EXAMPLE_FILE" 2>/dev/null || {
+                log warn "[COC] Failed to update DB_ELEVATED_* entries in $INM_ENV_EXAMPLE_FILE"
+            }
+        fi
     fi
 
     check_provision_file
