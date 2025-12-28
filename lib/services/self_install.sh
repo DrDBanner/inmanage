@@ -349,8 +349,14 @@ install_self() {
 # Updates the CLI in-place (git pull) if installed from a git checkout.
 # ---------------------------------------------------------------------
 self_update() {
+  local script_path="$0"
+  if declare -F resolve_script_path >/dev/null 2>&1; then
+    script_path="$(resolve_script_path "$0" 2>/dev/null || printf "%s" "$0")"
+  elif command -v realpath >/dev/null 2>&1; then
+    script_path="$(realpath "$0" 2>/dev/null || printf "%s" "$0")"
+  fi
   local root
-  root="$(cd "$(dirname "$0")" && pwd)"
+  root="$(cd "$(dirname "$script_path")" && pwd)"
   if [[ ! -d "$root/.git" ]]; then
     log warn "[SELF] No git metadata found at $root; re-run installer to update."
     return 1
