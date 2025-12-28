@@ -241,6 +241,8 @@ install_self() {
     2)
       if [[ -n "$run_user" && "$run_user" != "$current_user" ]]; then
           log info "[SELF] User-mode install targets '$run_user' (current user: $current_user)."
+      elif [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+          log info "[SELF] User-mode install is only accessible to $current_user. For web user access, re-run with sudo --run-user <web> or use --install-mode=system."
       fi
       mkdir -p "$link_dir" || { log err "[SELF] Cannot create $link_dir"; return 1; }
       if [[ ${EUID:-$(id -u)} -eq 0 && -n "$run_user" && "$run_user" != "root" ]]; then
