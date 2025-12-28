@@ -58,7 +58,22 @@ setup_environment() {
     export TERM="${TERM:-dumb}"
 
     # Colors via helper
-    setup_colors
+    if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-dumb}" != "dumb" ]]; then
+        setup_colors
+    else
+        GREEN=''
+        RED=''
+        CYAN=''
+        # shellcheck disable=SC2034
+        YELLOW=''
+        BLUE=''
+        WHITE=''
+        MAGENTA=''
+        # shellcheck disable=SC2034
+        GRAY=''
+        BOLD=''
+        RESET=''
+    fi
     # Backward-compat alias
     if [[ -z "${NC+x}" ]]; then
         # shellcheck disable=SC2034
@@ -158,7 +173,9 @@ log() {
             printf "${MAGENTA}%s [IMPORTANT] %s${RESET}\n" "$timestamp" "$*" >&2
             ;;
         err)
-            printf "${RED}%s [ERR] %s${RESET}\n" "$timestamp" "$*" >&2
+            local log_user=""
+            log_user="$(id -un 2>/dev/null || echo unknown)"
+            printf "${RED}%s [ERR] %s (user: %s)${RESET}\n" "$timestamp" "$*" "$log_user" >&2
             ;;
         bold)
             printf "${BOLD}%s [BOLD] %s${RESET}\n" "$timestamp" "$*" >&2

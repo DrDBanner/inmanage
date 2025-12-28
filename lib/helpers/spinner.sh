@@ -30,6 +30,7 @@ spinner_start() {
 
     (
         local i=0
+        # shellcheck disable=SC1003
         local frames='|/-\'
         local dots=( "." ".." "..." )
         while true; do
