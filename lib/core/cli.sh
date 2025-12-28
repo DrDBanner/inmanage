@@ -80,6 +80,7 @@ env:
                               Examples:
                                 env set app APP_URL https://example.test
                                 env get cli INM_BASE_DIRECTORY
+  user-ini apply [path]       Write recommended .user.ini (defaults to app public/)
 
 Legacy commands:
   Supported for compatibility; not listed here.
@@ -169,6 +170,7 @@ env actions:
   get <app|cli> KEY
   unset <app|cli> KEY
   show [app|cli]
+  user-ini apply [path]
 EOF
             ;;
         *)
@@ -406,6 +408,7 @@ env commands:
   inm env get <app|cli> KEY
   inm env unset <app|cli> KEY
   inm env show [app|cli]
+  inm env user-ini apply [path]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF

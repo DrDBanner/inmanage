@@ -570,6 +570,15 @@ dispatch_command() {
                 unset)
                     call_with_named_args env_unset "${extra[@]}"
                     ;;
+                user-ini|user_ini)
+                    local sub="${extra[0]:-apply}"
+                    if [[ "$sub" == "apply" ]]; then
+                        call_with_named_args env_user_ini_apply "${extra[@]:1}"
+                    else
+                        log err "[env] Unknown user-ini action: $sub"
+                        return 1
+                    fi
+                    ;;
                 *)
                     log err "[env] Unknown action: $action"
                     return 1

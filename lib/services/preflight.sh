@@ -667,8 +667,9 @@ run_preflight() {
 
     if should_run "PHP" || should_run "EXT" || should_run "WEBPHP"; then
     # ---- PHP version / ini ----
-    phpv=$(php -r 'echo PHP_VERSION;' 2>/dev/null)
-    if [ -z "$phpv" ]; then
+    local cli_php_out
+    cli_php_out="$(phpinfo_probe_cli)" || true
+    if [ -z "$cli_php_out" ]; then
         if should_run "PHP"; then
             add_result ERR "PHP" "php CLI not available"
         fi
@@ -677,39 +678,51 @@ run_preflight() {
         fi
     else
         if should_run "PHP"; then
-            add_result OK "PHP" "CLI $phpv"
-            local cli_ini
-            cli_ini=$(php -r 'echo php_ini_loaded_file();' 2>/dev/null)
-            add_result INFO "PHP" "CLI ini: ${cli_ini:-<none>}"
+            local phpv cli_ini cli_ini_scan_dir cli_ini_scanned cli_sapi cli_user_ini
+            local mem inputvars opc max_exec max_input_time post_max upload_max realpath_cache display_errors error_reporting
+            local cli_proc_open cli_exec cli_fpassthru cli_open_basedir cli_disable_functions
+            while IFS='=' read -r key val; do
+                case "$key" in
+                    PHP_VERSION) phpv="$val" ;;
+                    PHP_INI) cli_ini="$val" ;;
+                    PHP_INI_SCAN_DIR) cli_ini_scan_dir="$val" ;;
+                    PHP_INI_SCANNED) cli_ini_scanned="$val" ;;
+                    PHP_SAPI) cli_sapi="$val" ;;
+                    USER_INI) cli_user_ini="$val" ;;
+                    MEMORY_LIMIT) mem="$val" ;;
+                    MAX_INPUT_VARS) inputvars="$val" ;;
+                    OPCACHE) opc="$val" ;;
+                    MAX_EXEC) max_exec="$val" ;;
+                    MAX_INPUT_TIME) max_input_time="$val" ;;
+                    POST_MAX) post_max="$val" ;;
+                    UPLOAD_MAX) upload_max="$val" ;;
+                    REALPATH_CACHE_SIZE) realpath_cache="$val" ;;
+                    DISPLAY_ERRORS) display_errors="$val" ;;
+                    ERROR_REPORTING) error_reporting="$val" ;;
+                    PROC_OPEN) cli_proc_open="$val" ;;
+                    EXEC) cli_exec="$val" ;;
+                    FPASSTHRU) cli_fpassthru="$val" ;;
+                    OPEN_BASEDIR) cli_open_basedir="$val" ;;
+                    DISABLE_FUNCTIONS) cli_disable_functions="$val" ;;
+                esac
+            done <<< "$cli_php_out"
+            add_result OK "PHP" "CLI ${phpv:-unknown}"
             if printf '%s\n' "$phpv" "8.1.0" | sort -V | head -n1 | grep -qx "8.1.0"; then
                 add_result OK "PHP" ">= 8.1"
             else
                 add_result ERR "PHP" "Needs >= 8.1"
             fi
-            local mem mem_mb
-            mem=$(php -r "echo ini_get('memory_limit');" 2>/dev/null)
-            mem_mb="$(mem_to_mb "$mem")"
-            if [ "$mem" = "-1" ]; then
-                add_result OK "PHP" "memory_limit unlimited (-1)"
-            elif [ -n "$mem_mb" ] && [ "$mem_mb" -ge 256 ] 2>/dev/null; then
-                add_result OK "PHP" "memory_limit ${mem:-unset}"
-            else
-                add_result WARN "PHP" "memory_limit too low (${mem:-unset})"
+            [[ -n "$cli_sapi" ]] && add_result INFO "PHP" "SAPI ${cli_sapi}"
+            add_result INFO "PHP" "php.ini ${cli_ini:-<none>}"
+            [[ -n "$cli_ini_scan_dir" ]] && add_result INFO "PHP" "ini scan dir ${cli_ini_scan_dir}"
+            if [[ -n "$cli_ini_scanned" ]]; then
+                local cli_ini_short
+                cli_ini_short="$(shorten_ini_scanned "$cli_ini_scanned")"
+                add_result INFO "PHP" "ini scanned ${cli_ini_short}"
             fi
-            local inputvars
-            inputvars=$(php -r "echo ini_get('max_input_vars');" 2>/dev/null)
-            if [ -n "$inputvars" ] && [ "$inputvars" -ge 2000 ] 2>/dev/null; then
-                add_result OK "PHP" "max_input_vars $inputvars"
-            else
-                add_result WARN "PHP" "max_input_vars <2000 (${inputvars:-unset})"
-            fi
-            local opc
-            opc=$(php -r "echo (extension_loaded('Zend OPcache') && ini_get('opcache.enable')) ? 'enabled' : 'disabled';" 2>/dev/null)
-            if [ "$opc" = "enabled" ]; then
-                add_result OK "PHP" "OPcache enabled"
-            else
-                add_result WARN "PHP" "OPcache disabled"
-            fi
+            local cli_user_ini_detail="${cli_user_ini:-<none>}"
+            add_result INFO "PHP" ".user.ini ${cli_user_ini_detail}"
+            php_thresholds add_result "PHP" "$mem" "$inputvars" "$opc" "$max_exec" "$max_input_time" "$post_max" "$upload_max" "$realpath_cache" "$display_errors" "$error_reporting" "$cli_proc_open" "$cli_exec" "$cli_fpassthru" "$cli_open_basedir" "$cli_disable_functions"
         fi
 
         if should_run "EXT"; then
@@ -722,6 +735,27 @@ run_preflight() {
                     add_result ERR "EXT" "$ext missing"
                 fi
             done
+
+            local saxon_loaded=""
+            saxon_loaded="$(php -r 'echo extension_loaded("saxon") ? "1" : "0";' 2>/dev/null || true)"
+            if [[ "$saxon_loaded" == "1" ]]; then
+                add_result OK "EXT" "saxon"
+            else
+                local saxon_path=""
+                local ext_dir=""
+                ext_dir="$(php -r 'echo ini_get("extension_dir");' 2>/dev/null || true)"
+                if [[ -n "$ext_dir" && -f "${ext_dir%/}/saxon.so" ]]; then
+                    saxon_path="${ext_dir%/}/saxon.so"
+                fi
+                if [[ -z "$saxon_path" ]]; then
+                    saxon_path="$(ls -1 /usr/lib*/php/*/saxon.so /usr/local/lib*/php/*/saxon.so 2>/dev/null | head -n1 || true)"
+                fi
+                if [[ -n "$saxon_path" ]]; then
+                    add_result INFO "EXT" "saxon present but not loaded: ${saxon_path}"
+                else
+                    add_result INFO "EXT" "saxon not installed (XSLT2). See: https://invoiceninja.github.io/en/self-host-installation/#lib-saxon"
+                fi
+            fi
         fi
     fi
     fi
@@ -1435,6 +1469,238 @@ if ($fp) { fclose($fp); echo "OK"; } else { echo "ERR:" . $errstr; }' 2>/dev/nul
 # check_web_php()
 # Creates a temporary php info probe in public/ and fetches via APP_URL.
 # ---------------------------------------------------------------------
+write_phpinfo_probe() {
+    local path="$1"
+    cat > "$path" <<'PHP'
+<?php
+function phpinfo_value($html, $label) {
+    $label = preg_quote($label, '/');
+    if (preg_match('/<tr><td class="e">' . $label . '<\\/td><td class="v">([^<]*)<\\/td><\\/tr>/i', $html, $m)) {
+        return html_entity_decode($m[1], ENT_QUOTES);
+    }
+    if (preg_match('/<tr><td class="e">' . $label . '<\\/td><td class="v">([^<]*)<\\/td><td class="v">([^<]*)<\\/td><\\/tr>/i', $html, $m)) {
+        return html_entity_decode($m[1], ENT_QUOTES);
+    }
+    return '';
+}
+
+ob_start();
+phpinfo(INFO_GENERAL | INFO_CONFIGURATION);
+$html = ob_get_clean();
+$html = str_replace("\n", "", $html);
+
+$values = [
+    'PHP_VERSION' => phpinfo_value($html, 'PHP Version'),
+    'PHP_SAPI' => phpinfo_value($html, 'Server API'),
+    'PHP_INI' => phpinfo_value($html, 'Loaded Configuration File'),
+    'PHP_INI_SCAN_DIR' => phpinfo_value($html, 'Scan this dir for additional .ini files'),
+    'PHP_INI_SCANNED' => phpinfo_value($html, 'Additional .ini files parsed'),
+    'USER_INI' => phpinfo_value($html, 'user_ini.filename'),
+    'MEMORY_LIMIT' => phpinfo_value($html, 'memory_limit'),
+    'MAX_INPUT_VARS' => phpinfo_value($html, 'max_input_vars'),
+    'OPCACHE' => phpinfo_value($html, 'opcache.enable'),
+    'MAX_EXEC' => phpinfo_value($html, 'max_execution_time'),
+    'MAX_INPUT_TIME' => phpinfo_value($html, 'max_input_time'),
+    'POST_MAX' => phpinfo_value($html, 'post_max_size'),
+    'UPLOAD_MAX' => phpinfo_value($html, 'upload_max_filesize'),
+    'REALPATH_CACHE_SIZE' => phpinfo_value($html, 'realpath_cache_size'),
+    'DISPLAY_ERRORS' => phpinfo_value($html, 'display_errors'),
+    'ERROR_REPORTING' => phpinfo_value($html, 'error_reporting'),
+    'OPEN_BASEDIR' => phpinfo_value($html, 'open_basedir'),
+    'DISABLE_FUNCTIONS' => phpinfo_value($html, 'disable_functions'),
+    'PROC_OPEN' => function_exists('proc_open') ? '1' : '0',
+    'EXEC' => function_exists('exec') ? '1' : '0',
+    'FPASSTHRU' => function_exists('fpassthru') ? '1' : '0',
+];
+
+$values['PHP_VERSION'] = $values['PHP_VERSION'] ?: PHP_VERSION;
+$values['PHP_SAPI'] = $values['PHP_SAPI'] ?: php_sapi_name();
+$values['PHP_INI'] = $values['PHP_INI'] ?: php_ini_loaded_file();
+$values['PHP_INI_SCAN_DIR'] = $values['PHP_INI_SCAN_DIR'] ?: (get_cfg_var('cfg_file_scan_dir') ?: '');
+$values['PHP_INI_SCANNED'] = $values['PHP_INI_SCANNED'] ?: php_ini_scanned_files();
+$values['USER_INI'] = $values['USER_INI'] ?: (get_cfg_var('user_ini.filename') ?: '');
+$values['MEMORY_LIMIT'] = $values['MEMORY_LIMIT'] ?: ini_get('memory_limit');
+$values['MAX_INPUT_VARS'] = $values['MAX_INPUT_VARS'] ?: ini_get('max_input_vars');
+$values['OPCACHE'] = $values['OPCACHE'] ?: ini_get('opcache.enable');
+$values['MAX_EXEC'] = $values['MAX_EXEC'] ?: ini_get('max_execution_time');
+$values['MAX_INPUT_TIME'] = $values['MAX_INPUT_TIME'] ?: ini_get('max_input_time');
+$values['POST_MAX'] = $values['POST_MAX'] ?: ini_get('post_max_size');
+$values['UPLOAD_MAX'] = $values['UPLOAD_MAX'] ?: ini_get('upload_max_filesize');
+$values['REALPATH_CACHE_SIZE'] = $values['REALPATH_CACHE_SIZE'] ?: ini_get('realpath_cache_size');
+$values['DISPLAY_ERRORS'] = $values['DISPLAY_ERRORS'] ?: ini_get('display_errors');
+$values['ERROR_REPORTING'] = $values['ERROR_REPORTING'] ?: ini_get('error_reporting');
+$values['OPEN_BASEDIR'] = $values['OPEN_BASEDIR'] ?: ini_get('open_basedir');
+$values['DISABLE_FUNCTIONS'] = $values['DISABLE_FUNCTIONS'] ?: ini_get('disable_functions');
+
+foreach ($values as $key => $val) {
+    $val = trim(str_replace("\n", " ", (string) $val));
+    echo $key . "=" . $val . "\n";
+}
+PHP
+}
+
+shorten_ini_scanned() {
+    local scanned="$1"
+    local max_items="${2:-6}"
+    local count=0
+    local shown=0
+    local out=""
+    local part
+    IFS=',' read -r -a parts <<< "$scanned"
+    for part in "${parts[@]}"; do
+        part="${part#"${part%%[![:space:]]*}"}"
+        part="${part%"${part##*[![:space:]]}"}"
+        [[ -z "$part" ]] && continue
+        ((count++))
+        if ((shown < max_items)); then
+            out="${out}${out:+, }${part}"
+            ((shown++))
+        fi
+    done
+    if ((count == 0)); then
+        printf "%s" ""
+    elif ((count <= max_items)); then
+        printf "%s (total %d)" "$out" "$count"
+    else
+        printf "%s (+%d more, total %d)" "$out" "$((count - max_items))" "$count"
+    fi
+}
+
+phpinfo_probe_cli() {
+    local tmp_file
+    tmp_file="$(mktemp)" || return 1
+    write_phpinfo_probe "$tmp_file"
+    php "$tmp_file" 2>/dev/null || true
+    rm -f "$tmp_file" 2>/dev/null || true
+}
+
+php_emit() {
+    local add_fn="$1"
+    local status="$2"
+    local tag="$3"
+    local msg="$4"
+    "$add_fn" "$status" "$tag" "$msg"
+}
+
+php_thresholds() {
+    local add_fn="$1"
+    local tag="$2"
+    local mem="$3"
+    local inputvars="$4"
+    local opc="$5"
+    local max_exec="$6"
+    local max_input_time="$7"
+    local post_max="$8"
+    local upload_max="$9"
+    local realpath_cache="${10}"
+    local display_errors="${11}"
+    local error_reporting="${12}"
+    local proc_open="${13}"
+    local exec_fn="${14}"
+    local fpassthru_fn="${15}"
+    local open_basedir="${16}"
+    local disable_functions="${17}"
+
+    local mem_mb
+    mem_mb="$(mem_to_mb "$mem")"
+    if [ "$mem" = "-1" ]; then
+        php_emit "$add_fn" OK "$tag" "memory_limit unlimited (-1)"
+    elif [ -n "$mem_mb" ] && [ "$mem_mb" -ge 256 ] 2>/dev/null; then
+        php_emit "$add_fn" OK "$tag" "memory_limit ${mem:-unset}"
+    else
+        php_emit "$add_fn" WARN "$tag" "memory_limit <256M (${mem:-unset})"
+    fi
+
+    if [ -n "$inputvars" ] && [ "$inputvars" -ge 5000 ] 2>/dev/null; then
+        php_emit "$add_fn" OK "$tag" "max_input_vars $inputvars"
+    else
+        php_emit "$add_fn" WARN "$tag" "max_input_vars <5000 (${inputvars:-unset})"
+    fi
+
+    case "$(printf '%s' "$opc" | tr '[:upper:]' '[:lower:]')" in
+        1|on|enabled|true) opc="enabled" ;;
+    esac
+    if [ "$opc" = "enabled" ]; then
+        php_emit "$add_fn" OK "$tag" "OPcache enabled"
+    else
+        php_emit "$add_fn" WARN "$tag" "OPcache disabled"
+    fi
+
+    if [[ "$max_exec" == "0" ]]; then
+        php_emit "$add_fn" OK "$tag" "max_execution_time unlimited (0)"
+    elif [ -n "$max_exec" ] && [ "$max_exec" -ge 180 ] 2>/dev/null; then
+        php_emit "$add_fn" OK "$tag" "max_execution_time ${max_exec}"
+    else
+        php_emit "$add_fn" WARN "$tag" "max_execution_time <180 (${max_exec:-unset})"
+    fi
+
+    if [[ "$max_input_time" == "-1" ]]; then
+        php_emit "$add_fn" OK "$tag" "max_input_time -1 (use max_execution_time)"
+    elif [ -n "$max_input_time" ] && [ "$max_input_time" -ge 180 ] 2>/dev/null; then
+        php_emit "$add_fn" OK "$tag" "max_input_time ${max_input_time}"
+    else
+        php_emit "$add_fn" WARN "$tag" "max_input_time <180 (${max_input_time:-unset})"
+    fi
+
+    local post_mb upload_mb
+    post_mb="$(mem_to_mb "$post_max")"
+    upload_mb="$(mem_to_mb "$upload_max")"
+    if [ -n "$post_mb" ] && [ "$post_mb" -ge 50 ] 2>/dev/null; then
+        php_emit "$add_fn" OK "$tag" "post_max_size ${post_max}"
+    else
+        php_emit "$add_fn" WARN "$tag" "post_max_size <50M (${post_max:-unset})"
+    fi
+    if [ -n "$upload_mb" ] && [ "$upload_mb" -ge 50 ] 2>/dev/null; then
+        php_emit "$add_fn" OK "$tag" "upload_max_filesize ${upload_max}"
+    else
+        php_emit "$add_fn" WARN "$tag" "upload_max_filesize <50M (${upload_max:-unset})"
+    fi
+
+    local realpath_mb
+    realpath_mb="$(mem_to_mb "$realpath_cache")"
+    if [ -n "$realpath_cache" ]; then
+        php_emit "$add_fn" INFO "$tag" "realpath_cache_size ${realpath_cache}"
+    fi
+
+    if [ -n "$display_errors" ]; then
+        php_emit "$add_fn" INFO "$tag" "display_errors ${display_errors}"
+    fi
+
+    if [ -n "$error_reporting" ]; then
+        php_emit "$add_fn" INFO "$tag" "error_reporting ${error_reporting}"
+    fi
+
+    if [[ "$proc_open" == "1" ]]; then
+        php_emit "$add_fn" OK "$tag" "proc_open available"
+    else
+        php_emit "$add_fn" ERR "$tag" "proc_open missing"
+    fi
+
+    if [[ "$exec_fn" == "1" ]]; then
+        php_emit "$add_fn" OK "$tag" "exec available"
+    else
+        php_emit "$add_fn" ERR "$tag" "exec missing"
+    fi
+
+    if [[ "$fpassthru_fn" == "1" ]]; then
+        php_emit "$add_fn" OK "$tag" "fpassthru available"
+    else
+        php_emit "$add_fn" ERR "$tag" "fpassthru missing"
+    fi
+
+    if [[ -n "$open_basedir" ]]; then
+        php_emit "$add_fn" WARN "$tag" "open_basedir ${open_basedir}"
+    else
+        php_emit "$add_fn" OK "$tag" "open_basedir empty"
+    fi
+
+    if [[ -n "$disable_functions" ]]; then
+        php_emit "$add_fn" INFO "$tag" "disable_functions ${disable_functions}"
+    else
+        php_emit "$add_fn" INFO "$tag" "disable_functions <none>"
+    fi
+}
+
 check_web_php() {
     local php_cli_version="$1"
     local add_fn="$2"
@@ -1474,18 +1740,7 @@ check_web_php() {
         rm -f "$webroot/.inm_probe_touch" 2>/dev/null || true
     fi
 
-    cat > "$webroot/$tmpfile" <<'PHP'
-<?php
-echo "PHP_VERSION=" . PHP_VERSION . "\n";
-echo "PHP_INI=" . php_ini_loaded_file() . "\n";
-echo "USER_INI=" . get_cfg_var('user_ini.filename') . "\n";
-echo "MEMORY_LIMIT=" . ini_get('memory_limit') . "\n";
-echo "OPCACHE=" . ((extension_loaded('Zend OPcache') && ini_get('opcache.enable')) ? 'enabled' : 'disabled') . "\n";
-echo "INPUT_VARS=" . ini_get('max_input_vars') . "\n";
-echo "MAX_EXEC=" . ini_get('max_execution_time') . "\n";
-echo "POST_MAX=" . ini_get('post_max_size') . "\n";
-echo "UPLOAD_MAX=" . ini_get('upload_max_filesize') . "\n";
-PHP
+    write_phpinfo_probe "$webroot/$tmpfile"
 
     local web_php_out=""
     if command -v curl >/dev/null 2>&1; then
@@ -1513,16 +1768,33 @@ PHP
         return 1
     fi
 
-    local web_php_ver web_php_ini web_user_ini web_mem web_opc web_input web_max_exec web_post_max web_upload_max
-    web_php_ver=$(echo "$web_php_out" | grep '^PHP_VERSION=' | cut -d= -f2)
-    web_php_ini=$(echo "$web_php_out" | grep '^PHP_INI=' | cut -d= -f2)
-    web_user_ini=$(echo "$web_php_out" | grep '^USER_INI=' | cut -d= -f2)
-    web_mem=$(echo "$web_php_out" | grep '^MEMORY_LIMIT=' | cut -d= -f2)
-    web_opc=$(echo "$web_php_out" | grep '^OPCACHE=' | cut -d= -f2)
-    web_input=$(echo "$web_php_out" | grep '^INPUT_VARS=' | cut -d= -f2)
-    web_max_exec=$(echo "$web_php_out" | grep '^MAX_EXEC=' | cut -d= -f2)
-    web_post_max=$(echo "$web_php_out" | grep '^POST_MAX=' | cut -d= -f2)
-    web_upload_max=$(echo "$web_php_out" | grep '^UPLOAD_MAX=' | cut -d= -f2)
+    local web_php_ver web_php_ini web_ini_scan_dir web_ini_scanned web_php_sapi web_user_ini web_mem web_opc web_input web_max_exec web_max_input_time web_post_max web_upload_max web_realpath_cache web_display_errors web_error_reporting
+    local web_proc_open web_exec web_fpassthru web_open_basedir web_disable_functions
+    while IFS='=' read -r key val; do
+        case "$key" in
+            PHP_VERSION) web_php_ver="$val" ;;
+            PHP_INI) web_php_ini="$val" ;;
+            PHP_INI_SCAN_DIR) web_ini_scan_dir="$val" ;;
+            PHP_INI_SCANNED) web_ini_scanned="$val" ;;
+            PHP_SAPI) web_php_sapi="$val" ;;
+            USER_INI) web_user_ini="$val" ;;
+            MEMORY_LIMIT) web_mem="$val" ;;
+            OPCACHE) web_opc="$val" ;;
+            MAX_INPUT_VARS) web_input="$val" ;;
+            MAX_EXEC) web_max_exec="$val" ;;
+            MAX_INPUT_TIME) web_max_input_time="$val" ;;
+            POST_MAX) web_post_max="$val" ;;
+            UPLOAD_MAX) web_upload_max="$val" ;;
+            REALPATH_CACHE_SIZE) web_realpath_cache="$val" ;;
+            DISPLAY_ERRORS) web_display_errors="$val" ;;
+            ERROR_REPORTING) web_error_reporting="$val" ;;
+            PROC_OPEN) web_proc_open="$val" ;;
+            EXEC) web_exec="$val" ;;
+            FPASSTHRU) web_fpassthru="$val" ;;
+            OPEN_BASEDIR) web_open_basedir="$val" ;;
+            DISABLE_FUNCTIONS) web_disable_functions="$val" ;;
+        esac
+    done <<< "$web_php_out"
 
     local web_user_ini_detail="${web_user_ini:-<none>}"
     if [ -n "$web_user_ini" ]; then
@@ -1534,36 +1806,27 @@ PHP
     fi
 
     ${add_fn:-log info} INFO "WEBPHP" "Version $web_php_ver (CLI ${php_cli_version:-unknown})"
+    if [ -n "$web_php_ver" ]; then
+        if printf '%s\n' "$web_php_ver" "8.1.0" | sort -V | head -n1 | grep -qx "8.1.0"; then
+            ${add_fn:-log info} INFO "WEBPHP" ">= 8.1"
+        else
+            ${add_fn:-log warn} WARN "WEBPHP" "Needs >= 8.1"
+        fi
+    fi
+    [[ -n "$web_php_sapi" ]] && ${add_fn:-log info} INFO "WEBPHP" "SAPI $web_php_sapi"
     ${add_fn:-log info} INFO "WEBPHP" "php.ini $web_php_ini"
+    [[ -n "$web_ini_scan_dir" ]] && ${add_fn:-log info} INFO "WEBPHP" "ini scan dir ${web_ini_scan_dir}"
+    if [[ -n "$web_ini_scanned" ]]; then
+        local web_ini_short
+        web_ini_short="$(shorten_ini_scanned "$web_ini_scanned")"
+        ${add_fn:-log info} INFO "WEBPHP" "ini scanned ${web_ini_short}"
+    fi
     ${add_fn:-log info} INFO "WEBPHP" ".user.ini $web_user_ini_detail"
-
-    # Evaluate memory_limit / input_vars similar to CLI thresholds
-    local web_mem_mb=""
-    web_mem_mb="$(mem_to_mb "$web_mem")"
-    if [ "$web_mem" = "-1" ]; then
-        ${add_fn:-log info} INFO "WEBPHP" "memory_limit $web_mem"
-    elif [ -n "$web_mem_mb" ] && [ "$web_mem_mb" -ge 256 ] 2>/dev/null; then
-        ${add_fn:-log info} INFO "WEBPHP" "memory_limit $web_mem"
-    else
-        ${add_fn:-log warn} WARN "WEBPHP" "memory_limit too low (${web_mem:-unset})"
+    if [[ "$web_user_ini_detail" == "<none>" || "$web_user_ini_detail" == *"(public: missing)"* ]]; then
+        ${add_fn:-log info} INFO "WEBPHP" "Tip: write .user.ini with 'inm env user-ini apply'"
     fi
 
-    if [ -n "$web_input" ] && [ "$web_input" -ge 2000 ] 2>/dev/null; then
-        ${add_fn:-log info} INFO "WEBPHP" "max_input_vars $web_input"
-    else
-        ${add_fn:-log warn} WARN "WEBPHP" "max_input_vars <2000 (${web_input:-unset})"
-    fi
-
-    if [ "$web_opc" = "enabled" ]; then
-        ${add_fn:-log info} INFO "WEBPHP" "OPcache enabled"
-    else
-        ${add_fn:-log warn} WARN "WEBPHP" "OPcache disabled"
-    fi
-
-    # Additional useful limits
-    [[ -n "$web_max_exec" ]] && ${add_fn:-log info} INFO "WEBPHP" "max_execution_time ${web_max_exec}"
-    [[ -n "$web_post_max" ]] && ${add_fn:-log info} INFO "WEBPHP" "post_max_size ${web_post_max}"
-    [[ -n "$web_upload_max" ]] && ${add_fn:-log info} INFO "WEBPHP" "upload_max_filesize ${web_upload_max}"
+    php_thresholds "${add_fn:-add_result}" "WEBPHP" "$web_mem" "$web_input" "$web_opc" "$web_max_exec" "$web_max_input_time" "$web_post_max" "$web_upload_max" "$web_realpath_cache" "$web_display_errors" "$web_error_reporting" "$web_proc_open" "$web_exec" "$web_fpassthru" "$web_open_basedir" "$web_disable_functions"
 
     if [ -n "$php_cli_version" ] && [ -n "$web_php_ver" ] && [ "$php_cli_version" != "$web_php_ver" ]; then
         ${add_fn:-log warn} WARN "WEBPHP" "CLI $php_cli_version differs from Web $web_php_ver"

@@ -20,36 +20,36 @@ You'll learn how to install Invoice Ninja on a Debian 12.xx VM from scratch incl
 ## 2. Getting Started
 
 - Clean Debian 12.xx (bookworm) on any VM Host (wsl, utm, vmware, qemu, virtualbox, docker, you name it)
-    - Create machine, attach your matching [.iso file](https://www.debian.org/releases/bookworm/debian-installer/) (amd64 most likely), launch, follow installation procedure
+  - Create machine, attach your matching [.iso file](https://www.debian.org/releases/bookworm/debian-installer/) (amd64 most likely), launch, follow installation procedure
 - During setup
-    - Create root user with password
-    - Create local user with password
-    - Enable repository mirrors
-    - Enable software packages: web server, SSH server, standard tools. 
-  
+  - Create root user with password
+  - Create local user with password
+  - Enable repository mirrors
+  - Enable software packages: web server, SSH server, standard tools.
+
 > [!NOTE]
 > These VM machines do not have any local firewall rules set. So, any local service shall be accessible from the get go, as long as your virtualization host's setup aligns. This setup is not meant for public facing machines.
 
 ### 2.1 Run Invoice Ninja on Windows WSL
 
-#### Optional Tutorial 
+#### Optional Tutorial
+
 WSL (Windows Subsystem for Linux) allows you to run a Linux environment directly on Windows 10 and above, making it easy to set up and manage Linux-based applications without leaving your Windows system. If you're on Windows, WSL provides a convenient way to run Invoice Ninja in a VM with minimal setup. Take a moment to get familiar with WSL to streamline your installation process.
 
-<details>
-<summary><strong>2.1.1–2.1.7: WSL & Debian VM Setup on Windows (click to unfold)</strong></summary>
+WSL & Debian VM Setup on Windows (steps 2.1.1–2.1.7).
 
-#### 2.1.1. Enable WSL and Virtual Machine Platform
+### 2.1.1. Enable WSL and Virtual Machine Platform
 
 Open a terminal as **Administrator** (Press `[WIN]`, type `Terminal`, right click -> select `run as Administrator`.) and enable WSL:
 
-*This enables or switches to WSL1. If you already use WSL you can skip it and just install the Debian image.* 
+*This enables or switches to WSL1. If you already use WSL you can skip it and just install the Debian image.*
 ```powershell
 dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
 ```
 
 Restart your computer.
 
-#### 2.1.2. Install Debian
+### 2.1.2. Install Debian
 
 After a successful restart of your computer open a Terminal as your current user and paste these commands.
 
@@ -60,31 +60,31 @@ wsl --set-default-version 1
 wsl --install Debian
 
 # Enter a Username and a Password when prompted.
-# Username shall not have empty spaces. 
+# Username shall not have empty spaces.
 ```
 
 > ## NOTE
-> 
-> *This WSL VM automatically has the IP-Address of your local Windows and your Firewall may need to be taught to accept connections on port 443 in order to serve the https:// webinterface.* 
-> 
+>
+> *This WSL VM automatically has the IP-Address of your local Windows and your Firewall may need to be taught to accept connections on port 443 in order to serve the https:// webinterface.*
+>
 > And in order to disable the VM get crawled by Windows Defender Antimalware Service.
 > Paste this to the terminal as **Administrator** only if you use Microsoft Defender:
-> ```  
+> ```text
 > New-NetFirewallRule -DisplayName "Allow HTTPS Inbound" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
-> 
+>
 > Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\Packages\TheDebianProject.DebianGNULinux_*\LocalState"
 > ```
 
-#### 2.1.4. Launch Debian Terminal
+### 2.1.4. Launch Debian Terminal
 
 Open Terminal as your current user
 
-```
+```text
 wsl -d Debian
 ```
-*This command logs you into the Debian VM*
+This command logs you into the Debian VM.
 
-#### 2.1.6. Update Debian
+### 2.1.6. Update Debian
 
 Update package lists and upgrade packages:
 ```bash
@@ -95,40 +95,43 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y git curl wget unzip zip htop openssh-client libc-bin openssl
 ```
 
-#### 2.1.8. Scheduler Task – Autostart and Shutdown the VM on Windows Start and Shutdown
+### 2.1.8. Scheduler Task – Autostart and Shutdown the VM on Windows Start and Shutdown
 
 To automatically start and stop your WSL Debian VM with Windows:
 
 **Autostart on Windows boot:**
 1. Press `[WIN]` and type `Task Scheduler`, then open it.
-2. Click **Create Task**.
-3. Under **General**, name it (e.g., `Start WSL Debian`).
-4. Go to **Triggers** tab, click **New**, set **Begin the task** to `At startup`.
-5. Go to **Actions** tab, click **New**, set **Action** to `Start a program`.
-6. In **Program/script**, enter:
-    ```
+1. Click **Create Task**.
+1. Under **General**, name it (e.g., `Start WSL Debian`).
+1. Go to **Triggers** tab, click **New**, set **Begin the task** to `At startup`.
+1. Go to **Actions** tab, click **New**, set **Action** to `Start a program`.
+1. In **Program/script**, enter:
+
+    ```text
     wsl -d Debian
     ```
-7. Click **OK** to save.
+1. Click **OK** to save.
 
 **Shutdown on Windows shutdown:**
 1. Create another task as above, but in **Triggers** set **Begin the task** to `On shutdown`.
-2. In **Actions**, use:
-    ```
+1. In **Actions**, use:
+
+    ```text
     wsl --shutdown
     ```
-3. Click **OK**.
+1. Click **OK**.
 
 This ensures your Debian VM starts with Windows and shuts down cleanly when Windows powers off.
 
-#### 2.1.9. Ready to Continue
+### 2.1.9. Ready to Continue
+
 You can now proceed with the tutorial – jump to [4. Name resolution (DNS)](#4-name-resolution-dns) and right after that skip to [6. Webserver](#6-webserver) since sudo is already available on the WSL Debian VM. All further commands should be run within your Debian terminal as your created VM's user.
 
 *You can login to the WSL VM at any time from a new terminal by executing `wsl -d Debian`*
 
-#### 2.1.10 WSL 1 Issues
+### 2.1.10. WSL 1 Issues
 
-##### php-fpm via socket
+#### php-fpm via socket
 
 On WSL1 I was not able to get php-fpm properly working. In order to fix that you need to switch to a TCP based listener. Fortunately I created a script for that. Note: You need that with WSL1 only.
 
@@ -208,18 +211,19 @@ EOF
 chmod +x patch_phpfpm_socket_wsl1.sh
 ```
 
-##### SNAPPDF on WSL1
+#### SNAPPDF on WSL1
+
 *Snappdf seems not to work on WSL 1 VM's*
-So, leave the variable in the .env file like this when you configure the provision file: 
-```  
+So, leave the variable in the .env file like this when you configure the provision file:
+```text
 PDF_GENERATOR=hosted_ninja
 ```
-</details>
+
 
 
 ## 3. Login via SSH
 
-After installing Debian 12 Bookworm, log into the VM via SSH Terminal. Using SSH from your local terminal makes it easier to copy and paste commands and ensures a hassle-free experience. 
+After installing Debian 12 Bookworm, log into the VM via SSH Terminal. Using SSH from your local terminal makes it easier to copy and paste commands and ensures a hassle-free experience.
 
 If you do not know your VM's IP address yet, you'll need to login via the VM's Application window once, in order to gather the IP. So, login as root. Then type:
 
@@ -235,20 +239,26 @@ Somewhere around the `inet` lines you'll see your local IP address (e.g. like: 1
 
 ### 3.1. Open Terminal
 
-The terminal can be opened like the following examples. 
+The terminal can be opened like the following examples.
 
-##### 3.1.1. MacOS
+### 3.1. Open a terminal
+
+#### 3.1.1. MacOS
+
 Press [⌘ CMD] + [SPACE] -> Type `Terminal` -> Press [ENTER]
 
-##### 3.1.2. Linux
+#### 3.1.2. Linux
+
 Press [CTRL] + [ALT] + [T]
 
-##### 3.1.3. Windows 11
+#### 3.1.3. Windows 11
+
 Press [⌘ WIN] -> Type `Terminal` -> Press [ENTER]
 
-*On older Windows machines you'll need an additional application like [Putty](https://www.putty.org).* 
+*On older Windows machines you'll need an additional application like [Putty](https://www.putty.org).*
 
 ### 3.2. Login
+
 Replace `user` and IP `192.168.64.9` with your corresponding data and execute the following command in your terminal.
 ```bash
 ssh user@192.168.64.9
@@ -267,26 +277,32 @@ To access your webserver via a fully qualified domain name (FQDN) within the VM 
 
 On some virtualization platforms, *.local domains might not resolve correctly without additional configuration (e.g. Avahi/mDNS). Consider using a different domain name instead.
 
-#### 4.1. Open hosts file
+### 4.1. Open hosts file
 
-##### 4.1.1. MacOS
+#### 4.1.1. MacOS
+
 *Open a new Terminal and paste:*
 ```bash
 sudo nano /etc/hosts
 ```
-##### 4.1.2. Linux
+
+#### 4.1.2. Linux
+
 *Open a new Terminal and paste:*
 ```bash
 sudo nano /etc/hosts
 ```
-##### 4.1.3. Windows 11
-*Open a new Terminal as Administrator:* 
+
+#### 4.1.3. Windows 11
+
+*Open a new Terminal as Administrator:*
 
 *Press [⌘ WIN] -> Type `Terminal` -> Right-Mouseclick on `Terminal` -> select `run as Administrator` and paste:*
 ```powershell
 notepad $env:WINDIR\System32\drivers\etc\hosts
 ```
-#### 4.2. Edit hosts file
+
+### 4.2. Edit hosts file
 
 Append at the bottom of the hosts file this line and be sure to set your VM's IP to the correct value:
 ```bash
@@ -300,7 +316,8 @@ ping billing.debian12vm.local
 ```
 *You can set any Domain name you want, but you'll need to adapt all the later occurances of this domain name in the upcoming configurations. So, keeping as is, may save you some valuable time.*
 
-#### 4.3. Public Servers / DNS
+### 4.3. Public Servers / DNS
+
 If your VM is publicly hosted, DNS and certificate settings depend on how your domain is configured. This could be managed by your hosting provider or a third-party DNS service. The same applies if you're using a local DNS server within your LAN.
 
 ## 5. General dependencies
@@ -316,13 +333,13 @@ sed -i '/^deb cdrom:/ s/^/#/' /etc/apt/sources.list
 
 ### 5.1. Sudo installation and activation
 
-Update the apt database and install the package sudo. Afterwards you add the user `user` to the group sudo in order to allow them to execute sudo commands. 
+Update the apt database and install the package sudo. Afterwards you add the user `user` to the group sudo in order to allow them to execute sudo commands.
 
 *Keep in mind to replace `user` with your corresponding username.*
 
 ```bash
 
-## reminder: You need to be root for this. Like this: su - 
+## reminder: You need to be root for this. Like this: su -
 ## if not, You may face usermod command not found errors.
 
 apt update
@@ -338,6 +355,7 @@ su - user
 If you wish to have a different domain than `billing.debian12vm.local` you need to adapt the code and make sure not to miss one line. Keep in mind you need to change your DNS mapping from [4. Name Resolution](#4-name-resolution-dns) accordingly.
 
 ### 6.1. Certificate installation
+
 In order to ensure `https://` connections with the webserver you need a certificate to do so. Paste this code to create a self-signed certificate within the VM:
 
 ```bash
@@ -347,9 +365,10 @@ sudo apt install openssl && sudo openssl req -x509 -nodes -days 365 -newkey rsa:
 -subj "/C=US/ST=State/L=City/O=Local/OU=Dev/CN=billing.debian12vm.local"
 ```
 
-*This is mandatory and at the same time it is only a valid method for local VM's. If you are running on a publically accessible VM your hoster has a recommended procedure to attach valid certificates to your domain. You may need to trust this certificate manually in your OS/browser for a seamless experience.* 
+*This is mandatory and at the same time it is only a valid method for local VM's. If you are running on a publically accessible VM your hoster has a recommended procedure to attach valid certificates to your domain. You may need to trust this certificate manually in your OS/browser for a seamless experience.*
 
 ### 6.2. nginx
+
 Install the webserver with this command. Any possible apache installation gets removed.:
 ```bash
 sudo apt remove apache2 -y
@@ -456,7 +475,9 @@ sudo ln -sf /etc/nginx/sites-available/billing.debian12vm.local /etc/nginx/sites
 ---
 
 ### 6.3. Scripting language
+
 #### 6.3.1. PHP 8.4
+
 
 Paste this code to add the php8.4 repository to your VM and install php in one batch:
 
@@ -522,7 +543,9 @@ fi
 ```
 
 ## 7. Database
+
 ### 7.1. mariadb
+
 
 This code installs the database, enables the service, and provides the user `root` user with a standard password.
 
@@ -554,21 +577,23 @@ You may optionally run `mysql_secure_installation` to improve database security,
 Paste this to install other **mandatory** software:
 
 ```bash
-sudo apt install unzip git composer jq libxcomposite1 libxdamage1 libxrandr2 libxss1 libasound2 libnss3 libatk1.0-0 libatk-bridge2.0-0 libx11-xcb1 libxext6 libdrm2 libgbm1 libpango-1.0-0 libxshmfence1 libgtk-3-0 libcups2 libxfixes3 libglib2.0-0 libxcb1 libx11-6 libxrender1 libxcursor1 libxi6 libxtst6 fonts-liberation libappindicator3-1 libdbus-1-3 lsb-release xdg-utils wget curl ca-certificates gnupg xvfb -y 
+sudo apt install unzip git composer jq libxcomposite1 libxdamage1 libxrandr2 libxss1 libasound2 libnss3 libatk1.0-0 libatk-bridge2.0-0 libx11-xcb1 libxext6 libdrm2 libgbm1 libpango-1.0-0 libxshmfence1 libgtk-3-0 libcups2 libxfixes3 libglib2.0-0 libxcb1 libx11-6 libxrender1 libxcursor1 libxi6 libxtst6 fonts-liberation libappindicator3-1 libdbus-1-3 lsb-release xdg-utils wget curl ca-certificates gnupg xvfb -y
 ```
 
 ## 9. Invoice Ninja Installation
 
 ### 9.1. Inmanage script installation
 
-Previously you have successfully setup a webserver, a database, and installed some mandatory additional packages. Now the fun begins. Head over to the previously created directory `/var/www/billing.debian12vm.local` and get the [inmanage installation script for Invoice Ninja](https://github.com/DrDBanner/inmanage/#readme). So, have your database credentials at hand and paste this code to start:
+Previously you have successfully setup a webserver, a database, and installed some mandatory additional packages. Now the fun begins. Install the Inmanage CLI and bootstrap the project config + provision template:
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash
+
 cd /var/www/billing.debian12vm.local
-sudo -u www-data git clone https://github.com/DrDBanner/inmanage.git .inmanage && sudo -u www-data .inmanage/inmanage.sh
+sudo -u www-data inmanage core provision spawn
 ```
 
-The installation procedure of the installation script starts. You can go with the defaults by pressing [enter] each, except for `Include DB password in backup`. You answer with `Y` instead.
+The CLI setup prompts for the basic config (base directory, install dir, backup settings, etc.). You can go with the defaults by pressing [enter] each, except for `Include DB password in backup`. You answer with `Y` instead.
 
 ```text
     _____   __                                       __
@@ -581,59 +606,46 @@ INVOICE NINJA - MANAGEMENT SCRIPT
 
 
 
-2025-07-16 13:32:31 [WARN] .inmanage/.env.inmanage configuration file for this script not found. Attempting to create it...
-2025-07-16 13:32:31 [OK] Write Permissions OK.
+2025-07-16 13:32:31 [NOTE] [ENV] Project config file not found.
+2025-07-16 13:32:31 [INFO] [COC] Creating configuration in: /var/www/billing.debian12vm.local/.inmanage/.env.inmanage
 
 ========== Install Wizard ==========
 
-2025-07-16 13:32:31 [BOLD] Just press [ENTER] to accept defaults.
+2025-07-16 13:32:31 Just press [ENTER] to accept default values.
 
-Which shall be your base-directory? Must have a trailing slash. [/var/www/billing.debian12vm.local/] >
+BASE_DIRECTORY: This will contain your Invoice Ninja app directory (next step). It's not webserver's docroot. Define your desired location or keep.
+[/var/www/billing.debian12vm.local/] >
 
-The current/future Invoice Ninja folder? Must be relative from $INM_BASE_DIRECTORY and can start with a . dot. [./invoiceninja] >
+INSTALLATION_DIRECTORY: Invoice Ninja App directory. The web-server usually serves from <INSTALLATION_DIRECTORY>/public. Define your desired location or keep.
+[./invoiceninja] >
 
-Modify database dump options: In doubt, keep defaults. [--default-character-set=utf8mb4 --no-tablespaces --skip-add-drop-table --quick --single-transaction] >
+KEEP_BACKUPS: Backup retention? Set to 2 to keep 2 backups in the past at a time. Ensure enough disk space and keep the backup frequency in mind.
+[2] >
 
-Backup Directory? [./_in_backups] > ./backups
+FORCE_READ_DB_PW: Include DB password in CLI? (Y): Convenient, but may expose the password to other server users during runtime. (N): Assumes a secure .my.cnf file with credentials to avoid exposure.
+[N] > Y
 
-Backup retention? Set to 7 for daily backups to keep 7 snapshots. Ensure enough disk space. [2] >
+ENFORCED_USER: Correct setting helps to mitigate permission issues. Usually the webserver user. On shared hosting often your current user. If current is true, you can leave this empty.
+[www-data] >
 
-Include DB password in backup? (Y): May expose the password to other server users during runtime. (N): Assumes a secure .my.cnf file with credentials to avoid exposure. [N] > Y
-
-Script user? Usually the webserver user. Ensure it matches your webserver setup. [www-data] >
-
-Which shell should be used? In doubt, keep as is. [/usr/bin/bash] >
-
-Path to the PHP executable? In doubt, keep as is. [/usr/bin/php] >
-
-GitHub API credentials may be required on shared hosting. Use the format username:password or token:x-oauth. If provided, all curl commands will use these credentials; [0] >
+GitHub API credentials may be required on shared hosting. Use the format username:password or token:x-oauth. If provided, all curl commands will use these credentials;
+[] >
 
 2025-07-16 13:33:40 [OK] .inmanage/.env.inmanage has been created and configured.
- [INFO] Downloading .env.example for provisioning
- [INFO] No GH credentials set. If connection fails, try to add credentials.
- [INFO] Usage: ./inmanage.sh <update|backup|clean_install|cleanup_versions|cleanup_backups> [--force] [--debug]
- [INFO] Full Documentation https://github.com/DrDBanner/inmanage/#readme
-
+ [INFO] [COC] Downloading .env.example for provisioning
 ```
 
-Done. The script is downloaded, installed, and configured.
+Done. The CLI is installed and the project config is created.
 
-#### 9.1.1. Cherry on top
-As a cherry on top you make it available to your local user everywhere. Copy and paste this code to extend your `~/.bashrc` and activate it:
+#### 9.1.1. CLI is ready
 
-```bash
-echo 'inmanage() { cd /var/www/billing.debian12vm.local/ && sudo -u www-data /var/www/billing.debian12vm.local/inmanage.sh "$@"; }' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Now you can just enter `inmanage` everywhere.
+The installer already created global symlinks (`inmanage`, `inm`) in `/usr/local/bin`.
 
 ### 9.2. Inmanage script provision
 
-Now you copy over a configuration template for Invoice Ninja and modify it to your needs:
+`core provision spawn` opens your editor automatically so you can edit the generated provision template right away. If you need to reopen it later:
 
 ```bash
-cd /var/www/billing.debian12vm.local/.inmanage/ && sudo -u www-data cp .env.example .env.provision
 sudo -u www-data nano .env.provision
 ```
 
@@ -665,7 +677,7 @@ Optionally, you can set any additional configuration that's desired. You can fin
 Previously you have installed the `inmanage` script and you have prepopulated a configuration for provisioning. Now it's time to start the installation procedure:
 
 ```bash
-inmanage
+inmanage core install --provision --force
 ```
 
 The caution message is correct (*The path was already created to circumvent a webserver error.*) and you can easily enter `yes` in order to carry on.
@@ -816,13 +828,13 @@ dd@win81:/var/www/billing.debian12vm.local$
 
 ### 9.4. First Invoice Ninja Backup
 
-Remember? You can just enter: 
+Remember? You can just enter:
 
 ```bash
-inmanage backup
+inmanage core backup
 ```
 
-The first backup in your hand. 
+The first backup in your hand.
 
 ```text
 All required commands are available.
@@ -841,119 +853,192 @@ drwxr-xr-x 6 www-data www-data      4096  8. Jun 20:22 ..
 -rw-r--r-- 1 www-data www-data 186428310  8. Jun 20:22 InvoiceNinja_20250608_202223.tar.gz
 ```
 
-### 9.5. Force an update
+Snappdf is handled during the install flow. Cronjobs are installed automatically during provisioned installs (unless you disabled them).
 
-In order to enable snappdf properly you need to force an update once. Downloading and installing ungoogled chrome may take some time, so have patience. 
+### 9.5. Health check
 
-```bash
-inmanage update --force
-
-All required commands are available.
-Environment check starts.
-Self configuration found
-All settings are present in .inmanage/.env.inmanage.
-No provision.
-Proceeding without GH credentials authentication. If update fails, try to add credentials.
-Update starts now.
-Downloading Invoice Ninja version 5.12.0...
-Download successful.
-Unpacking Data.
-
-   INFO  Application cache cleared successfully.  
-
-
-   INFO  Application is now in maintenance mode.  
-
-Directory does not exist: /var/www/billing.debian12vm.local/./invoiceninja/public/storage/
-This may be normal if this is an initial installation, or if your storage is located somewhere different. You may need to copy data manually.
-'Maintenanace' file removed from /var/www/billing.debian12vm.local/./invoiceninja_20250608_203055/storage/framework/.
-
-   INFO  Caching framework bootstrap, configuration, and metadata.  
-
-  config .............................................................................................................................. 21.57ms DONE
-  events ............................................................................................................................... 1.08ms DONE
-  routes .............................................................................................................................. 63.19ms DONE
-  views .............................................................................................................................. 278.29ms DONE
-
-
-   INFO  Nothing to migrate.  
-
-2025-06-08 06:30:59 2025-06-08 06:30:59 Running CheckData... on Connected to Default DB Fix Status = Just checking issues 
-2025-06-08 06:30:59 0 clients with incorrect balances
-2025-06-08 06:30:59 0 clients with incorrect paid to dates
-2025-06-08 06:30:59 0 contacts without a contact_key
-2025-06-08 06:30:59 0 clients without any contacts
-2025-06-08 06:30:59 0 contacts without a contact_key
-2025-06-08 06:30:59 0 vendors without any contacts
-2025-06-08 06:30:59 0 wrong invoices with bad balance state
-2025-06-08 06:30:59 0 Contacts with Send Email = true but no email address
-2025-06-08 06:30:59 0 Payments with No currency set
-2025-06-08 06:30:59 0 users with duplicate oauth ids
-2025-06-08 06:30:59 Done: SUCCESS
-2025-06-08 06:30:59 Total execution time in seconds: 0.071326971054077
-
-   INFO  Application is already up.  
-
-Snappdf configuration detected.
-Download and install Chromium if needed.
-Starting download. Ungoogled Chrome
-
-Extracting
-Archive extracted.
-Completed! ungoogled currently in use.
-Cleaning up old update directory versions.
-insgesamt 32
-drwxr-xr-x  8 www-data www-data 4096  8. Jun 20:30 .
-drwxr-xr-x  4 root     root     4096  8. Jun 18:09 ..
-drwxr-xr-x  2 www-data www-data 4096  8. Jun 20:22 _in_backups
-drwxr-xr-x  3 www-data www-data 4096  8. Jun 20:18 .inmanage
-lrwxrwxrwx  1 www-data www-data   55  8. Jun 19:01 inmanage.sh -> /var/www/billing.debian12vm.local/.inmanage/inmanage.sh
-drwxr-xr-x  2 www-data www-data 4096  8. Jun 20:30 ._in_tempDownload
-drwxr-xr-x 15 www-data www-data 4096  8. Jun 20:30 invoiceninja
-drwxr-xr-x 15 www-data www-data 4096  8. Jun 20:18 invoiceninja_20250608_203055
-drwxr-xr-x  3 www-data www-data 4096  8. Jun 18:09 invoiceninja_rollback_20250608_201836
-```
-
-> [!TIP]
-> Next time you want to update just do it like this:
-> ```
-> inmanage backup && inmanage update
-> ``` 
-
-
-### 9.6. Set the cronjob
-
-In order to have Invoice Ninja working as expected you need to add the scheduler string into your cron service. In this version you add it to `/etc/cron.d`. This is preferred in automated setups.
+Run a quick health check:
 
 ```bash
-echo '* * * * * www-data /usr/bin/php /var/www/billing.debian12vm.local/invoiceninja/artisan schedule:run >> /dev/null 2>&1' | sudo tee /etc/cron.d/invoiceninja
+inm core health
 ```
 
-Now you can check if the cron service is alive:
+Example output (sample data):
 
-```bash
-if command -v systemctl >/dev/null && systemctl is-system-running --quiet 2>/dev/null; then
-  echo "Detected systemd – checking cron service status:"
-  sudo systemctl status cron
-else
-  if pgrep cron >/dev/null; then
-    echo "cron is running (non-systemd environment)"
-  else
-    echo "cron is NOT running. You should fix that. Temporarily you can run: sudo service cron start"
-  fi
-fi
+```text
+2025-12-28 09:41:50 [INFO] [HEALTH] Starting system checks
+
+== System ==
+Subject        | Status | Detail
+--------------------------------
+System         | INFO   | Host: primary | OS: Ubuntu 24.04.2 LTS
+System         | INFO   | Kernel: 6.8.0-90-generic | Arch: x86_64 | CPU cores: 2 | RAM: 1.9G
+System         | INFO   | IPv4: 192.168.64.5
+System         | INFO   | IPv6: fd0b:91b3:161a:be12:5054:ff:fe34:4c5f
+System         | INFO   | Container: not detected
+
+== Filesystem ==
+Subject        | Status | Detail
+--------------------------------
+Filesystem     | INFO   | avail:2.9G used:16G mount:/ (Disk @base)
+Filesystem     | OK     | Writable: /usr/share/nginx/local.invoiceninja.vm/ (Base dir)
+Filesystem     | OK     | Writable: /usr/share/nginx/local.invoiceninja.vm/./invoiceninja (App dir) (Size: 1.6G)
+Filesystem     | OK     | Writable: ./.backups (Backup dir) (Size: 371M)
+Filesystem     | INFO   | Not writable: /home/ubuntu/.inmanage/cache (Cache global) or set INM_CACHE_GLOBAL_DIRECTORY to an accessible path. (local cache writable; consider fixing global cache for shared use)
+Filesystem     | OK     | Writable: ./.cache (Cache local)
+
+== App ==
+Subject        | Status | Detail
+--------------------------------
+App            | OK     | App structure looks complete at /usr/share/nginx/local.invoiceninja.vm/./invoiceninja
+App            | OK     | Languages loaded: 45
+
+== ENV CLI ==
+Subject        | Status | Detail
+--------------------------------
+ENV CLI        | INFO   | INM_ENFORCED_USER=www-data
+ENV CLI        | INFO   | INM_BASE_DIRECTORY=/usr/share/nginx/local.invoiceninja.vm/
+ENV CLI        | INFO   | INM_INSTALLATION_DIRECTORY=./invoiceninja
+ENV CLI        | INFO   | INM_BACKUP_DIRECTORY=./.backups
+ENV CLI        | INFO   | INM_CACHE_GLOBAL_DIRECTORY=/home/ubuntu/.inmanage/cache
+ENV CLI        | INFO   | INM_CACHE_LOCAL_DIRECTORY=./.cache
+
+== ENV APP ==
+Subject        | Status | Detail
+--------------------------------
+ENV APP        | INFO   | APP_NAME=InvoiceNinja
+ENV APP        | INFO   | APP_URL=https://billing.invoiceninja.local
+ENV APP        | INFO   | PDF_GENERATOR=snappdf
+ENV APP        | INFO   | APP_DEBUG=false
+
+== CLI ==
+Subject        | Status | Detail
+--------------------------------
+CLI            | INFO   | CLI: /usr/local/share/inmanage
+CLI            | INFO   | Source: git checkout (branch=unknown commit=unknown)
+CLI            | INFO   | Install mode: system (switch with: inm self switch-mode)
+CLI            | INFO   | Newest file mtime: 2025-12-28 08:49:52 (lib/core/checks.sh)
+CLI            | INFO   | inmanage.sh modified: 2025-12-28 07:59:24
+
+== CLI Commands ==
+Subject        | Status | Detail
+--------------------------------
+CLI Commands   | OK     | php
+CLI Commands   | OK     | git
+CLI Commands   | OK     | curl
+CLI Commands   | OK     | tar
+CLI Commands   | OK     | rsync
+CLI Commands   | OK     | zip
+CLI Commands   | OK     | unzip
+CLI Commands   | OK     | composer
+CLI Commands   | OK     | jq
+CLI Commands   | OK     | awk
+CLI Commands   | OK     | sed
+CLI Commands   | OK     | find
+CLI Commands   | OK     | xargs
+CLI Commands   | OK     | touch
+CLI Commands   | OK     | tee
+CLI Commands   | OK     | sha256sum
+CLI Commands   | OK     | DB client: mysql (both installed) (mysql + mariadb available)
+CLI Commands   | OK     | DB dump: mysqldump (mysqldump + mariadb-dump available)
+
+== Web Server ==
+Subject        | Status | Detail
+--------------------------------
+Web Server     | INFO   | Nginx nginx/1.24.0 (Ubuntu)
+Web Server     | INFO   | php-fpm running
+Web Server     | INFO   | Port 80 open
+Web Server     | INFO   | Port 443 open
+
+== PHP CLI ==
+Subject        | Status | Detail
+--------------------------------
+PHP CLI        | OK     | CLI 8.2.27
+PHP CLI        | INFO   | CLI ini: /etc/php/8.2/cli/php.ini
+PHP CLI        | OK     | >= 8.1
+PHP CLI        | OK     | memory_limit unlimited (-1)
+PHP CLI        | OK     | max_input_vars 5000
+PHP CLI        | OK     | OPcache enabled
+
+== PHP Web ==
+Subject        | Status | Detail
+--------------------------------
+PHP Web        | INFO   | Version 8.2.27 (CLI 8.2.27)
+PHP Web        | INFO   | php.ini /etc/php/8.2/fpm/php.ini
+PHP Web        | INFO   | .user.ini <none>
+PHP Web        | INFO   | memory_limit 1G
+PHP Web        | INFO   | max_input_vars 10000
+PHP Web        | INFO   | OPcache enabled
+PHP Web        | INFO   | max_execution_time 30
+PHP Web        | INFO   | post_max_size 8M
+PHP Web        | INFO   | upload_max_filesize 2M
+
+== PHP Extensions ==
+Subject        | Status | Detail
+--------------------------------
+PHP Extensions | OK     | pdo_mysql
+PHP Extensions | OK     | openssl
+PHP Extensions | OK     | tokenizer
+PHP Extensions | OK     | xml
+PHP Extensions | OK     | gd
+PHP Extensions | OK     | mbstring
+PHP Extensions | OK     | bcmath
+PHP Extensions | OK     | curl
+PHP Extensions | OK     | zip
+PHP Extensions | OK     | fileinfo
+PHP Extensions | OK     | intl
+
+== Network ==
+Subject        | Status | Detail
+--------------------------------
+Network        | OK     | GitHub reachable
+Network        | INFO   | DNS resolves: billing.invoiceninja.local
+Network        | INFO   | Webserver certificate matches URL: https://billing.invoiceninja.local
+
+== Mail Route ==
+Subject        | Status | Detail
+--------------------------------
+Mail Route     | INFO   | Mail: not configured (MAIL_MAILER/MAIL_HOST unset)
+
+== Database ==
+Subject        | Status | Detail
+--------------------------------
+Database       | INFO   | Loaded DB vars from /usr/share/nginx/local.invoiceninja.vm/./invoiceninja/.env
+Database       | INFO   | Target: host=localhost port=3306 db=indb user=indb
+Database       | INFO   | Client: mysql
+Database       | OK     | Connection ok to localhost:3306
+Database       | INFO   | Server: 10.11.13-MariaDB-0ubuntu0.24.04.1 Ubuntu 24.04
+Database       | INFO   | innodb_file_per_table=1
+Database       | INFO   | max_allowed_packet=16777216
+Database       | INFO   | charset=utf8mb4 collation=utf8mb4_general_ci
+Database       | INFO   | sql_mode=STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
+Database       | OK     | Database 'indb' exists.
+
+== Cron ==
+Subject        | Status | Detail
+--------------------------------
+Cron           | OK     | Scheduler service present
+Cron           | OK     | artisan schedule:run present
+Cron           | OK     | backup cron present (03:24)
+
+== Snappdf ==
+Subject        | Status | Detail
+--------------------------------
+Snappdf        | INFO   | Chromium path: /usr/share/nginx/local.invoiceninja.vm/./invoiceninja/vendor/beganovich/snappdf/versions/ungoogled/chrome-linux/chrome
+Snappdf        | OK     | Render ok (probe at ./.cache/snappdf_probe.pdf)
+
+2025-12-28 09:41:57 [INFO] [HEALTH] Completed: OK=48 WARN=0 ERR=0
+2025-12-28 09:41:57 [INFO] [HEALTH] Aggregate status: OK
 ```
-
-This method avoids editing the crontab manually and ensures system-wide clarity.
 
 ## 10. Login to your Invoice Ninja installation
 
 Since everything is working as expected it's time to login:
 
-Open your local browser at https://billing.debian12vm.local to access the application. Most likely your browser will complain about the certificate –that's pretty normal, since you self-signed the certificate. You'll need to look for a link that says `Extended` or `Continue to billing.debian12vm.local (insecure)` and click that once. Your browser should remember your choice next time you open this page.
+Open your local browser at <https://billing.debian12vm.local> to access the application. Most likely your browser will complain about the certificate –that's pretty normal, since you self-signed the certificate. You'll need to look for a link that says `Extended` or `Continue to billing.debian12vm.local (insecure)` and click that once. Your browser should remember your choice next time you open this page.
 
-**Username:** admin@admin.com 
+**Username:** <admin@admin.com>
 
 **Password:** admin
 
-Have fun. Don't forget to star and bookmark the https://github.com/DrDBanner/inmanage/ script.
+Have fun. Don't forget to star and bookmark the <https://github.com/DrDBanner/inmanage/> script.

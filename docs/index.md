@@ -99,6 +99,25 @@ inm core health
 | `--auto-select=true/false` | `false` | Auto‑select defaults when no TTY is available. |
 | `--select-timeout=secs` | `60` | Timeout for interactive selections (seconds). |
 
+## libSaxon (XSLT2) for e‑invoicing
+
+Invoice Ninja uses XSLT2 for e‑invoice schemas. That requires the Saxon PHP extension (`saxon.so`) to be loaded for both CLI and PHP‑FPM.
+
+Quick checks:
+
+```bash
+php -m | grep -i saxon
+php -r 'var_dump(extension_loaded("saxon"));'
+```
+
+Notes:
+- On shared hosting, enable the Saxon extension in cPanel if available.
+- On Docker images used by the project, it may already be installed.
+- On bare‑metal Linux, you typically install the shared library first, then compile/enable the PHP extension.
+
+See the official installation instructions:
+<https://invoiceninja.github.io/en/self-host-installation/#lib-saxon>
+
 Permissions defaults (CLI config, used by `--fix-permissions`):
 - `INM_ENFORCED_USER` and optional `INM_ENFORCED_GROUP` for ownership.
 - `INM_DIR_MODE` for app directories (default `750`).

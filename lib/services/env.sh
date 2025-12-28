@@ -49,14 +49,76 @@ _env_owner_for() {
     printf "%s" "$owner"
 }
 
+_env_owner_for_path() {
+    local path="$1"
+    local owner=""
+    local og=""
+    if [ -e "$path" ]; then
+        og="$(_fs_get_owner "$path")"
+    else
+        og="$(_fs_get_owner "$(dirname "$path")")"
+    fi
+    owner="${og%%:*}"
+    if [[ -z "$owner" || "$owner" == "$og" ]]; then
+        owner="${INM_ENFORCED_USER:-}"
+    fi
+    if [[ -z "$owner" ]]; then
+        owner="$(whoami 2>/dev/null || true)"
+    fi
+    printf "%s" "$owner"
+}
+
+_env_owner_group_for() {
+    local env_file="$1"
+    local owner="${2:-}"
+    local og=""
+    og="$(_fs_get_owner "$env_file")"
+    if [[ -n "$og" && "$og" == *:* ]]; then
+        printf "%s" "$og"
+        return 0
+    fi
+    if [[ -z "$owner" ]]; then
+        owner="$(whoami 2>/dev/null || true)"
+    fi
+    local group
+    group="$(id -gn "$owner" 2>/dev/null || true)"
+    [[ -z "$group" ]] && group="$owner"
+    printf "%s:%s" "$owner" "$group"
+}
+
+_env_owner_group_for_path() {
+    local path="$1"
+    local owner="${2:-}"
+    local og=""
+    if [ -e "$path" ]; then
+        og="$(_fs_get_owner "$path")"
+    else
+        og="$(_fs_get_owner "$(dirname "$path")")"
+    fi
+    if [[ -n "$og" && "$og" == *:* ]]; then
+        printf "%s" "$og"
+        return 0
+    fi
+    if [[ -z "$owner" ]]; then
+        owner="$(whoami 2>/dev/null || true)"
+    fi
+    local group
+    group="$(id -gn "$owner" 2>/dev/null || true)"
+    [[ -z "$group" ]] && group="$owner"
+    printf "%s:%s" "$owner" "$group"
+}
+
 _env_access_mode() {
     local env_file="$1"
     local mode="${2:-read}"
+    local owner="${3:-}"
     local need_write=false
     if [[ "$mode" == "write" ]]; then
         need_write=true
     fi
-    if [[ -r "$env_file" && ( "$need_write" == false || -w "$env_file" ) ]]; then
+    local dir
+    dir="$(dirname "$env_file")"
+    if [[ -r "$env_file" && ( "$need_write" == false || ( -w "$env_file" && -w "$dir" ) ) ]]; then
         echo "direct"
         return 0
     fi
@@ -69,6 +131,14 @@ _env_access_mode() {
         return 1
     fi
     if sudo -n true 2>/dev/null; then
+        if [[ "$need_write" == true && -n "$owner" ]]; then
+            if sudo -u "$owner" test -w "$env_file" 2>/dev/null && sudo -u "$owner" test -w "$dir" 2>/dev/null; then
+                echo "sudo"
+            else
+                echo "sudo-root"
+            fi
+            return 0
+        fi
         echo "sudo"
         return 0
     fi
@@ -77,6 +147,14 @@ _env_access_mode() {
         return 1
     fi
     if prompt_confirm "ENV_SUDO" "no" "Env file not ${mode}able (${env_file}). Use sudo to proceed? [y/N]" false 60; then
+        if [[ "$need_write" == true && -n "$owner" ]]; then
+            if sudo -u "$owner" test -w "$env_file" 2>/dev/null && sudo -u "$owner" test -w "$dir" 2>/dev/null; then
+                echo "sudo"
+            else
+                echo "sudo-root"
+            fi
+            return 0
+        fi
         echo "sudo"
         return 0
     fi
@@ -88,7 +166,9 @@ _env_run() {
     local access="$1"
     local owner="$2"
     shift 2
-    if [[ "$access" == "sudo" ]]; then
+    if [[ "$access" == "sudo-root" ]]; then
+        sudo -- "$@"
+    elif [[ "$access" == "sudo" ]]; then
         sudo -u "$owner" -- "$@"
     else
         "$@"
@@ -100,11 +180,95 @@ _env_run_shell() {
     local owner="$2"
     local cmd="$3"
     shift 3
-    if [[ "$access" == "sudo" ]]; then
+    if [[ "$access" == "sudo-root" ]]; then
+        sudo -- env "$@" bash -c "$cmd"
+    elif [[ "$access" == "sudo" ]]; then
         sudo -u "$owner" -- env "$@" bash -c "$cmd"
     else
         env "$@" bash -c "$cmd"
     fi
+}
+
+_env_replace_file() {
+    local access="$1"
+    local owner="$2"
+    local env_file="$3"
+    local tmp_file="$4"
+    local owner_group=""
+
+    if [[ "$access" == "sudo-root" ]]; then
+        owner_group="$(_env_owner_group_for "$env_file" "$owner")"
+    fi
+    if ! _env_run "$access" "$owner" mv "$tmp_file" "$env_file"; then
+        _env_run "$access" "$owner" rm -f "$tmp_file" 2>/dev/null || true
+        log err "[ENV] Failed to update $env_file"
+        return 1
+    fi
+    if [[ -n "$owner_group" ]]; then
+        _env_run "$access" "$owner" chown "$owner_group" "$env_file" 2>/dev/null || true
+    fi
+    return 0
+}
+
+env_user_ini_apply() {
+    local target_path="${1:-}"
+    local webroot="${INM_INSTALLATION_PATH%/}/public"
+    local filename="${NAMED_ARGS[user_ini_filename]:-${NAMED_ARGS[user_ini]:-.user.ini}}"
+    if [[ -z "${INM_INSTALLATION_PATH:-}" ]]; then
+        log err "[ENV] INM_INSTALLATION_PATH is not set. Run from a configured project."
+        return 1
+    fi
+    mkdir -p "$webroot" 2>/dev/null || true
+    if [[ -z "$target_path" ]]; then
+        target_path="${webroot%/}/${filename}"
+    elif [[ "$target_path" != /* ]]; then
+        target_path="${webroot%/}/${target_path}"
+    fi
+    local owner access
+    owner="$(_env_owner_for_path "$target_path")"
+    access="$(_env_access_mode "$target_path" "write" "$owner")" || return 1
+
+    if [[ "${DRY_RUN:-false}" == true ]]; then
+        log info "[DRY-RUN] Would write .user.ini to $target_path"
+        return 0
+    fi
+
+    local tmp_file
+    tmp_file="$(_env_run "$access" "$owner" mktemp)" || {
+        log err "[ENV] Failed to create temp file for $target_path"
+        return 1
+    }
+
+    cat > "$tmp_file" <<'EOF'
+; Inmanage-managed .user.ini for Invoice Ninja
+memory_limit = 256M
+max_execution_time = 180
+max_input_time = 180
+post_max_size = 50M
+upload_max_filesize = 50M
+max_input_vars = 5000
+display_errors = Off
+error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
+EOF
+
+    if [[ "$access" == "sudo-root" ]]; then
+        local owner_group
+        owner_group="$(_env_owner_group_for_path "$target_path" "$owner")"
+        if ! _env_run "$access" "$owner" mv "$tmp_file" "$target_path"; then
+            _env_run "$access" "$owner" rm -f "$tmp_file" 2>/dev/null || true
+            log err "[ENV] Failed to update $target_path"
+            return 1
+        fi
+        _env_run "$access" "$owner" chown "$owner_group" "$target_path" 2>/dev/null || true
+    else
+        if ! mv "$tmp_file" "$target_path"; then
+            rm -f "$tmp_file" 2>/dev/null || true
+            log err "[ENV] Failed to update $target_path"
+            return 1
+        fi
+    fi
+
+    log ok "[ENV] Wrote .user.ini to $target_path"
 }
 
 env_show() {
@@ -112,8 +276,8 @@ env_show() {
     local env_file
     env_file="$(resolve_env_file "$target")" || return 1
     local access owner
-    access="$(_env_access_mode "$env_file" "read")" || return 1
     owner="$(_env_owner_for "$env_file")"
+    access="$(_env_access_mode "$env_file" "read" "$owner")" || return 1
     log info "[ENV] Showing env from $env_file"
     _env_run "$access" "$owner" cat "$env_file"
 }
@@ -128,8 +292,8 @@ env_get() {
     local env_file
     env_file="$(resolve_env_file "$target")" || return 1
     local access owner
-    access="$(_env_access_mode "$env_file" "read")" || return 1
     owner="$(_env_owner_for "$env_file")"
+    access="$(_env_access_mode "$env_file" "read" "$owner")" || return 1
     if [[ -z "$key" ]]; then
         log err "[ENV] Missing key. Usage: env get KEY"
         return 1
@@ -152,8 +316,8 @@ env_unset() {
     local env_file
     env_file="$(resolve_env_file "$target")" || return 1
     local access owner
-    access="$(_env_access_mode "$env_file" "write")" || return 1
     owner="$(_env_owner_for "$env_file")"
+    access="$(_env_access_mode "$env_file" "write" "$owner")" || return 1
     if [[ -z "$key" ]]; then
         log err "[ENV] Missing key. Usage: env unset KEY"
         return 1
@@ -163,10 +327,15 @@ env_unset() {
         return 0
     fi
     if grep -q -E "^${key}=" "$env_file"; then
-        local cmd
+        local cmd tmp_file
+        tmp_file="$(_env_run "$access" "$owner" mktemp)" || {
+            log err "[ENV] Failed to create temp file for $env_file"
+            return 1
+        }
         # shellcheck disable=SC2016
-        cmd='tmp=$(mktemp) || exit 1; grep -v -E "^${KEY}=" "$ENV_FILE" > "$tmp" 2>/dev/null || true; mv "$tmp" "$ENV_FILE"'
-        _env_run_shell "$access" "$owner" "$cmd" KEY="$key" ENV_FILE="$env_file"
+        cmd='grep -v -E "^${KEY}=" "$ENV_FILE" > "$TMP" 2>/dev/null || true'
+        _env_run_shell "$access" "$owner" "$cmd" KEY="$key" ENV_FILE="$env_file" TMP="$tmp_file" || return 1
+        _env_replace_file "$access" "$owner" "$env_file" "$tmp_file" || return 1
         if [[ "$target" == "app" && -n "${INM_ENV_MODE:-}" ]]; then
             _env_run "$access" "$owner" chmod "${INM_ENV_MODE}" "$env_file" 2>/dev/null || true
         fi
@@ -185,8 +354,8 @@ env_set() {
     local env_file
     env_file="$(resolve_env_file "$target")" || return 1
     local access owner
-    access="$(_env_access_mode "$env_file" "write")" || return 1
     owner="$(_env_owner_for "$env_file")"
+    access="$(_env_access_mode "$env_file" "write" "$owner")" || return 1
     if [[ -z "$pair" || "$pair" != *=* ]]; then
         log err "[ENV] Usage: env set [app|cli] KEY=VALUE"
         return 1
@@ -197,10 +366,15 @@ env_set() {
         log info "[DRY-RUN] Would set $key in $env_file"
         return 0
     fi
-    local cmd
+    local cmd tmp_file
+    tmp_file="$(_env_run "$access" "$owner" mktemp)" || {
+        log err "[ENV] Failed to create temp file for $env_file"
+        return 1
+    }
     # shellcheck disable=SC2016
-    cmd='tmp=$(mktemp) || exit 1; grep -v -E "^${KEY}=" "$ENV_FILE" > "$tmp" 2>/dev/null || true; printf "%s\n" "${KEY}=${VALUE}" >> "$tmp"; mv "$tmp" "$ENV_FILE"'
-    _env_run_shell "$access" "$owner" "$cmd" KEY="$key" VALUE="$value" ENV_FILE="$env_file"
+    cmd='grep -v -E "^${KEY}=" "$ENV_FILE" > "$TMP" 2>/dev/null || true; printf "%s\n" "${KEY}=${VALUE}" >> "$TMP"'
+    _env_run_shell "$access" "$owner" "$cmd" KEY="$key" VALUE="$value" ENV_FILE="$env_file" TMP="$tmp_file" || return 1
+    _env_replace_file "$access" "$owner" "$env_file" "$tmp_file" || return 1
     if [[ "$target" == "app" && -n "${INM_ENV_MODE:-}" ]]; then
         _env_run "$access" "$owner" chmod "${INM_ENV_MODE}" "$env_file" 2>/dev/null || true
     fi
