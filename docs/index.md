@@ -2,6 +2,37 @@
 
 Inmanage is the CLI for self-hosted Invoice Ninja. It is built for **convenience**, **certainty**, and **low stress**. Everything is designed to be repeatable and safe.
 
+## Table of contents
+
+- [Mental model](#mental-model)
+- [Files you should know](#files-you-should-know)
+- [Install the CLI](#install-the-cli)
+  - [Install from a different branch](#install-from-a-different-branch)
+  - [Switch branches later](#switch-branches-later)
+- [First run](#first-run)
+- [Global switches](#global-switches)
+- [Hooks (pre/post)](#hooks-prepost)
+- [Install Invoice Ninja](#install-invoice-ninja)
+  - [Provisioned install (recommended)](#provisioned-install-recommended)
+  - [Install flow (under the hood)](#install-flow-under-the-hood)
+  - [Wizard install](#wizard-install)
+  - [Clean/forced install](#cleanforced-install)
+- [Updates](#updates)
+- [Backups](#backups)
+- [Restore](#restore)
+- [Health checks](#health-checks)
+- [Cron](#cron)
+- [Environment helper](#environment-helper)
+- [Cache and downloads](#cache-and-downloads)
+- [Database client selection](#database-client-selection)
+- [Debugging](#debugging)
+- [Sudo usage](#sudo-usage)
+- [FAQ](#faq)
+- [Troubleshooting (short)](#troubleshooting-short)
+- [Docker notes](#docker-notes)
+  - [Docker backups with backup_remote_job.sh](#docker-backups-with-backup_remote_jobsh)
+- [libSaxon (XSLT2) for e‑invoicing](#libsaxon-xslt2-for-einvoicing)
+
 ## Mental model
 
 - **Base directory**: the folder that contains your Invoice Ninja app folder.
@@ -99,24 +130,6 @@ inm core health
 | `--auto-select=true/false` | `false` | Auto‑select defaults when no TTY is available. |
 | `--select-timeout=secs` | `60` | Timeout for interactive selections (seconds). |
 
-## libSaxon (XSLT2) for e‑invoicing
-
-Invoice Ninja uses XSLT2 for e‑invoice schemas. That requires the Saxon PHP extension (`saxon.so`) to be loaded for both CLI and PHP‑FPM.
-
-Quick checks:
-
-```bash
-php -m | grep -i saxon
-php -r 'var_dump(extension_loaded("saxon"));'
-```
-
-Notes:
-- On shared hosting, enable the Saxon extension in cPanel if available.
-- On Docker images used by the project, it may already be installed.
-- On bare‑metal Linux, you typically install the shared library first, then compile/enable the PHP extension.
-
-See the official installation instructions:
-<https://invoiceninja.github.io/en/self-host-installation/#lib-saxon>
 
 Permissions defaults (CLI config, used by `--fix-permissions`):
 - `INM_ENFORCED_USER` and optional `INM_ENFORCED_GROUP` for ownership.
@@ -599,3 +612,22 @@ How to run it:
 3) Run it from the destination machine to pull the bundles automatically.
 
 Tip: set `REMOTE_PRE_HOOK` to `docker exec <container> inm core backup` so the backup is created just before the pull.
+
+## libSaxon (XSLT2) for e‑invoicing
+
+Invoice Ninja uses XSLT2 for e‑invoice schemas. That requires the Saxon PHP extension (`saxon.so`) to be loaded for both CLI and PHP‑FPM.
+
+Quick checks:
+
+```bash
+php -m | grep -i saxon
+php -r 'var_dump(extension_loaded("saxon"));'
+```
+
+Notes:
+- On shared hosting, enable the Saxon extension in cPanel if available.
+- On Docker images used by the project, it may already be installed.
+- On bare‑metal Linux, you typically install the shared library first, then compile/enable the PHP extension.
+
+See the official installation instructions:
+<https://invoiceninja.github.io/en/self-host-installation/#lib-saxon>

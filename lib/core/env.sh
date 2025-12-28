@@ -60,8 +60,10 @@ setup_environment() {
     # Colors via helper
     setup_colors
     # Backward-compat alias
-    # shellcheck disable=SC2034
-    NC="${RESET}"
+    if [[ -z "${NC+x}" ]]; then
+        # shellcheck disable=SC2034
+        NC="${RESET}"
+    fi
     
     [[ -n "$BASH_VERSION" ]] || {
         log err "This script requires Bash."

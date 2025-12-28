@@ -78,6 +78,10 @@ set -euo pipefail
 #       ssh-keygen -t ed25519
 #       ssh-copy-id -i ~/.ssh/id_ed25519.pub user@host
 #
+# TODO: Add "inm backup spawn remote-backup-script" flow that generates this
+# script + an .env template, supports REMOTE_PRE_HOOK, rsync/scp selection,
+# optional verify, and retention settings.
+#
 ###############################################################################
 
 
@@ -119,8 +123,8 @@ REMOTE_PATHS=(
 #   (Requires inmanage installed on the remote server.)
 #   Set directly:
 #     REMOTE_PRE_HOOK="inmanage core backup --db=true --storage=false --uploads=false --bundle=false --name=remote_db_only"
-#   And add the backup directory (e.g. /path/to/.inmanage/_backups/) to REMOTE_PATHS so the new DB dump is pulled:
-#     REMOTE_PATHS=( "/path/to/project/.inmanage/_backups/" )
+#   And add the backup directory (e.g. /path/to/.backup/) to REMOTE_PATHS so the new DB dump is pulled:
+#     REMOTE_PATHS=( "/path/to/.backup/" )
 #   Use SSH key auth; ensure the command runs as the correct user (web user) if needed.
 REMOTE_PRE_HOOK=""             # Path to script/command to run before backup
 REMOTE_PRE_HOOK_USER=""        # Optional override of user
@@ -144,12 +148,30 @@ RSYNC_OPTS="-avz --delete --bwlimit=5000"
 # ----------------------------------------------------
 # DO NOT TOUCH BELOW UNLESS YOU KNOW WHAT YOU’RE DOING
 # ----------------------------------------------------
+# ----------------------------------------------------
+# ----------------------------------------------------
+# ----------------------------------------------------
+# ----------------------------------------------------
+# ----------------------------------------------------
+# ----------------------------------------------------
+# ----------------------------------------------------
+# DO NOT TOUCH BELOW UNLESS YOU KNOW WHAT YOU’RE DOING
+# ----------------------------------------------------
+
 
 # Build SSH options (port + key if specified)
-SSH_OPTS="-p ${SSH_PORT}"
+# Build SSH options array (port + key if specified)
+SSH_OPTS=(-p "${SSH_PORT}")
 
 # If SSH_KEY is set, add it to the SSH options
-[[ -n "${SSH_KEY}" ]] && SSH_OPTS+=" -i ${SSH_KEY}"
+[[ -n "${SSH_KEY}" ]] && SSH_OPTS+=(-i "${SSH_KEY}")
+
+# Parse RSYNC_OPTS into an array for safe argument passing
+RSYNC_OPTS_ARR=()
+if [[ -n "${RSYNC_OPTS:-}" ]]; then
+  # shellcheck disable=SC2206
+  RSYNC_OPTS_ARR=(${RSYNC_OPTS})
+fi
 
 # -----------------------
 # Script Starts Here
@@ -169,7 +191,7 @@ run_remote_hook() {
     [[ -z "$hook_user" ]] && hook_user="$REMOTE_USER"
     [[ -z "$hook_host" ]] && hook_host="$REMOTE_HOST"
     echo "-> Running remote hook: $hook_path on $hook_user@$hook_host ..."
-    ssh $SSH_OPTS "$hook_user@$hook_host" "$hook_path"
+    ssh "${SSH_OPTS[@]}" "$hook_user@$hook_host" -- bash -lc 'exec "$1"' _ "$hook_path"
     echo "-> Hook $hook_path finished successfully."
   else
     echo "-> No hook defined, skipping."
@@ -179,7 +201,7 @@ run_remote_hook() {
 # Checks if remote file/directory exists
 remote_exists() {
   local path="$1"
-  ssh "${SSH_OPTS}" "${REMOTE_USER}@${REMOTE_HOST}" "test -e '$path'"
+  ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" -- bash -lc 'test -e "$1"' _ "$path"
 }
 
 # Run Pre-Hook (optional) ---
@@ -202,7 +224,7 @@ if (( ${#REMOTE_FILES[@]} > 0 )); then
 
       mkdir -p "$(dirname "${LOCAL_DST}")"
       echo "-> SCP: ${REMOTE_FILE} → ${LOCAL_DST}"
-      scp ${SSH_OPTS} "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_FILE}" "${LOCAL_DST}"
+      scp "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_FILE}" "${LOCAL_DST}"
     else
       echo "WARNING: Remote file '${REMOTE_FILE}' not found. Skipping."
     fi
@@ -225,8 +247,8 @@ if (( ${#REMOTE_PATHS[@]} > 0 )); then
       fi
       mkdir -p "${LOCAL_PATH}"
       echo "-> RSYNC: ${REMOTE_PATH} → ${LOCAL_PATH}"
-      rsync ${RSYNC_OPTS} \
-        -e "ssh ${SSH_OPTS}" \
+      rsync "${RSYNC_OPTS_ARR[@]}" \
+        -e "ssh ${SSH_OPTS[*]}" \
         "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}" \
         "${LOCAL_PATH}"
     else
