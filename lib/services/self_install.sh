@@ -196,6 +196,11 @@ install_self() {
           log warn "[SELF] Failed to set ownership on $install_dir to $run_user:$run_group"
       fi
   fi
+  if [[ "$install_mode" == "1" && ${EUID:-$(id -u)} -eq 0 ]]; then
+      if ! chmod -R go+rX "$install_dir" 2>/dev/null; then
+          log warn "[SELF] Failed to relax permissions on $install_dir for non-root users."
+      fi
+  fi
 
   local bin_source="$install_dir/inmanage.sh"
   INM_SELF_INSTALL_SCRIPT="$bin_source"
