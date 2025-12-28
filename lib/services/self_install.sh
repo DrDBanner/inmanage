@@ -362,6 +362,10 @@ self_update() {
   fi
   local root
   root="$(cd "$(dirname "$script_path")" && pwd)"
+  if [[ ! -x "$root" || ! -r "$root" ]]; then
+    log warn "[SELF] Cannot access install path: $root (try: sudo inm self update)."
+    return 1
+  fi
   if [[ ! -d "$root/.git" ]]; then
     log warn "[SELF] No git metadata found at $root; re-run installer to update."
     return 1
@@ -430,9 +434,34 @@ self_switch_mode() {
 # Removes symlinks pointing to this install and optionally deletes it.
 # ---------------------------------------------------------------------
 self_uninstall() {
+  local script_path="$0"
+  if declare -F resolve_script_path >/dev/null 2>&1; then
+    script_path="$(resolve_script_path "$0" 2>/dev/null || printf "%s" "$0")"
+  elif command -v realpath >/dev/null 2>&1; then
+    script_path="$(realpath "$0" 2>/dev/null || printf "%s" "$0")"
+  fi
   local root
-  root="$(cd "$(dirname "$0")" && pwd)"
+  root="$(cd "$(dirname "$script_path")" && pwd)"
   local force_delete="${NAMED_ARGS[force]:-${NAMED_ARGS[--force]:-false}}"
+  local user_data_home="${XDG_DATA_HOME:-${HOME%/}/.local/share}"
+  user_data_home="${user_data_home%/}"
+  local default_user_dir="${user_data_home}/inmanage"
+  local default_project_dir=""
+  if [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
+      default_project_dir="${INM_BASE_DIRECTORY%/}/.inmanage/cli"
+  fi
+  local mode="unknown"
+  if [[ "$root" == "/usr/local/share/inmanage" ]]; then
+      mode="system"
+  elif [[ -n "${HOME:-}" && "$root" == "$default_user_dir" ]]; then
+      mode="user"
+  elif [[ "$root" == */.inmanage/cli ]]; then
+      mode="project"
+  elif [[ -n "$default_project_dir" && "$root" == "$default_project_dir" ]]; then
+      mode="project"
+  elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$root" == "${INM_BASE_DIRECTORY%/}"* ]]; then
+      mode="project"
+  fi
 
   if [[ "${DRY_RUN:-false}" == true ]]; then
     log info "[DRY-RUN] Would uninstall CLI at $root (force delete=$force_delete)"
@@ -440,12 +469,41 @@ self_uninstall() {
   fi
 
   log info "[SELF] Uninstalling CLI from $root"
-  local links=("/usr/local/bin/inmanage" "/usr/local/bin/inm" "$HOME/.local/bin/inmanage" "$HOME/.local/bin/inm" "$(pwd)/inmanage" "$(pwd)/inm")
+  local links=()
+  case "$mode" in
+      system)
+          links+=("/usr/local/bin/inmanage" "/usr/local/bin/inm")
+          ;;
+      user)
+          links+=("${HOME%/}/.local/bin/inmanage" "${HOME%/}/.local/bin/inm")
+          ;;
+      project)
+          local project_root=""
+          if [[ "$root" == */.inmanage/cli ]]; then
+              project_root="$(dirname "$(dirname "$root")")"
+          elif [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
+              project_root="${INM_BASE_DIRECTORY%/}"
+          fi
+          if [[ -n "$project_root" ]]; then
+              links+=("${project_root%/}/inmanage" "${project_root%/}/inm")
+          fi
+          ;;
+      *)
+          links+=("/usr/local/bin/inmanage" "/usr/local/bin/inm" "${HOME%/}/.local/bin/inmanage" "${HOME%/}/.local/bin/inm" "$(pwd)/inmanage" "$(pwd)/inm")
+          ;;
+  esac
   for link in "${links[@]}"; do
     if [[ -L "$link" ]]; then
       local target
-      target="$(readlink "$link")"
-      if [[ "$target" == "$root/inmanage.sh" || "$target" == "$root/./inmanage.sh" ]]; then
+      target="$(readlink "$link" 2>/dev/null || true)"
+      local link_dir resolved_target
+      link_dir="$(dirname "$link")"
+      if [[ -n "$target" && "$target" != /* ]]; then
+        resolved_target="${link_dir%/}/$target"
+      else
+        resolved_target="$target"
+      fi
+      if [[ "$resolved_target" == "$script_path" || "$resolved_target" == "$root/inmanage.sh" || "$resolved_target" == "$root/./inmanage.sh" ]]; then
         log info "[SELF] Removing symlink: $link"
         rm -f "$link"
       fi
@@ -453,10 +511,16 @@ self_uninstall() {
   done
 
   if [[ "$force_delete" == true ]]; then
-    log info "[SELF] Removing install directory: $root"
+    case "$root" in
+      "/"|"/usr"|"/usr/local"|"/usr/local/bin"|"/usr/bin"|"/bin"|"/usr/sbin"|"/sbin")
+        log err "[SELF] Refusing to remove unsafe path: $root"
+        return 1
+        ;;
+    esac
+    log warn "[SELF] Removing install directory (destructive): $root"
     rm -rf "$root"
   else
-    log info "[SELF] Install directory left at $root (use --force to delete)."
+    log info "[SELF] Install directory left at $root (use --force to delete, destructive)."
   fi
 
   log ok "[SELF] Uninstall steps completed."
@@ -467,10 +531,19 @@ self_uninstall() {
 # Shows CLI version/metadata.
 # ---------------------------------------------------------------------
 self_version() {
+  local script_path="$0"
+  if declare -F resolve_script_path >/dev/null 2>&1; then
+    script_path="$(resolve_script_path "$0" 2>/dev/null || printf "%s" "$0")"
+  elif command -v realpath >/dev/null 2>&1; then
+    script_path="$(realpath "$0" 2>/dev/null || printf "%s" "$0")"
+  fi
   local root
-  root="$(cd "$(dirname "$0")" && pwd)"
+  root="$(cd "$(dirname "$script_path")" && pwd)"
 
   log info "[SELF] CLI path: $root"
+  if [[ ! -x "$root" || ! -r "$root" ]]; then
+    log warn "[SELF] Cannot access install path: $root (try: sudo inm self version)."
+  fi
   if [ -f "$root/VERSION" ]; then
     local cli_ver
     cli_ver="$(<"$root/VERSION")"

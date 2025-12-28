@@ -36,10 +36,29 @@ setup_environment() {
         /usr/iports/bin
         /usr/iports/sbin
         /usr/iports/mysql84/bin
-        /usr/iports/php82/bin
-        /usr/iports/php84/bin
         /usr/local/mysql/bin
     )
+    # FreeBSD iports PHP versions: prefer newest installed.
+    local php_iports_paths=()
+    local php_iports_entries=()
+    local php_dir=""
+    for php_dir in /usr/iports/php*/bin; do
+        [[ -d "$php_dir" ]] || continue
+        local php_base
+        php_base="$(basename "$(dirname "$php_dir")")"
+        local php_num="${php_base#php}"
+        if [[ "$php_num" =~ ^[0-9]+$ ]]; then
+            php_iports_entries+=("${php_num}|${php_dir}")
+        fi
+    done
+    if [ "${#php_iports_entries[@]}" -gt 0 ]; then
+        IFS=$'\n' php_iports_entries=($(printf '%s\n' "${php_iports_entries[@]}" | sort -rn))
+        unset IFS
+        local entry
+        for entry in "${php_iports_entries[@]}"; do
+            php_iports_paths+=("${entry#*|}")
+        done
+    fi
 
     IFS=':' read -ra path_parts <<< "$PATH"
     for dir in "${path_parts[@]}"; do
@@ -49,7 +68,7 @@ setup_environment() {
         esac
     done
 
-    for p in "${default_paths[@]}" "${extra_paths[@]}"; do
+    for p in "${default_paths[@]}" "${extra_paths[@]}" "${php_iports_paths[@]}"; do
         [[ -d "$p" ]] && case ":$clean_path:" in
             *":$p:"*) : ;;    # already present → skip
             *) clean_path="$clean_path:$p" ;;

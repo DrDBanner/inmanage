@@ -26,16 +26,24 @@ User installs live in `~/.local/share/inmanage` (XDG).
 
 Then go to your base directory and run the first command:
 
+*Run as the webserver user to avoid permission issues when creating the project's config files and folders:*
+
 ```bash
 cd /path/to/your/invoiceninja_basedirectory
-inm core health
-```
-
-If you can run as the webserver user, it avoids permission issues:
-
-```bash
 sudo -u www-data inm core health
 ```
+
+*If `sudo` isn't needed.*
+
+```bash
+inm core health
+```
+> [!NOTE]
+> * Run the script as a user who can read the `.env` file of your Invoice Ninja installation. Typically, this is the web server user, such as `www-data`, `httpd`, `web`, `apache`, or `nginx`. In shared hosting environments, it is often the logged-in user (e.g., `u439534522`).
+> * Ensure you set the correct username in the script’s `.env.inmanage` file under `INM_ENFORCED_USER` and especially on the first run (otherwise you'll need to change permissions afterwards).
+> * In restricted environments (e.g., shared hosting with GitHub rate limits), set the `INM_GH_API_CREDENTIALS` variable in `.env.inmanage` as `USERNAME:PASSWORD` or `token:x-oauth` if needed.
+
+
 
 If the installer created symlinks (system/user/project), you can use `inm` (short) or `inmanage`. Otherwise run the CLI from its install path; creating a project-local symlink is recommended.
 
