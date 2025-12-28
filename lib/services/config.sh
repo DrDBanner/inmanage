@@ -5,6 +5,53 @@
 __SERVICE_CONFIG_LOADED=1
 
 # ---------------------------------------------------------------------
+# write_config_setting()
+# ---------------------------------------------------------------------
+write_config_setting() {
+    local key="$1"
+    local value="${default_settings[$key]}"
+    local comment=""
+
+    if [ -n "${default_comments[$key]+_}" ]; then
+        comment="${default_comments[$key]}"
+    elif [ -n "${prompt_texts[$key]+_}" ]; then
+        comment="${prompt_texts[$key]}"
+    fi
+
+    if [ -n "$comment" ]; then
+        while IFS= read -r line; do
+            printf "# %s\n" "$line" >> "$INM_SELF_ENV_FILE"
+        done <<< "$comment"
+    fi
+
+    printf '%s="%s"\n' "$key" "$value" >> "$INM_SELF_ENV_FILE"
+}
+
+# ---------------------------------------------------------------------
+# write_config_defaults()
+# ---------------------------------------------------------------------
+write_config_defaults() {
+    local key
+    for key in "${prompt_order[@]}"; do
+        write_config_setting "$key"
+    done
+
+    local remaining_keys=()
+    for key in "${!default_settings[@]}"; do
+        if [[ ! " ${prompt_order[*]} " =~  $key  ]]; then
+            remaining_keys+=("$key")
+        fi
+    done
+    if [ "${#remaining_keys[@]}" -gt 0 ]; then
+        IFS=$'\n' remaining_keys=($(printf '%s\n' "${remaining_keys[@]}" | sort))
+        unset IFS
+        for key in "${remaining_keys[@]}"; do
+            write_config_setting "$key"
+        done
+    fi
+}
+
+# ---------------------------------------------------------------------
 # persist_derived_config()
 # ---------------------------------------------------------------------
 persist_derived_config() {
@@ -36,9 +83,7 @@ persist_derived_config() {
 
     log info "[PDC] Writing derived config to: $INM_SELF_ENV_FILE"
 
-    for key in "${!default_settings[@]}"; do
-        echo "$key=\"${default_settings[$key]}\"" >> "$INM_SELF_ENV_FILE"
-    done
+    write_config_defaults
     if ! grep -q "^INM_CLI_COMPATIBILITY=" "$INM_SELF_ENV_FILE"; then
         echo "INM_CLI_COMPATIBILITY=\"new\"" >> "$INM_SELF_ENV_FILE"
     fi
@@ -149,12 +194,16 @@ create_own_config() {
         done
     fi
 
-    for key in "${prompt_order[@]}"; do
-        echo "$key=\"${default_settings[$key]}\"" >> "$INM_SELF_ENV_FILE"
+    for key in "${!default_settings[@]}"; do
+        if [ -n "${NAMED_ARGS[$key]+_}" ]; then
+            default_settings[$key]="${NAMED_ARGS[$key]}"
+        fi
     done
 
+    write_config_defaults
+
     for key in "${!NAMED_ARGS[@]}"; do
-        if [[ ! " ${prompt_order[*]} " =~  $key  ]]; then
+        if [ -z "${default_settings[$key]+_}" ]; then
             echo "$key=\"${NAMED_ARGS[$key]}\"" >> "$INM_SELF_ENV_FILE"
         fi
     done

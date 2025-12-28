@@ -57,9 +57,24 @@ declare -A prompt_texts=(
     ["INM_DUMP_OPTIONS"]="DUMP_OPTIONS: Modify database dump options: In doubt, keep defaults."
     ["INM_BACKUP_DIRECTORY"]="BACKUP_DIRECTORY: Define your desired location or keep."
     ["INM_FORCE_READ_DB_PW"]="FORCE_READ_DB_PW: Include DB password in CLI? (Y): Convenient, but may expose the password to other server users during runtime. (N): Assumes a secure .my.cnf file with credentials to avoid exposure."
-    ["INM_ENFORCED_USER"]="ENFORCED_USER: Correct setting helps to mitigate permission issues. Usually the webserver user. On shared hosting often your current user. If current is true, you can leave this empty."
+    ["INM_ENFORCED_USER"]="ENFORCED_USER: Correct setting helps to mitigate permission issues. Usually the webserver user. On shared hosting often your current user."
     ["INM_ENFORCED_SHELL"]="ENFORCED_SHELL: In doubt, keep as is."
     ["INM_PHP_EXECUTABLE"]="PHP_EXECUTABLE: In doubt, keep as is."
     ["INM_KEEP_BACKUPS"]="KEEP_BACKUPS: Backup retention? Set to 2 to keep 2 backups in the past at a time. Ensure enough disk space and keep the backup frequency in mind."
     ["INM_GH_API_CREDENTIALS"]="GitHub API credentials may be required on shared hosting. Use the format username:password or token:x-oauth. If provided, all curl commands will use these credentials;"
+)
+
+# shellcheck disable=SC2034,SC2190
+declare -A default_comments=(
+    ["INM_CACHE_DIR_MODE"]="Empty = auto (775 if group set, else 750)."
+    ["INM_CACHE_FILE_MODE"]="Empty = auto (664 if group set, else 640)."
+    ["INM_CACHE_SUDO_PROMPT"]="ask|never to enable sudo prompt for cache dir."
+    ["INM_CACHE_GLOBAL_RETENTION"]="Keep last N cached releases."
+    ["INM_ENFORCED_GROUP"]="Optional group override (defaults to user's primary group)."
+    ["INM_DIR_MODE"]="Default directory mode for app dirs when fixing perms."
+    ["INM_FILE_MODE"]="Default file mode for app files when fixing perms."
+    ["INM_ENV_MODE"]="Strict mode for app .env when fixing perms."
+    ["INM_GH_API_CREDENTIALS"]="Format username:password or token:x-oauth."
+    ["INM_MIGRATION_BACKUP"]="Use LATEST or path to run restore after provision."
+    ["INM_CLI_COMPATIBILITY"]="Missing => treat as legacy install."
 )
