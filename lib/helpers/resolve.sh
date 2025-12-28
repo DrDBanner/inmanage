@@ -40,6 +40,26 @@ resolve_script_path() {
     )
 }
 
+file_read_state() {
+    local path="$1"
+    if [ -r "$path" ]; then
+        echo "readable"
+        return 0
+    fi
+    if [ -e "$path" ]; then
+        echo "exists_unreadable"
+        return 0
+    fi
+    local stat_err=""
+    stat_err="$(stat "$path" 2>&1 || true)"
+    if echo "$stat_err" | grep -qi "permission denied"; then
+        echo "permission"
+        return 0
+    fi
+    echo "missing"
+    return 0
+}
+
 # ---------------------------------------------------------------------
 # resolve_env_paths()
 #
@@ -60,19 +80,27 @@ resolve_env_paths() {
         elif [[ "$ninja_dir" == --* ]] || [[ "$ninja_dir" != */* && "$ninja_dir" != .* ]]; then
             log debug "[RES] Ignoring invalid --ninja-location value: $ninja_dir"
             ninja_dir=""
-        elif [ ! -f "$ninja_dir/.env" ]; then
-            log warn "[RES] No .env found in --ninja-location: $ninja_dir (falling back to auto-detect)"
-            ninja_dir=""
         else
-            INM_BASE_DIRECTORY="$(dirname "$(realpath "$ninja_dir")")/"
-            INM_INSTALLATION_DIRECTORY="$(basename "$ninja_dir")"
-            INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
-            INM_ENV_FILE="$ninja_dir/.env"
-        log debug "[RES] Using .env from --ninja-location: $INM_ENV_FILE"
-            if [ -z "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_BASE_DIRECTORY/.inmanage/.env.inmanage" ]; then
-                INM_SELF_ENV_FILE="$INM_BASE_DIRECTORY/.inmanage/.env.inmanage"
+            local env_state
+            env_state="$(file_read_state "$ninja_dir/.env")"
+            if [ "$env_state" = "readable" ]; then
+                INM_BASE_DIRECTORY="$(dirname "$(realpath "$ninja_dir")")/"
+                INM_INSTALLATION_DIRECTORY="$(basename "$ninja_dir")"
+                INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
+                INM_ENV_FILE="$ninja_dir/.env"
+                log debug "[RES] Using .env from --ninja-location: $INM_ENV_FILE"
+                if [ -z "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_BASE_DIRECTORY/.inmanage/.env.inmanage" ]; then
+                    INM_SELF_ENV_FILE="$INM_BASE_DIRECTORY/.inmanage/.env.inmanage"
+                fi
+                return 0
+            elif [ "$env_state" = "exists_unreadable" ] || [ "$env_state" = "permission" ]; then
+                INM_ENV_FILE="$ninja_dir/.env"
+                log warn "[RES] App .env not readable at $INM_ENV_FILE (permission issue)."
+                return 0
+            else
+                log warn "[RES] No .env found in --ninja-location: $ninja_dir (falling back to auto-detect)"
+                ninja_dir=""
             fi
-            return 0
         fi
     fi
 
@@ -92,11 +120,16 @@ resolve_env_paths() {
             INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
             INM_ENV_FILE="${INM_INSTALLATION_PATH%/}/.env"
             log debug "[RES] Derived from config: base=$INM_BASE_DIRECTORY install=$INM_INSTALLATION_DIRECTORY env=$INM_ENV_FILE"
-            if [ -f "$INM_ENV_FILE" ]; then
+            local env_state
+            env_state="$(file_read_state "$INM_ENV_FILE")"
+            if [ "$env_state" = "readable" ]; then
                 log debug "[RES] Using .env from existing project config, skipping discovery."
                 return 0
+            elif [ "$env_state" = "exists_unreadable" ] || [ "$env_state" = "permission" ]; then
+                log warn "[RES] App .env not readable at $INM_ENV_FILE (permission issue); skipping discovery."
+                return 0
             else
-            log warn "[RES] App .env not found at $INM_ENV_FILE (from config); continuing discovery."
+                log warn "[RES] App .env not found at $INM_ENV_FILE (from config); continuing discovery."
             fi
         fi
     fi
@@ -112,12 +145,26 @@ resolve_env_paths() {
     )
 
     local candidates=()
+    local unreadable_candidates=()
     for dir in "${candidate_paths[@]}"; do
-        [ -f "$dir/.env" ] && candidates+=("$dir/.env")
+        local env_path="$dir/.env"
+        local env_state
+        env_state="$(file_read_state "$env_path")"
+        if [ "$env_state" = "readable" ]; then
+            candidates+=("$env_path")
+        elif [ "$env_state" = "exists_unreadable" ] || [ "$env_state" = "permission" ]; then
+            unreadable_candidates+=("$env_path")
+            log warn "[RES] App .env not readable at $env_path (permission issue)."
+        fi
         log debug "[RES] Checked for .env in: $dir"
     done
 
     if [ ${#candidates[@]} -eq 0 ]; then
+        if [ ${#unreadable_candidates[@]} -gt 0 ]; then
+            INM_ENV_FILE="${unreadable_candidates[0]}"
+            log warn "[RES] App .env not readable: $INM_ENV_FILE (permission issue)."
+            return 0
+        fi
         if [ -z "${INM_ENV_FILE:-}" ]; then
             # Last resort: derive from base/install if set, otherwise warn only
             if [ -n "${INM_BASE_DIRECTORY:-}" ] && [ -n "${INM_INSTALLATION_DIRECTORY:-}" ]; then

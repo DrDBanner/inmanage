@@ -319,8 +319,15 @@ check_envs() {
     # Normalize installation path in case INM_INSTALLATION_DIRECTORY is absolute.
     if declare -F compute_installation_path >/dev/null; then
         INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
+        local env_state=""
+        if [[ -n "${INM_ENV_FILE:-}" ]] && declare -F file_read_state >/dev/null 2>&1; then
+            env_state="$(file_read_state "$INM_ENV_FILE")"
+        fi
+        if [[ "$env_state" == "exists_unreadable" || "$env_state" == "permission" ]]; then
+            log warn "[ENV] App .env not readable: $INM_ENV_FILE (permission issue)."
+        fi
         # If the resolved .env path is missing, rebuild it relative to the normalized install path.
-        if [ -z "${INM_ENV_FILE:-}" ] || [ ! -f "$INM_ENV_FILE" ]; then
+        if [ -z "${INM_ENV_FILE:-}" ] || { [ ! -f "$INM_ENV_FILE" ] && [[ "$env_state" != "exists_unreadable" && "$env_state" != "permission" ]]; }; then
             INM_ENV_FILE="${INM_INSTALLATION_PATH%/}/.env"
             log debug "[ENV] Derived INM_ENV_FILE via installation path: $INM_ENV_FILE"
         fi
