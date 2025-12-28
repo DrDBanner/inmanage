@@ -226,10 +226,18 @@ check_envs() {
         # Fallback: if a local .inmanage/.env.inmanage exists in PWD or base dir, use it
         if [ -f ".inmanage/.env.inmanage" ]; then
             INM_SELF_ENV_FILE="$PWD/.inmanage/.env.inmanage"
-            log info "[ENV] Using local .inmanage/.env.inmanage at $INM_SELF_ENV_FILE"
+            if declare -F should_suppress_pre_switch_logs >/dev/null 2>&1 && should_suppress_pre_switch_logs; then
+                log debug "[ENV] Using local .inmanage/.env.inmanage at $INM_SELF_ENV_FILE"
+            else
+                log info "[ENV] Using local .inmanage/.env.inmanage at $INM_SELF_ENV_FILE"
+            fi
         elif [ -n "${INM_BASE_DIRECTORY:-}" ] && [ -f "${INM_BASE_DIRECTORY%/}/.inmanage/.env.inmanage" ]; then
             INM_SELF_ENV_FILE="${INM_BASE_DIRECTORY%/}/.inmanage/.env.inmanage"
-            log info "[ENV] Using base .inmanage/.env.inmanage at $INM_SELF_ENV_FILE"
+            if declare -F should_suppress_pre_switch_logs >/dev/null 2>&1 && should_suppress_pre_switch_logs; then
+                log debug "[ENV] Using base .inmanage/.env.inmanage at $INM_SELF_ENV_FILE"
+            else
+                log info "[ENV] Using base .inmanage/.env.inmanage at $INM_SELF_ENV_FILE"
+            fi
         fi
     fi
 
@@ -272,7 +280,11 @@ check_envs() {
         log err "[ENV] Failed to load project configuration."
         exit 1
     }
-    log info "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
+    if declare -F should_suppress_pre_switch_logs >/dev/null 2>&1 && should_suppress_pre_switch_logs; then
+        log debug "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
+    else
+        log info "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
+    fi
 
     # Expand placeholders in key paths after all loads (allows ${INM_BASE_DIRECTORY} style) without eval
     expand_placeholders() {
@@ -324,7 +336,11 @@ check_envs() {
             env_state="$(file_read_state "$INM_ENV_FILE")"
         fi
         if [[ "$env_state" == "exists_unreadable" || "$env_state" == "permission" ]]; then
-            log warn "[ENV] App .env not readable: $INM_ENV_FILE (permission issue)."
+            if declare -F should_suppress_pre_switch_logs >/dev/null 2>&1 && should_suppress_pre_switch_logs; then
+                log debug "[ENV] App .env not readable: $INM_ENV_FILE (permission issue)."
+            else
+                log warn "[ENV] App .env not readable: $INM_ENV_FILE (permission issue)."
+            fi
         fi
         # If the resolved .env path is missing, rebuild it relative to the normalized install path.
         if [ -z "${INM_ENV_FILE:-}" ] || { [ ! -f "$INM_ENV_FILE" ] && [[ "$env_state" != "exists_unreadable" && "$env_state" != "permission" ]]; }; then

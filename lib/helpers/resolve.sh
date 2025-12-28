@@ -60,6 +60,15 @@ file_read_state() {
     return 0
 }
 
+res_log_warn_pre_switch() {
+    local message="$1"
+    if declare -F should_suppress_pre_switch_logs >/dev/null 2>&1 && should_suppress_pre_switch_logs; then
+        log debug "$message"
+    else
+        log warn "$message"
+    fi
+}
+
 # ---------------------------------------------------------------------
 # resolve_env_paths()
 #
@@ -126,10 +135,10 @@ resolve_env_paths() {
                 log debug "[RES] Using .env from existing project config, skipping discovery."
                 return 0
             elif [ "$env_state" = "exists_unreadable" ] || [ "$env_state" = "permission" ]; then
-                log warn "[RES] App .env not readable at $INM_ENV_FILE (permission issue); skipping discovery."
+                res_log_warn_pre_switch "[RES] App .env not readable at $INM_ENV_FILE (permission issue); skipping discovery."
                 return 0
             else
-                log warn "[RES] App .env not found at $INM_ENV_FILE (from config); continuing discovery."
+                res_log_warn_pre_switch "[RES] App .env not found at $INM_ENV_FILE (from config); continuing discovery."
             fi
         fi
     fi
@@ -154,7 +163,7 @@ resolve_env_paths() {
             candidates+=("$env_path")
         elif [ "$env_state" = "exists_unreadable" ] || [ "$env_state" = "permission" ]; then
             unreadable_candidates+=("$env_path")
-            log warn "[RES] App .env not readable at $env_path (permission issue)."
+            res_log_warn_pre_switch "[RES] App .env not readable at $env_path (permission issue)."
         fi
         log debug "[RES] Checked for .env in: $dir"
     done
@@ -162,7 +171,7 @@ resolve_env_paths() {
     if [ ${#candidates[@]} -eq 0 ]; then
         if [ ${#unreadable_candidates[@]} -gt 0 ]; then
             INM_ENV_FILE="${unreadable_candidates[0]}"
-            log warn "[RES] App .env not readable: $INM_ENV_FILE (permission issue)."
+            res_log_warn_pre_switch "[RES] App .env not readable: $INM_ENV_FILE (permission issue)."
             return 0
         fi
         if [ -z "${INM_ENV_FILE:-}" ]; then

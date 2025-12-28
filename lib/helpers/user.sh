@@ -63,3 +63,26 @@ enforce_user_switch() {
         exec sudo -u "$old_from" -- bash "$memyselfasscript" "${providedargs[@]}"
     fi
 }
+
+# ---------------------------------------------------------------------
+# should_suppress_pre_switch_logs()
+# True when a user switch will happen and we're still pre-switch.
+# ---------------------------------------------------------------------
+should_suppress_pre_switch_logs() {
+    if [[ -n "${INM_CHILD_REEXEC:-}" ]]; then
+        return 1
+    fi
+    if [[ "${NAMED_ARGS[override_enforced_user]:-}" == "true" || "${INM_OVERRIDE_ENFORCED_USER:-}" == "true" ]]; then
+        return 1
+    fi
+    local target_user="${INM_ENFORCED_USER:-}"
+    if [[ -z "$target_user" ]]; then
+        return 1
+    fi
+    local current_user
+    current_user="$(whoami 2>/dev/null || true)"
+    if [[ "$current_user" != "$target_user" && "${DRY_RUN:-false}" != true ]]; then
+        return 0
+    fi
+    return 1
+}
