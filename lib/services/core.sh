@@ -84,6 +84,12 @@ compute_sha256() {
     sha256sum "$file" | awk '{print $1}'
 }
 
+apply_cache_file_mode() {
+    local mode
+    mode="$(cache_file_mode)"
+    chmod "$mode" "$@" 2>/dev/null || true
+}
+
 # ---------------------------------------------------------------------
 # download_ninja()
 # ---------------------------------------------------------------------
@@ -102,7 +108,7 @@ download_ninja() {
         log err "[DN] Cannot create cache directory: $cache_dir"
         exit 1
     fi
-    chmod u+rwX,g+rwX,o-rwx "$cache_dir" 2>/dev/null || log warn "[DN] Could not tighten cache permissions (trying to continue)"
+    apply_cache_dir_mode "$cache_dir"
     if [ ! -w "$cache_dir" ]; then
         # fallback to local cache within PWD if global not writable
         local fallback="${PWD}/.cache/inmanage"
@@ -111,7 +117,7 @@ download_ninja() {
             log err "[DN] Cannot create local fallback cache: $fallback"
             exit 1
         fi
-        chmod u+rwX,g+rwX,o-rwx "$fallback" 2>/dev/null || true
+        apply_cache_dir_mode "$fallback"
         if [ ! -w "$fallback" ]; then
             log err "[DN] Neither global nor local cache is writable."
             exit 1
@@ -169,6 +175,7 @@ download_ninja() {
                 if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" == true ]]; then
                     log warn "[DN] Cached file does not match release digest but bypass enabled; using cached file."
                     echo "$sum  $target_file" > "$checksum_file"
+                    apply_cache_file_mode "$checksum_file"
                     dirname "$target_file"
                     return 0
                 fi
@@ -176,6 +183,7 @@ download_ninja() {
                 rm -f "$target_file"
             else
                 echo "$sum  $target_file" > "$checksum_file"
+                apply_cache_file_mode "$checksum_file"
                 dirname "$target_file"
                 return 0
             fi
@@ -184,9 +192,11 @@ download_ninja() {
 
     log info "[DN] Downloading Invoice Ninja $version..."
 
+    local CURL_AUTH_FLAG=()
+    local USERNAME_PASSWORD=""
     case "${INM_GH_API_CREDENTIALS:-}" in
         ""|"0"|"false"|"no"|"none")
-            CURL_AUTH_FLAG=""
+            CURL_AUTH_FLAG=()
             log debug "[DN] No GitHub credentials provided; continuing unauthenticated."
             ;;
         token:*)
@@ -200,7 +210,7 @@ download_ninja() {
             ;;
         *)
             log warn "[DN] Invalid INM_GH_API_CREDENTIALS format, skipping authentication"
-            CURL_AUTH_FLAG=""
+            CURL_AUTH_FLAG=()
             ;;
     esac
 
@@ -257,6 +267,7 @@ download_ninja() {
                 fi
             fi
             echo "$sum_dl  $target_file" > "$checksum_file" 2>/dev/null || true
+            apply_cache_file_mode "$target_file" "$checksum_file"
             log ok "[DN] Download successful."
         else
             log err "[DN] Download failed: File is too small. Please check network."
@@ -368,7 +379,7 @@ show_versions_summary() {
     log info "[VER] Installed: ${installed:-<none>}"
     log info "[VER] Latest upstream: ${latest:-<unknown>}"
     if [ ${#cached_versions[@]} -gt 0 ]; then
-        IFS=$'\n' cached_versions=($(printf '%s\n' "${cached_versions[@]}" | sort -Vr))
+        mapfile -t cached_versions < <(printf '%s\n' "${cached_versions[@]}" | sort -Vr)
         log info "[VER] Cached (${cache_dir}): ${cached_versions[*]}"
     else
         log info "[VER] Cached: <none>"

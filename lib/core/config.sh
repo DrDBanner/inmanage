@@ -17,17 +17,23 @@ declare -A default_settings=(
     ["INM_ENV_FILE"]="\${INM_BASE_DIRECTORY}\${INM_INSTALLATION_DIRECTORY}/.env"
     ["INM_CACHE_LOCAL_DIRECTORY"]="./.cache"
     ["INM_CACHE_GLOBAL_DIRECTORY"]="\${HOME}/.inmanage/cache"
+    ["INM_CACHE_DIR_MODE"]="" # Empty = auto (775 if group set, else 750).
+    ["INM_CACHE_FILE_MODE"]="" # Empty = auto (664 if group set, else 640).
     ["INM_CACHE_SUDO_PROMPT"]="never" # ask|never to enable sudo prompt for cache dir.
     ["INM_CACHE_GLOBAL_RETENTION"]="3" # Keep last N cached releases.
     ["INM_DUMP_OPTIONS"]="--default-character-set=utf8mb4 --no-tablespaces --skip-add-drop-table --quick --single-transaction"
-    ["INM_BACKUP_DIRECTORY"]="./.backups"
+    ["INM_BACKUP_DIRECTORY"]="./.backup"
     ["INM_FORCE_READ_DB_PW"]="N"
     ["INM_ENFORCED_USER"]="www-data"
+    ["INM_ENFORCED_GROUP"]="" # Optional group override (defaults to user's primary group).
     ["INM_ENFORCED_SHELL"]="$(command -v bash)"
     ["INM_PHP_EXECUTABLE"]="$(command -v php)"
     ["INM_ARTISAN_STRING"]="\${INM_PHP_EXECUTABLE} \${INM_BASE_DIRECTORY}\${INM_INSTALLATION_DIRECTORY}/artisan"
     ["INM_PROGRAM_NAME"]="InvoiceNinja"
     ["INM_COMPATIBILITY_VERSION"]="5+"
+    ["INM_DIR_MODE"]="750" # Default directory mode for app dirs when fixing perms.
+    ["INM_FILE_MODE"]="640" # Default file mode for app files when fixing perms.
+    ["INM_ENV_MODE"]="600" # Strict mode for app .env when fixing perms.
     ["INM_KEEP_BACKUPS"]="2"
     ["INM_GH_API_CREDENTIALS"]="" # Format username:password or token:x-oauth.
     ["INM_MIGRATION_BACKUP"]="" # Use LATEST or path to run restore after provision.

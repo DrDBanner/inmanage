@@ -7,6 +7,7 @@ __RESOLVE_HELPER_LOADED=1
 # Bring in prompt helper for sudo prompts
 if ! declare -F prompt_confirm >/dev/null 2>&1; then
     prompt_helper_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prompt.sh"
+    # shellcheck source=/dev/null
     [ -f "$prompt_helper_path" ] && source "$prompt_helper_path"
 fi
 
@@ -211,7 +212,9 @@ compute_installation_path() {
 version_compare() {
     local v1="$1" op="$2" v2="$3"
     local IFS=.
-    local a=($v1) b=($v2) i comp="eq"
+    local a=() b=() i comp="eq"
+    read -r -a a <<<"$v1"
+    read -r -a b <<<"$v2"
     local len=${#a[@]}
     (( ${#b[@]} > len )) && len=${#b[@]}
     for ((i=${#a[@]}; i<len; i++)); do a[i]=0; done
@@ -232,7 +235,8 @@ expand_path_vars() {
     fi
     # Expand placeholders if helper exists, without eval
     local expanded="$path"
-    if [[ "$expanded" == *\${* ]] && declare -F expand_placeholders >/dev/null; then
+    # shellcheck disable=SC2016
+    if [[ "$expanded" == *'${'* ]] && declare -F expand_placeholders >/dev/null; then
         expanded="$(expand_placeholders "$expanded")"
     fi
     # Expand leading ~ and simple $HOME/${HOME} without eval, prefer original home if preserved
@@ -253,6 +257,11 @@ sudo_prepare_cache_dir() {
     local owner="$2"
     local mode="${3:-755}"
     local allow_prompt="${4:-false}"
+    local group="${5:-}"
+    if [[ -z "$group" ]]; then
+        group="$(id -gn "$owner" 2>/dev/null || true)"
+        [[ -z "$group" ]] && group="$owner"
+    fi
 
     local sudo_flags=()
     if [[ "$allow_prompt" != "true" ]]; then
@@ -260,9 +269,40 @@ sudo_prepare_cache_dir() {
     fi
 
     timeout 20 sudo "${sudo_flags[@]}" mkdir -p "$path" || return 1
-    timeout 20 sudo "${sudo_flags[@]}" chown "${owner}:${owner}" "$path" || return 1
+    timeout 20 sudo "${sudo_flags[@]}" chown "${owner}:${group}" "$path" || return 1
     timeout 20 sudo "${sudo_flags[@]}" chmod "$mode" "$path" || return 1
     return 0
+}
+
+cache_dir_mode() {
+    if [[ -n "${INM_CACHE_DIR_MODE:-}" ]]; then
+        printf "%s" "${INM_CACHE_DIR_MODE}"
+        return
+    fi
+    if [[ -n "${INM_ENFORCED_GROUP:-}" ]]; then
+        printf "775"
+    else
+        printf "750"
+    fi
+}
+
+cache_file_mode() {
+    if [[ -n "${INM_CACHE_FILE_MODE:-}" ]]; then
+        printf "%s" "${INM_CACHE_FILE_MODE}"
+        return
+    fi
+    if [[ -n "${INM_ENFORCED_GROUP:-}" ]]; then
+        printf "664"
+    else
+        printf "640"
+    fi
+}
+
+apply_cache_dir_mode() {
+    local dir="$1"
+    local mode
+    mode="$(cache_dir_mode)"
+    chmod "$mode" "$dir" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------
@@ -295,7 +335,7 @@ resolve_global_cache_dir() {
     log debug "[GC] Resolving global cache directory..."
 
     if [ -w "$home_parent" ]; then
-        if [ -w "$home_cache" ] || (mkdir -p "$home_cache" 2>/dev/null && chmod 755 "$home_cache" 2>/dev/null); then
+        if [ -w "$home_cache" ] || (mkdir -p "$home_cache" 2>/dev/null && apply_cache_dir_mode "$home_cache"); then
             INM_GLOBAL_CACHE="$home_cache"
             log ok "[GC] Using cache: $INM_GLOBAL_CACHE"
             return 0
@@ -303,7 +343,8 @@ resolve_global_cache_dir() {
 
         if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
             local cache_owner="${INM_ENFORCED_USER:-$USER}"
-            if sudo_prepare_cache_dir "$home_cache" "$cache_owner" 755 false; then
+            local cache_group="${INM_ENFORCED_GROUP:-}"
+            if sudo_prepare_cache_dir "$home_cache" "$cache_owner" "$(cache_dir_mode)" false "$cache_group"; then
                 INM_GLOBAL_CACHE="$home_cache"
                 log ok "[GC] Using cache via sudo: $INM_GLOBAL_CACHE"
                 return 0
@@ -317,6 +358,7 @@ resolve_global_cache_dir() {
     INM_GLOBAL_CACHE="$project_cache"
     log debug "[GC] Falling back to project cache: $INM_GLOBAL_CACHE"
     mkdir -p "$INM_GLOBAL_CACHE" 2>/dev/null || true
+    apply_cache_dir_mode "$INM_GLOBAL_CACHE"
     return 1
 }
 
@@ -341,15 +383,16 @@ check_global_cache_permissions() {
     fi
 
     if [ -w "$parent_dir" ]; then
-        if mkdir -p "$dir" 2>/dev/null && chmod 755 "$dir" 2>/dev/null; then
+        if mkdir -p "$dir" 2>/dev/null && apply_cache_dir_mode "$dir"; then
             return 0
         fi
     fi
 
     if command -v sudo >/dev/null 2>&1; then
         local cache_owner="${INM_ENFORCED_USER:-$USER}"
+        local cache_group="${INM_ENFORCED_GROUP:-}"
         if sudo -n true 2>/dev/null; then
-            if sudo_prepare_cache_dir "$dir" "$cache_owner" 755 false; then
+            if sudo_prepare_cache_dir "$dir" "$cache_owner" "$(cache_dir_mode)" false "$cache_group"; then
                 return 0
             fi
         elif [[ -t 0 ]] && declare -F prompt_confirm >/dev/null 2>&1; then
@@ -358,7 +401,7 @@ check_global_cache_permissions() {
                 return 1
             fi
             if prompt_confirm "CACHE_SUDO" "no" "Global cache not writable at $dir. Use sudo to create and chown to ${cache_owner}? [y/N]" false 60; then
-                if sudo_prepare_cache_dir "$dir" "$cache_owner" 755 true; then
+                if sudo_prepare_cache_dir "$dir" "$cache_owner" "$(cache_dir_mode)" true "$cache_group"; then
                     return 0
                 fi
             else

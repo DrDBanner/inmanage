@@ -133,20 +133,100 @@ _fs_get_mode() {
 enforce_ownership() {
     local paths=("$@")
     local owner="${INM_ENFORCED_USER:-${ENFORCED_USER:-}}"
+    local group="${INM_ENFORCED_GROUP:-${ENFORCED_GROUP:-}}"
     if [[ -z "$owner" ]]; then
         log debug "[EU] No enforced user configured; skipping chown."
         return 0
     fi
+    if [[ -z "$group" ]]; then
+        group="$(id -gn "$owner" 2>/dev/null || true)"
+        [[ -z "$group" ]] && group="$owner"
+    fi
+    local expected="${owner}:${group}"
     for path in "${paths[@]}"; do
         if [ -e "$path" ]; then
             local current
             current="$(_fs_get_owner "$path")"
-            if [[ "$current" == "$owner:$owner" ]]; then
+            if [[ "$current" == "$expected" ]]; then
                 log debug "[EU] Ownership already $current for $path"
                 continue
             fi
-            if ! chown -R "$owner:$owner" "$path" 2>/dev/null; then
-                log warn "[EU] chown failed for $path (wanted $owner:$owner)"
+            if ! chown -R "$expected" "$path" 2>/dev/null; then
+                log warn "[EU] chown failed for $path (wanted $expected)"
+            fi
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------
+# enforce_dir_permissions()
+# Applies chmod to directories only (recursively) if paths exist.
+# ---------------------------------------------------------------------
+enforce_dir_permissions() {
+    local mode="${1:-}"
+    shift || true
+    local paths=("$@")
+    if [[ -z "$mode" || ${#paths[@]} -eq 0 ]]; then
+        log debug "[EPD] Mode or paths missing; skipping dir chmod."
+        return 0
+    fi
+    for path in "${paths[@]}"; do
+        if [ -d "$path" ]; then
+            if ! find "$path" -type d -exec chmod "$mode" {} + 2>/dev/null; then
+                log warn "[EPD] chmod failed for $path (wanted $mode)"
+            fi
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------
+# enforce_file_permissions()
+# Applies chmod to files only (recursively) if paths exist.
+# Skips files with any execute bit set.
+# ---------------------------------------------------------------------
+enforce_file_permissions() {
+    local mode="${1:-}"
+    shift || true
+    local paths=("$@")
+    if [[ -z "$mode" || ${#paths[@]} -eq 0 ]]; then
+        log debug "[EPF] Mode or paths missing; skipping file chmod."
+        return 0
+    fi
+    for path in "${paths[@]}"; do
+        if [ -d "$path" ]; then
+            if ! find "$path" -type f ! -perm -111 -exec chmod "$mode" {} + 2>/dev/null; then
+                log warn "[EPF] chmod failed for files in $path (wanted $mode)"
+            fi
+        elif [ -f "$path" ]; then
+            if ! chmod "$mode" "$path" 2>/dev/null; then
+                log warn "[EPF] chmod failed for $path (wanted $mode)"
+            fi
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------
+# enforce_file_mode()
+# Applies chmod to specific files only.
+# ---------------------------------------------------------------------
+enforce_file_mode() {
+    local mode="${1:-}"
+    shift || true
+    local files=("$@")
+    if [[ -z "$mode" || ${#files[@]} -eq 0 ]]; then
+        log debug "[EPF] Mode or files missing; skipping file chmod."
+        return 0
+    fi
+    for file in "${files[@]}"; do
+        if [ -f "$file" ]; then
+            local current_mode
+            current_mode="$(_fs_get_mode "$file")"
+            if [[ "$current_mode" == "$mode" ]]; then
+                log debug "[EPF] Mode already $mode for $file"
+                continue
+            fi
+            if ! chmod "$mode" "$file" 2>/dev/null; then
+                log warn "[EPF] chmod failed for $file (wanted $mode)"
             fi
         fi
     done

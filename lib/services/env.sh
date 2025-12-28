@@ -11,7 +11,8 @@ resolve_env_file() {
     case "$target" in
         app)
             path="${INM_ENV_FILE:-}"
-            if [[ "$path" == *\${* ]] && declare -F expand_placeholders >/dev/null; then
+            # shellcheck disable=SC2016
+            if [[ "$path" == *'${'* ]] && declare -F expand_placeholders >/dev/null; then
                 path="$(expand_placeholders "$path")"
             fi
             ;;
@@ -34,12 +35,87 @@ resolve_env_file() {
     printf "%s" "$path"
 }
 
+_env_owner_for() {
+    local env_file="$1"
+    local og owner
+    og="$(_fs_get_owner "$env_file")"
+    owner="${og%%:*}"
+    if [[ -z "$owner" || "$owner" == "$og" ]]; then
+        owner="${INM_ENFORCED_USER:-}"
+    fi
+    if [[ -z "$owner" ]]; then
+        owner="$(whoami 2>/dev/null || true)"
+    fi
+    printf "%s" "$owner"
+}
+
+_env_access_mode() {
+    local env_file="$1"
+    local mode="${2:-read}"
+    local need_write=false
+    if [[ "$mode" == "write" ]]; then
+        need_write=true
+    fi
+    if [[ -r "$env_file" && ( "$need_write" == false || -w "$env_file" ) ]]; then
+        echo "direct"
+        return 0
+    fi
+    if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+        echo "direct"
+        return 0
+    fi
+    if ! command -v sudo >/dev/null 2>&1; then
+        log err "[ENV] ${env_file} not ${mode}able and sudo is unavailable."
+        return 1
+    fi
+    if sudo -n true 2>/dev/null; then
+        echo "sudo"
+        return 0
+    fi
+    if [[ ! -t 0 || ! -t 1 ]]; then
+        log err "[ENV] ${env_file} not ${mode}able and no TTY for sudo prompt."
+        return 1
+    fi
+    if prompt_confirm "ENV_SUDO" "no" "Env file not ${mode}able (${env_file}). Use sudo to proceed? [y/N]" false 60; then
+        echo "sudo"
+        return 0
+    fi
+    log err "[ENV] Insufficient permissions for ${env_file} (run as owner or with sudo)."
+    return 1
+}
+
+_env_run() {
+    local access="$1"
+    local owner="$2"
+    shift 2
+    if [[ "$access" == "sudo" ]]; then
+        sudo -u "$owner" -- "$@"
+    else
+        "$@"
+    fi
+}
+
+_env_run_shell() {
+    local access="$1"
+    local owner="$2"
+    local cmd="$3"
+    shift 3
+    if [[ "$access" == "sudo" ]]; then
+        sudo -u "$owner" -- env "$@" bash -c "$cmd"
+    else
+        env "$@" bash -c "$cmd"
+    fi
+}
+
 env_show() {
     local target="${1:-app}"
     local env_file
     env_file="$(resolve_env_file "$target")" || return 1
+    local access owner
+    access="$(_env_access_mode "$env_file" "read")" || return 1
+    owner="$(_env_owner_for "$env_file")"
     log info "[ENV] Showing env from $env_file"
-    cat "$env_file"
+    _env_run "$access" "$owner" cat "$env_file"
 }
 
 env_get() {
@@ -51,12 +127,15 @@ env_get() {
     key="$1"
     local env_file
     env_file="$(resolve_env_file "$target")" || return 1
+    local access owner
+    access="$(_env_access_mode "$env_file" "read")" || return 1
+    owner="$(_env_owner_for "$env_file")"
     if [[ -z "$key" ]]; then
         log err "[ENV] Missing key. Usage: env get KEY"
         return 1
     fi
     local val
-    val=$(grep -E "^${key}=" "$env_file" | tail -n1 | cut -d= -f2-)
+    val=$(_env_run "$access" "$owner" cat "$env_file" | grep -E "^${key}=" | tail -n1 | cut -d= -f2-)
     if [[ -n "$val" ]]; then
         echo "$val"
     else
@@ -72,6 +151,9 @@ env_unset() {
     key="$1"
     local env_file
     env_file="$(resolve_env_file "$target")" || return 1
+    local access owner
+    access="$(_env_access_mode "$env_file" "write")" || return 1
+    owner="$(_env_owner_for "$env_file")"
     if [[ -z "$key" ]]; then
         log err "[ENV] Missing key. Usage: env unset KEY"
         return 1
@@ -81,9 +163,13 @@ env_unset() {
         return 0
     fi
     if grep -q -E "^${key}=" "$env_file"; then
-        local tmpfile
-        tmpfile="$(mktemp)"
-        grep -v -E "^${key}=" "$env_file" > "$tmpfile" && mv "$tmpfile" "$env_file"
+        local cmd
+        # shellcheck disable=SC2016
+        cmd='tmp=$(mktemp) || exit 1; grep -v -E "^${KEY}=" "$ENV_FILE" > "$tmp" 2>/dev/null || true; mv "$tmp" "$ENV_FILE"'
+        _env_run_shell "$access" "$owner" "$cmd" KEY="$key" ENV_FILE="$env_file"
+        if [[ "$target" == "app" && -n "${INM_ENV_MODE:-}" ]]; then
+            _env_run "$access" "$owner" chmod "${INM_ENV_MODE}" "$env_file" 2>/dev/null || true
+        fi
         log ok "[ENV] Removed $key from $env_file"
     else
         log warn "[ENV] Key not found: $key"
@@ -98,6 +184,9 @@ env_set() {
     pair="$1"
     local env_file
     env_file="$(resolve_env_file "$target")" || return 1
+    local access owner
+    access="$(_env_access_mode "$env_file" "write")" || return 1
+    owner="$(_env_owner_for "$env_file")"
     if [[ -z "$pair" || "$pair" != *=* ]]; then
         log err "[ENV] Usage: env set [app|cli] KEY=VALUE"
         return 1
@@ -108,11 +197,12 @@ env_set() {
         log info "[DRY-RUN] Would set $key in $env_file"
         return 0
     fi
-    local tmpfile
-    tmpfile="$(mktemp)"
-    # remove existing
-    grep -v -E "^${key}=" "$env_file" > "$tmpfile" 2>/dev/null || true
-    echo "${key}=${value}" >> "$tmpfile"
-    mv "$tmpfile" "$env_file"
+    local cmd
+    # shellcheck disable=SC2016
+    cmd='tmp=$(mktemp) || exit 1; grep -v -E "^${KEY}=" "$ENV_FILE" > "$tmp" 2>/dev/null || true; printf "%s\n" "${KEY}=${VALUE}" >> "$tmp"; mv "$tmp" "$ENV_FILE"'
+    _env_run_shell "$access" "$owner" "$cmd" KEY="$key" VALUE="$value" ENV_FILE="$env_file"
+    if [[ "$target" == "app" && -n "${INM_ENV_MODE:-}" ]]; then
+        _env_run "$access" "$owner" chmod "${INM_ENV_MODE}" "$env_file" 2>/dev/null || true
+    fi
     log ok "[ENV] Set $key in $env_file"
 }

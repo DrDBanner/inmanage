@@ -19,6 +19,18 @@ run_preflight() {
     local -A ARGS=()
     parse_named_args ARGS "$@"
     local pf_label="${INM_PREFLIGHT_LABEL:-PREFLIGHT}"
+    local enforced_owner=""
+    if [ -n "${ENFORCED_USER:-}" ]; then
+        local enforced_group="${INM_ENFORCED_GROUP:-}"
+        if [ -z "$enforced_group" ]; then
+            enforced_group="$(id -gn "$ENFORCED_USER" 2>/dev/null || true)"
+            [[ -z "$enforced_group" ]] && enforced_group="$ENFORCED_USER"
+        fi
+        enforced_owner="${ENFORCED_USER}:${enforced_group}"
+    fi
+    local fast="${ARGS[fast]:-false}"
+    local skip_snappdf="${ARGS[skip_snappdf]:-false}"
+    local skip_github="${ARGS[skip_github]:-false}"
 
     # Optional check filter (CSV of tags, e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,MAIL,APP,CRON,SNAPPDF)
     normalize_check_tag() {
@@ -75,6 +87,9 @@ run_preflight() {
         [override_enforced_user]=1
         [user]=1
         [no_cli_clear]=1
+        [fast]=1
+        [skip_snappdf]=1
+        [skip_github]=1
     )
     local -A unknown_args=()
     local arg_key
@@ -96,7 +111,7 @@ run_preflight() {
             bad_args+=("--${arg_key//_/-}")
         done
         log err "[${pf_label}] Unknown arguments: ${bad_args[*]}"
-        log info "[${pf_label}] Allowed flags: --checks=TAG1,TAG2 --check=TAG1,TAG2 --fix-permissions --debug --dry-run --override-enforced-user --no-cli-clear"
+        log info "[${pf_label}] Allowed flags: --checks=TAG1,TAG2 --check=TAG1,TAG2 --fix-permissions --debug --dry-run --override-enforced-user --no-cli-clear --fast --skip-snappdf --skip-github"
         $errexit_set && set -e
         return 1
     fi
@@ -188,7 +203,7 @@ run_preflight() {
 
     if should_run "CLI"; then
     # ---- CLI self info ----
-    local cli_root cli_branch cli_commit cli_dirty="" cli_source="snapshot"
+    local cli_root cli_branch cli_commit cli_dirty=""
     cli_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
     add_result INFO "CLI" "CLI: $cli_root"
     if command -v git >/dev/null 2>&1 && [ -d "$cli_root/.git" ]; then
@@ -202,7 +217,6 @@ run_preflight() {
         local cli_commit_date
         cli_commit_date="$(git -C "$cli_root" log -1 --format=%cd --date=iso 2>/dev/null || true)"
         [[ -n "$cli_commit_date" ]] && add_result INFO "CLI" "Last commit date: $cli_commit_date"
-        cli_source="git"
     else
         add_result WARN "CLI" "Source: no git metadata (tarball/snapshot install)"
     fi
@@ -232,9 +246,9 @@ run_preflight() {
             cli_install_mode="project"
         fi
     fi
-    add_result INFO "CLI" "Install mode: ${cli_install_mode} (switch with: inmanage self switch-mode)"
+    add_result INFO "CLI" "Install mode: ${cli_install_mode} (switch with: inm self switch-mode)"
     # Newest file mtime (best-effort)
-    local inmanage_mtime="" inmanage_mtime_short="" inmanage_rel="inmanage.sh"
+    local inmanage_mtime="" inmanage_mtime_short=""
     if [ -f "$cli_root/inmanage.sh" ]; then
         inmanage_mtime=$(stat -c '%y' "$cli_root/inmanage.sh" 2>/dev/null || stat -f '%Sm' "$cli_root/inmanage.sh" 2>/dev/null)
         inmanage_mtime_short="$(echo "$inmanage_mtime" | cut -d. -f1)"
@@ -259,8 +273,9 @@ run_preflight() {
         done < <(find "$cli_root" -path "$cli_root/.git" -prune -o -type f -print0 2>/dev/null)
         if [ -n "$latest_file" ]; then
             local rel_latest="$latest_file"
-            [[ "$latest_file" == "$cli_root/"* ]] && rel_latest="${latest_file#$cli_root/}"
-            local latest_short="$(echo "$latest_human" | cut -d. -f1)"
+            [[ "$latest_file" == "$cli_root/"* ]] && rel_latest="${latest_file#"$cli_root"/}"
+            local latest_short
+            latest_short="$(echo "$latest_human" | cut -d. -f1)"
             add_result INFO "CLI" "Newest file mtime: ${latest_short} (${rel_latest})"
             if [ -n "$inmanage_mtime_short" ] && [ "$latest_file" != "$cli_root/inmanage.sh" ]; then
                 add_result INFO "CLI" "inmanage.sh modified: $inmanage_mtime_short"
@@ -553,7 +568,7 @@ run_preflight() {
         if [[ ${#app_missing[@]} -gt 0 ]]; then
             add_result ERR "APP" "Critical app items missing: ${app_missing[*]}"
             if [ -n "$app_cfg_hint" ]; then
-                add_result WARN "APP" "Config found (${app_cfg_hint}) but app tree is missing/incomplete. Fix: move existing app to ${app_dir} or run 'inmanage core install --provision' (recommended). For guidance, run 'inmanage core install --help'."
+            add_result WARN "APP" "Config found (${app_cfg_hint}) but app tree is missing/incomplete. Fix: move existing app to ${app_dir} or run 'inm core install --provision' (recommended). For guidance, run 'inm core install --help'."
             fi
         else
             add_result OK "APP" "App structure looks complete at ${app_dir}"
@@ -563,17 +578,26 @@ run_preflight() {
         fi
 
         if [ -n "${ENFORCED_USER:-}" ]; then
+            local expected_group="${INM_ENFORCED_GROUP:-}"
+            if [ -z "$expected_group" ]; then
+                expected_group="$(id -gn "$ENFORCED_USER" 2>/dev/null || true)"
+                [[ -z "$expected_group" ]] && expected_group="$ENFORCED_USER"
+            fi
+            local expected_owner="${ENFORCED_USER}:${expected_group}"
+            local dir_mode="${INM_DIR_MODE:-750}"
+            local file_mode="${INM_FILE_MODE:-640}"
+            local env_mode="${INM_ENV_MODE:-600}"
             check_owner_and_fix() {
                 local p="$1"
                 [ ! -e "$p" ] && return
                 local owner
-                owner=$(stat -c '%U' "$p" 2>/dev/null || stat -f '%Su' "$p" 2>/dev/null || echo "")
-                if [ -n "$owner" ] && [ "$owner" != "$ENFORCED_USER" ]; then
+                owner=$(stat -c '%U:%G' "$p" 2>/dev/null || stat -f '%Su:%Sg' "$p" 2>/dev/null || echo "")
+                if [ -n "$owner" ] && [ "$owner" != "$expected_owner" ]; then
                     if [ "$fix_permissions" = true ]; then
-                        add_result WARN "PERM" "Fixing ownership for $p (was $owner -> $ENFORCED_USER)"
+                        add_result WARN "PERM" "Fixing ownership for $p (was $owner -> $expected_owner)"
                         enforce_ownership "$p"
                     else
-                        add_result WARN "PERM" "Ownership mismatch at $p (owner=$owner, expected=$ENFORCED_USER). Use --fix-permissions to repair."
+                        add_result WARN "PERM" "Ownership mismatch at $p (owner=$owner, expected=$expected_owner). Use --fix-permissions to repair."
                     fi
                 else
                     add_result OK "PERM" "$p owned by ${owner:-unknown}"
@@ -582,11 +606,61 @@ run_preflight() {
             check_owner_and_fix "${INM_INSTALLATION_PATH%/}"
             check_owner_and_fix "${INM_INSTALLATION_PATH%/}/storage"
             check_owner_and_fix "${INM_INSTALLATION_PATH%/}/public"
+
+            check_mode_and_fix_dir() {
+                local p="$1"
+                [ ! -d "$p" ] && return
+                local current
+                current="$(_fs_get_mode "$p")"
+                if [ -n "$current" ] && [ "$current" != "$dir_mode" ]; then
+                    if [ "$fix_permissions" = true ]; then
+                        add_result WARN "PERM" "Fixing dir mode for $p (was $current -> $dir_mode)"
+                        enforce_dir_permissions "$dir_mode" "$p"
+                    else
+                        add_result WARN "PERM" "Dir mode mismatch at $p (mode=$current, expected=$dir_mode). Use --fix-permissions to repair."
+                    fi
+                fi
+            }
+            check_mode_and_fix_dir "${INM_INSTALLATION_PATH%/}"
+            check_mode_and_fix_dir "${INM_INSTALLATION_PATH%/}/storage"
+            check_mode_and_fix_dir "${INM_INSTALLATION_PATH%/}/public"
+            check_mode_and_fix_dir "${INM_INSTALLATION_PATH%/}/bootstrap/cache"
+
+            local file_mode_applied=false
+            if [ -f "${INM_INSTALLATION_PATH%/}/public/index.php" ]; then
+                local current_file_mode
+                current_file_mode="$(_fs_get_mode "${INM_INSTALLATION_PATH%/}/public/index.php")"
+                if [ -n "$current_file_mode" ] && [ "$current_file_mode" != "$file_mode" ]; then
+                    if [ "$fix_permissions" = true ]; then
+                        add_result WARN "PERM" "Fixing file modes under app dir (target $file_mode)"
+                        enforce_file_permissions "$file_mode" "${INM_INSTALLATION_PATH%/}"
+                        file_mode_applied=true
+                    else
+                        add_result WARN "PERM" "File mode mismatch (public/index.php=$current_file_mode, expected=$file_mode). Use --fix-permissions to repair."
+                    fi
+                fi
+            fi
+            if [ "$fix_permissions" = true ] && [ "$file_mode_applied" = false ]; then
+                enforce_file_permissions "$file_mode" "${INM_INSTALLATION_PATH%/}"
+            fi
+
+            if [ -f "${INM_INSTALLATION_PATH%/}/.env" ]; then
+                local current_env_mode
+                current_env_mode="$(_fs_get_mode "${INM_INSTALLATION_PATH%/}/.env")"
+                if [ -n "$current_env_mode" ] && [ "$current_env_mode" != "$env_mode" ]; then
+                    if [ "$fix_permissions" = true ]; then
+                        add_result WARN "PERM" "Fixing .env mode (was $current_env_mode -> $env_mode)"
+                        enforce_file_mode "$env_mode" "${INM_INSTALLATION_PATH%/}/.env"
+                    else
+                        add_result WARN "PERM" ".env mode mismatch (mode=$current_env_mode, expected=$env_mode). Use --fix-permissions to repair."
+                    fi
+                fi
+            fi
         fi
     else
         add_result WARN "APP" "App directory missing or unset: ${INM_INSTALLATION_PATH:-<unset>}"
         if [ -n "$app_cfg_hint" ]; then
-            add_result WARN "APP" "Config found (${app_cfg_hint}) but app directory is missing. Fix: move existing app to ${INM_INSTALLATION_PATH%/} or run 'inmanage core install --provision' (recommended). For guidance, run 'inmanage core install --help'."
+            add_result WARN "APP" "Config found (${app_cfg_hint}) but app directory is missing. Fix: move existing app to ${INM_INSTALLATION_PATH%/} or run 'inm core install --provision' (recommended). For guidance, run 'inm core install --help'."
         fi
     fi
     fi
@@ -723,8 +797,8 @@ run_preflight() {
             add_result OK "FS" "$detail"
         else
             local hint="$label not writable: $dir"
-            if [ -n "${ENFORCED_USER:-}" ]; then
-                hint+=" (hint: chown -R ${ENFORCED_USER}:${ENFORCED_USER} \"$dir\" or run 'inmanage core health --fix-permissions')"
+            if [ -n "${enforced_owner:-}" ]; then
+                hint+=" (hint: chown -R ${enforced_owner} \"$dir\" or run 'inm core health --fix-permissions')"
             fi
             add_result ERR "FS" "$hint"
         fi
@@ -735,6 +809,10 @@ run_preflight() {
     local cache_local_state="unset"
     local cache_global_detail=""
     local cache_local_detail=""
+    local cache_global_world_writable=false
+    local cache_local_world_writable=false
+    local cache_global_mode=""
+    local cache_local_mode=""
 
     if [ -n "${INM_CACHE_GLOBAL_DIRECTORY:-}" ]; then
         local gc_path gc_parent
@@ -745,11 +823,18 @@ run_preflight() {
             rm -f "$gc_path/.inm_perm_test"
             cache_global_state="ok"
             cache_global_detail="Writable: $gc_path (Cache global)"
+            cache_global_mode="$(_fs_get_mode "$gc_path")"
+            if [[ -n "$cache_global_mode" ]]; then
+                local other=$((cache_global_mode % 10))
+                if (( (other & 2) != 0 )); then
+                    cache_global_world_writable=true
+                fi
+            fi
         else
             cache_global_state="fail"
             cache_global_detail="Not writable: $gc_path (Cache global)"
-            if [ -n "${ENFORCED_USER:-}" ]; then
-                cache_global_detail+=" (hint: chown -R ${ENFORCED_USER}:${ENFORCED_USER} \"$gc_path\" or use --override_enforced_user=true to adjust perms)"
+            if [ -n "${enforced_owner:-}" ]; then
+                cache_global_detail+=" (hint: chown -R ${enforced_owner} \"$gc_path\" or use --override_enforced_user=true to adjust perms)"
             fi
             cache_global_detail+=" or set INM_CACHE_GLOBAL_DIRECTORY to an accessible path."
         fi
@@ -763,11 +848,18 @@ run_preflight() {
             rm -f "$lc_path/.inm_perm_test"
             cache_local_state="ok"
             cache_local_detail="Writable: $lc_path (Cache local)"
+            cache_local_mode="$(_fs_get_mode "$lc_path")"
+            if [[ -n "$cache_local_mode" ]]; then
+                local other=$((cache_local_mode % 10))
+                if (( (other & 2) != 0 )); then
+                    cache_local_world_writable=true
+                fi
+            fi
         else
             cache_local_state="fail"
             cache_local_detail="Not writable: $lc_path (Cache local)"
-            if [ -n "${ENFORCED_USER:-}" ]; then
-                cache_local_detail+=" (hint: chown -R ${ENFORCED_USER}:${ENFORCED_USER} \"$lc_path\" or use --override_enforced_user=true to adjust perms)"
+            if [ -n "${enforced_owner:-}" ]; then
+                cache_local_detail+=" (hint: chown -R ${enforced_owner} \"$lc_path\" or use --override_enforced_user=true to adjust perms)"
             fi
             cache_local_detail+=" or set INM_CACHE_LOCAL_DIRECTORY to an accessible path."
         fi
@@ -780,6 +872,9 @@ run_preflight() {
 
     if [ "$cache_global_state" = "ok" ]; then
         add_result OK "FS" "$cache_global_detail"
+        if [ "$cache_global_world_writable" = true ]; then
+            add_result WARN "FS" "Cache global is world-writable: $gc_path (mode=$cache_global_mode). Consider 775 with shared group or 750."
+        fi
     elif [ "$cache_global_state" = "fail" ]; then
         if [ "$cache_any_ok" = true ]; then
             add_result INFO "FS" "${cache_global_detail} (local cache writable; consider fixing global cache for shared use)"
@@ -790,6 +885,9 @@ run_preflight() {
 
     if [ "$cache_local_state" = "ok" ]; then
         add_result OK "FS" "$cache_local_detail"
+        if [ "$cache_local_world_writable" = true ]; then
+            add_result WARN "FS" "Cache local is world-writable: $lc_path (mode=$cache_local_mode). Consider 775 with shared group or 750."
+        fi
     elif [ "$cache_local_state" = "fail" ]; then
         if [ "$cache_any_ok" = true ]; then
             add_result INFO "FS" "${cache_local_detail} (global cache writable; consider fixing local cache for speed)"
@@ -834,6 +932,7 @@ run_preflight() {
     # Try to hydrate DB vars from app .env if missing
     if [ -z "${DB_HOST:-}" ] && [ -f "${INM_ENV_FILE:-}" ]; then
         set -a
+        # shellcheck source=/dev/null
         . "$INM_ENV_FILE" 2>/dev/null || true
         set +a
         add_result INFO "DB" "Loaded DB vars from ${INM_ENV_FILE}"
@@ -961,7 +1060,7 @@ run_preflight() {
     if echo "$cron_scope" | grep -q "artisan schedule:run"; then
         add_result OK "CRON" "artisan schedule:run present"
     else
-        add_result WARN "CRON" "artisan schedule missing; run: inmanage core cron install --jobs=scheduler"
+        add_result WARN "CRON" "artisan schedule missing; run: inm core cron install --jobs=scheduler"
     fi
 
     extract_cron_time() {
@@ -973,9 +1072,9 @@ run_preflight() {
             printf "%02d:%02d" "$hour" "$min"
         fi
     }
-    if echo "$cron_scope" | grep -q "inmanage core backup"; then
+    if echo "$cron_scope" | grep -Eq "(inmanage|inm) core backup"; then
         local backup_line backup_time
-        backup_line="$(echo "$cron_scope" | grep -E "inmanage core backup" | head -n1)"
+        backup_line="$(echo "$cron_scope" | grep -E "(inmanage|inm) core backup" | head -n1)"
         backup_time="$(extract_cron_time "$backup_line")"
         if [[ -n "$backup_time" ]]; then
             add_result OK "CRON" "backup cron present (${backup_time})"
@@ -984,7 +1083,7 @@ run_preflight() {
         fi
     else
         local default_time="${INM_CRON_BACKUP_TIME:-03:24}"
-        add_result WARN "CRON" "backup cron missing; run: inmanage core cron install --jobs=backup --backup-time=${default_time}"
+        add_result WARN "CRON" "backup cron missing; run: inm core cron install --jobs=backup --backup-time=${default_time}"
     fi
     fi
 
@@ -1200,6 +1299,7 @@ PHP
             smtp_port="${smtp_port:-587}"
             local smtp_out smtp_detail
             if [ "${DEBUG:-false}" = true ]; then
+                # shellcheck disable=SC2016
                 smtp_out=$(INM_SMTP_HOST="$smtp_host" INM_SMTP_PORT="$smtp_port" php -r '
 $host = getenv("INM_SMTP_HOST");
 $port = (int) getenv("INM_SMTP_PORT");
@@ -1209,6 +1309,7 @@ $errstr = "";
 $fp = @fsockopen($host, $port, $errno, $errstr, $timeout);
 if ($fp) { fclose($fp); echo "OK"; } else { echo "ERR:" . $errstr; }' 2>&1 || true)
             else
+                # shellcheck disable=SC2016
                 smtp_out=$(INM_SMTP_HOST="$smtp_host" INM_SMTP_PORT="$smtp_port" php -r '
 $host = getenv("INM_SMTP_HOST");
 $port = (int) getenv("INM_SMTP_PORT");
@@ -1314,7 +1415,13 @@ if ($fp) { fclose($fp); echo "OK"; } else { echo "ERR:" . $errstr; }' 2>/dev/nul
     done
 
     log info "[${pf_label}] Completed: OK=$ok WARN=$warn ERR=$err"
-    log info "[${pf_label}] Aggregate status: $([ "$err" -gt 0 ] && echo ERR || { [ "$warn" -gt 0 ] && echo WARN || echo OK; })"
+    local aggregate_status="OK"
+    if [ "$err" -gt 0 ]; then
+        aggregate_status="ERR"
+    elif [ "$warn" -gt 0 ]; then
+        aggregate_status="WARN"
+    fi
+    log info "[${pf_label}] Aggregate status: ${aggregate_status}"
 
     if [ "$err" -gt 0 ]; then
         $errexit_set && set -e
@@ -1361,7 +1468,7 @@ check_web_php() {
     # Ensure webroot exists and is writable before probing
     mkdir -p "$webroot" 2>/dev/null || true
     if ! touch "$webroot/.inm_probe_touch" 2>/dev/null; then
-        ${add_fn:-log warn} WARN "WEBPHP" "Cannot write probe to webroot: $webroot (user: $(whoami)). Hint: chown -R ${ENFORCED_USER:-www-data}:${ENFORCED_USER:-www-data} \"$webroot\" or run with --override_enforced_user=true to adjust perms."
+        ${add_fn:-log warn} WARN "WEBPHP" "Cannot write probe to webroot: $webroot (user: $(whoami)). Hint: chown -R ${enforced_owner:-www-data:www-data} \"$webroot\" or run with --override_enforced_user=true to adjust perms."
         return 1
     else
         rm -f "$webroot/.inm_probe_touch" 2>/dev/null || true

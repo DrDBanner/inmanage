@@ -5,6 +5,7 @@
 /.vscode
 /.vagrant
 /tests/_output
+/testing_ground/
 Homestead.json
 Homestead.yaml
 npm-debug.log
