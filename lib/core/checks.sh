@@ -201,6 +201,11 @@ check_github_rate_limit() {
 check_envs() {
     log debug "[ENV] Check starts."
 
+    if [[ "${CMD_CONTEXT:-}" == "self" ]]; then
+        log debug "[ENV] Skipping project config checks for self commands."
+        return 0
+    fi
+
     check_base_directory_valid_and_enter || {
         log err "[ENV] Base directory check failed. Aborting."
         exit 1

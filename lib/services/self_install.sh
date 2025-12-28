@@ -15,8 +15,10 @@ install_self() {
   fi
   log debug "[SELF] Checking CLI installation …"
 
+  local can_prompt=false
+  [[ -t 0 && -t 1 ]] && can_prompt=true
+
   local default_bin="/usr/local/bin"
-  local local_bin="$HOME/.local/bin"
   local source_script
   source_script="$(realpath "$0")"
   local source_dir
@@ -24,16 +26,39 @@ install_self() {
 
   local install_dir="${NAMED_ARGS[target_dir]:-${NAMED_ARGS[--target-dir]:-}}"
   local install_mode="${NAMED_ARGS[install_mode]:-${NAMED_ARGS[--install-mode]:-}}"
-  local run_user
-  run_user="${INM_ENFORCED_USER:-$(whoami)}"
+  local run_user_default="${INM_ENFORCED_USER:-${RUN_AS_USER:-${SUDO_USER:-$(whoami)}}}"
+  local run_user="${NAMED_ARGS[run_user]:-${NAMED_ARGS[--run-user]:-$run_user_default}}"
+  local run_user_override=false
+  if [[ -n "${NAMED_ARGS[run_user]:-}" || -n "${NAMED_ARGS[--run-user]:-}" || -n "${RUN_AS_USER:-}" ]]; then
+      run_user_override=true
+  fi
 
   # Ask early which user should run inmanage
-  run_user="$(prompt_var "RUN_AS_USER" "$run_user" "Which user should run inmanage commands? (cron/artisan will use this)")"
+  if [[ "$can_prompt" == true && "$run_user_override" == false ]]; then
+      run_user="$(prompt_var "RUN_AS_USER" "$run_user" "Which user should run inmanage commands? (cron/artisan will use this)")" || return 1
+  fi
   if ! id -u "$run_user" >/dev/null 2>&1; then
       log warn "[SELF] User '$run_user' does not exist on this system. Using current user: $(whoami)"
       run_user="$(whoami)"
   fi
   log info "[SELF] Will target run-user: $run_user"
+
+  local user_home="${HOME:-}"
+  if [[ -n "$run_user" && "$run_user" != "$(whoami)" ]]; then
+      user_home="$(getent passwd "$run_user" 2>/dev/null | cut -d: -f6)"
+      [[ -z "$user_home" ]] && user_home="/home/$run_user"
+  fi
+  [[ -z "$user_home" ]] && user_home="/home/$run_user"
+  local user_data_home=""
+  if [[ "$run_user" == "$(whoami)" && -n "${XDG_DATA_HOME:-}" ]]; then
+      user_data_home="$XDG_DATA_HOME"
+  else
+      user_data_home="${user_home%/}/.local/share"
+  fi
+  user_data_home="${user_data_home%/}"
+  local local_bin="${user_home%/}/.local/bin"
+  local default_user_dir="${user_data_home%/}/inmanage"
+  local symlink_dir="${NAMED_ARGS[symlink_dir]:-${NAMED_ARGS[--symlink-dir]:-}}"
 
   # Derive a base_dir for project mode defaults
   local base_dir="${INM_BASE_DIRECTORY:-$PWD}"
@@ -41,27 +66,65 @@ install_self() {
       base_dir="$(ensure_trailing_slash "$base_dir")"
   fi
 
+  normalize_install_mode() {
+    case "$1" in
+      1|system) printf "1" ;;
+      2|local|user) printf "2" ;;
+      3|project) printf "3" ;;
+      *) printf "%s" "$1" ;;
+    esac
+  }
+
   if [[ -z "$install_mode" ]]; then
-    echo
-    echo "Select installation mode:"
-    echo "  [1] Full Install     – system-wide (requires sudo/root)"
-    echo "  [2] Local Install    – user context (~/.local/bin)"
-    echo "  [3] Project Install  – once per project (least convenient)"
-    echo
-    install_mode="$(prompt_var "INSTALL_MODE" "2" "Mode (1/2/3)")" || return 1
+    if [[ "$can_prompt" == true ]]; then
+      echo
+      echo "Select installation mode:"
+      echo "  [1] Full Install     – system-wide (requires sudo/root)"
+      echo "  [2] Local Install    – user context (~/.local/bin)"
+      echo "  [3] Project Install  – once per project (least convenient)"
+      echo
+      install_mode="$(prompt_var "INSTALL_MODE" "2" "Mode (1/2/3)")" || return 1
+    else
+      install_mode="2"
+    fi
   fi
+  install_mode="$(normalize_install_mode "$install_mode")"
+
+  if [[ "$install_mode" == "2" && "$run_user" != "$(whoami)" && ${EUID:-$(id -u)} -ne 0 ]]; then
+      log err "[SELF] User-mode install for '$run_user' requires sudo/root."
+      return 1
+  fi
+
+  local default_project_dir="${base_dir%/}/.inmanage/cli"
 
   if [[ -z "$install_dir" ]]; then
     case "$install_mode" in
       1) install_dir="/usr/local/share/inmanage" ;;
-      2) install_dir="$HOME/.inmanage_app" ;;
-      3) install_dir="${base_dir%/}/.inmanage_app" ;;
+      2) install_dir="$default_user_dir" ;;
+      3) install_dir="$default_project_dir" ;;
       *) log err "[SELF] Invalid mode: $install_mode" ; return 1 ;;
     esac
   fi
 
-  # Allow override of the computed install directory per mode
-  install_dir="$(prompt_var "INSTALL_DIR" "$install_dir" "Install directory for the inmanage app? (ENTER for default)")"
+  # Allow override of the computed install directory per mode (interactive only)
+  if [[ "$can_prompt" == true && -z "${NAMED_ARGS[target_dir]:-}" && -z "${NAMED_ARGS[--target-dir]:-}" ]]; then
+    install_dir="$(prompt_var "INSTALL_DIR" "$install_dir" "Install directory for the inmanage app? (ENTER for default)")" || return 1
+  fi
+  local link_dir="$symlink_dir"
+  if [[ -z "$link_dir" ]]; then
+    case "$install_mode" in
+      1) link_dir="$default_bin" ;;
+      2)
+        if [[ "$run_user" != "$(whoami)" && ${EUID:-$(id -u)} -eq 0 ]]; then
+            link_dir="$default_bin"
+        else
+            link_dir="$local_bin"
+        fi
+        ;;
+      3) link_dir="${base_dir%/}" ;;
+    esac
+  fi
+
   resolve_path() {
     if declare -F resolve_script_path >/dev/null 2>&1; then
       resolve_script_path "$1" 2>/dev/null && return
@@ -75,9 +138,9 @@ install_self() {
   local current_mode="unknown"
   if [[ "$source_dir" == "/usr/local/share/inmanage" ]]; then
     current_mode="1"
-  elif [[ "$source_dir" == "$HOME/.inmanage_app" ]]; then
+  elif [[ "$source_dir" == "$default_user_dir" ]]; then
     current_mode="2"
-  elif [[ -n "$base_dir" && "$source_dir" == "${base_dir%/}/.inmanage_app" ]]; then
+  elif [[ -n "$base_dir" && "$source_dir" == "$default_project_dir" ]]; then
     current_mode="3"
   elif [[ -n "$base_dir" && "$source_dir" == "${base_dir%/}"* ]]; then
     current_mode="3"
@@ -104,6 +167,15 @@ install_self() {
     log err "[SELF] Failed to copy files"; return 1;
   }
 
+  if [[ "$install_mode" == "2" && ${EUID:-$(id -u)} -eq 0 && "$run_user" != "root" ]]; then
+      local run_group
+      run_group="$(id -gn "$run_user" 2>/dev/null || true)"
+      [[ -z "$run_group" ]] && run_group="$run_user"
+      if ! chown -R "$run_user:$run_group" "$install_dir" 2>/dev/null; then
+          log warn "[SELF] Failed to set ownership on $install_dir to $run_user:$run_group"
+      fi
+  fi
+
   local bin_source="$install_dir/inmanage.sh"
   INM_SELF_INSTALL_SCRIPT="$bin_source"
   INM_SELF_INSTALL_MODE="$install_mode"
@@ -112,30 +184,49 @@ install_self() {
   case "$install_mode" in
     1)
       log info "[SELF] Global install selected; ensure enforced user '$run_user' exists and has needed perms for cron/artisan."
+      if [[ ! -d "$link_dir" ]]; then
+        if ! mkdir -p "$link_dir" 2>/dev/null; then
+          if command -v sudo &>/dev/null && [[ "$can_prompt" == true ]]; then
+            prompt_var "ROOTPW" "Root password needed to prepare $link_dir" "" silent=true timeout=15 || return 1
+            echo "$ROOTPW" | sudo -S mkdir -p "$link_dir"
+          else
+            log err "[SELF] Cannot create $link_dir without sudo."
+            return 1
+          fi
+        fi
+      fi
       for name in "${targets[@]}"; do
-        if [[ -w "$default_bin" ]]; then
-          ln -sf "$bin_source" "$default_bin/$name"
-        elif command -v sudo &>/dev/null; then
+        if [[ -w "$link_dir" ]]; then
+          ln -sf "$bin_source" "$link_dir/$name"
+        elif command -v sudo &>/dev/null && [[ "$can_prompt" == true ]]; then
           prompt_var "ROOTPW" "Root password needed to install system-wide" "" silent=true timeout=15 || return 1
-          echo "$ROOTPW" | sudo -S ln -sf "$bin_source" "$default_bin/$name"
+          echo "$ROOTPW" | sudo -S ln -sf "$bin_source" "$link_dir/$name"
         else
-          log err "[SELF] Cannot write to $default_bin and sudo not available"
+          log err "[SELF] Cannot write to $link_dir and sudo not available"
           return 1
         fi
       done
-      log ok "[SELF] Installed globally in $default_bin"
+      log ok "[SELF] Installed globally in $link_dir"
       ;;
     2)
       if [[ "$run_user" != "$(whoami)" ]]; then
-          log warn "[SELF] User-mode install uses current user $(whoami); enforced run-user '$run_user' must still exist for cron/artisan."
+          log info "[SELF] User-mode install targets '$run_user' (current user: $(whoami))."
       fi
-      mkdir -p "$local_bin"
+      mkdir -p "$link_dir" || { log err "[SELF] Cannot create $link_dir"; return 1; }
+      if [[ ${EUID:-$(id -u)} -eq 0 && "$run_user" != "root" ]]; then
+          local link_group
+          link_group="$(id -gn "$run_user" 2>/dev/null || true)"
+          [[ -z "$link_group" ]] && link_group="$run_user"
+          chown "$run_user:$link_group" "$link_dir" 2>/dev/null || true
+      fi
       for name in "${targets[@]}"; do
-        ln -sf "$bin_source" "$local_bin/$name"
+        ln -sf "$bin_source" "$link_dir/$name"
       done
-      log ok "[SELF] Installed locally in $local_bin"
-      if [[ ":$PATH:" != *":$local_bin:"* ]]; then
-        log warn "[SELF] Add '$local_bin' to your PATH."
+      log ok "[SELF] Installed locally in $link_dir"
+      if [[ "$run_user" != "$(whoami)" ]]; then
+        log warn "[SELF] Ensure '$link_dir' is on PATH for user '$run_user'."
+      elif [[ ":$PATH:" != *":$link_dir:"* ]]; then
+        log warn "[SELF] Add '$link_dir' to your PATH."
       fi
       ;;
     3)
@@ -167,9 +258,14 @@ install_self() {
       local app_source="$app_dir/inmanage.sh"
       local legacy_app_dir="${project_root}/.inmanage"
 
+      local link_root="${link_dir:-$project_root}"
+      if [[ ! -d "$link_root" ]]; then
+          mkdir -p "$link_root" || log err "[INSTALL] Failed to create symlink directory: $link_root"
+      fi
+
       # Symlinks in project root (update legacy if pointing to .inmanage)
       for name in "inmanage" "inm"; do
-          local link="${project_root}/${name}"
+          local link="${link_root}/${name}"
           if [[ -L "$link" ]]; then
               local target
               target="$(readlink "$link")"
@@ -187,24 +283,32 @@ install_self() {
       echo
       log info "Tip: You can install globally anytime via 'inmanage self install --install-mode=1'"
 
-      echo
-      prompt_var "CREATE_CONFIG_NOW" "Would you like to create a project config now? [y/N]" "n"
-      if [[ "${CREATE_CONFIG_NOW,,}" =~ ^(y|yes)$ ]]; then
-          if command -v create_project_config &>/dev/null; then
-              create_project_config "$app_dir"
-          else
-              log warn "[INSTALL] Function 'create_project_config' not found. Skipping config creation."
+      if [[ "$can_prompt" == true ]]; then
+          echo
+          prompt_var "CREATE_CONFIG_NOW" "Would you like to create a project config now? [y/N]" "n"
+          if [[ "${CREATE_CONFIG_NOW,,}" =~ ^(y|yes)$ ]]; then
+              if command -v create_project_config &>/dev/null; then
+                  create_project_config "$app_dir"
+              else
+                  log warn "[INSTALL] Function 'create_project_config' not found. Skipping config creation."
+              fi
           fi
+      else
+          log info "[INSTALL] Tip: Run 'inmanage create_config' when you want to create a project config."
       fi
 
       return 0
       ;;
   esac
 
-  echo
-  prompt_var "CREATE_CONFIG" "Create project config now? [y/N]" "n"
-  if [[ "$CREATE_CONFIG" =~ ^[YyJj]$ ]]; then
-    create_own_config
+  if [[ "$can_prompt" == true ]]; then
+    echo
+    prompt_var "CREATE_CONFIG" "Create project config now? [y/N]" "n"
+    if [[ "$CREATE_CONFIG" =~ ^[YyJj]$ ]]; then
+      create_own_config
+    else
+      log info "[SELF] Tip: Run 'inmanage create_config' to get started."
+    fi
   else
     log info "[SELF] Tip: Run 'inmanage create_config' to get started."
   fi
@@ -356,11 +460,21 @@ self_version() {
     esac
   fi
   if [ "$mode" = "unknown" ]; then
+    local user_data_home="${XDG_DATA_HOME:-${HOME%/}/.local/share}"
+    user_data_home="${user_data_home%/}"
+    local default_user_dir="${user_data_home}/inmanage"
+    local legacy_user_dir="${HOME%/}/.inmanage_app"
+    local default_project_dir=""
+    local legacy_project_dir=""
+    if [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
+        default_project_dir="${INM_BASE_DIRECTORY%/}/.inmanage/cli"
+        legacy_project_dir="${INM_BASE_DIRECTORY%/}/.inmanage_app"
+    fi
     if [[ "$root" == "/usr/local/share/inmanage" ]]; then
       mode="system"
-    elif [[ -n "${HOME:-}" && "$root" == "${HOME%/}/.inmanage_app" ]]; then
+    elif [[ -n "${HOME:-}" && ( "$root" == "$default_user_dir" || "$root" == "$legacy_user_dir" ) ]]; then
       mode="user"
-    elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$root" == "${INM_BASE_DIRECTORY%/}/.inmanage_app" ]]; then
+    elif [[ -n "${INM_BASE_DIRECTORY:-}" && ( "$root" == "$default_project_dir" || "$root" == "$legacy_project_dir" ) ]]; then
       mode="project"
     elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$root" == "${INM_BASE_DIRECTORY%/}"* ]]; then
       mode="project"

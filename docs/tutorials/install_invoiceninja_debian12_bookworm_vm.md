@@ -587,7 +587,7 @@ sudo apt install unzip git composer jq libxcomposite1 libxdamage1 libxrandr2 lib
 Previously you have successfully setup a webserver, a database, and installed some mandatory additional packages. Now the fun begins. Install the Inmanage CLI and bootstrap the project config + provision template:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash -s -- --mode system
 
 cd /var/www/billing.debian12vm.local
 sudo -u www-data inmanage core provision spawn

@@ -53,8 +53,12 @@ curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inm
 
 If run with a TTY, the installer asks for an install mode and creates symlinks (`inm`, `inmanage`) if possible.
 If you choose project mode, run the installer from your base directory.
-System mode requires sudo; the installer can rerun with sudo if selected.
+System mode requires sudo.
 Non-interactive runs default to user mode; ensure the symlink dir is on `PATH` if `inm` is not found.
+Default paths:
+- System: `/usr/local/share/inmanage` (symlinks in `/usr/local/bin`)
+- User: `~/.local/share/inmanage` (symlinks in `~/.local/bin`)
+- Project: `./.inmanage/cli` (symlinks in project root)
 
 Installer options (`install_inmanage.sh`):
 
@@ -63,29 +67,30 @@ Installer options (`install_inmanage.sh`):
 | `--mode system / user / project` | `user` | Install mode (system requires sudo). |
 | `--target DIR` | mode default | Install directory. |
 | `--symlink-dir DIR` | mode default | Where to place `inm`/`inmanage` symlinks. |
+| `--run-user USER` | auto | User that will run CLI/cron tasks (used for user installs). |
 | `--branch BRANCH` | fetched branch | Git branch to install. |
-| `--source PATH` | unset | Use an existing checkout (rsync with `--delete`). |
+| `--source PATH` | unset | Use an existing checkout instead of git cloning. |
 | `-h` / `--help` | | Show installer help. |
 
 Installer env vars:
 - `BRANCH` (branch to install)
 - `INSTALLER_BRANCH` (default branch when not set; usually matches the fetched script)
-- `MODE` / `TARGET_DIR` / `SYMLINK_DIR` / `SOURCE_DIR` (same as switches)
+- `MODE` / `TARGET_DIR` / `SYMLINK_DIR` / `RUN_USER` / `SOURCE_DIR` (same as switches)
 
-Use `--source` when you already have a local checkout (e.g., mounted dev workspace or offline/air‑gapped install) and want to sync it into the install target.
+Use `--source` when you already have a local checkout (e.g., mounted dev workspace or offline/air‑gapped install).
 
 ### Install from a different branch
 
 Install from `development`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/development/install_inmanage.sh | sudo BRANCH=development bash
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/development/install_inmanage.sh | sudo BRANCH=development bash -s -- --mode system
 ```
 
 You can also pass the branch flag explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/development/install_inmanage.sh | sudo bash -s -- --branch development
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/development/install_inmanage.sh | sudo bash -s -- --branch development --mode system
 ```
 
 ### Switch branches later
@@ -93,7 +98,7 @@ curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/development/inst
 If you installed from a git checkout, re-run the installer with a new branch:
 
 ```bash
-sudo BRANCH=development bash install_inmanage.sh --branch development
+sudo BRANCH=development bash install_inmanage.sh --branch development --mode system
 ```
 
 Manual git switch (system install path shown):

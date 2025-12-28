@@ -236,11 +236,21 @@ run_preflight() {
         esac
     fi
     if [ "$cli_install_mode" = "unknown" ]; then
+        local user_data_home="${XDG_DATA_HOME:-${HOME%/}/.local/share}"
+        user_data_home="${user_data_home%/}"
+        local user_dir_default="${user_data_home}/inmanage"
+        local legacy_user_dir="${HOME%/}/.inmanage_app"
+        local project_dir_default=""
+        local legacy_project_dir=""
+        if [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
+            project_dir_default="${INM_BASE_DIRECTORY%/}/.inmanage/cli"
+            legacy_project_dir="${INM_BASE_DIRECTORY%/}/.inmanage_app"
+        fi
         if [[ "$cli_root" == "/usr/local/share/inmanage" ]]; then
             cli_install_mode="system"
-        elif [[ -n "${HOME:-}" && "$cli_root" == "${HOME%/}/.inmanage_app" ]]; then
+        elif [[ -n "${HOME:-}" && ( "$cli_root" == "$user_dir_default" || "$cli_root" == "$legacy_user_dir" ) ]]; then
             cli_install_mode="user"
-        elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$cli_root" == "${INM_BASE_DIRECTORY%/}/.inmanage_app" ]]; then
+        elif [[ -n "${INM_BASE_DIRECTORY:-}" && ( "$cli_root" == "$project_dir_default" || "$cli_root" == "$legacy_project_dir" ) ]]; then
             cli_install_mode="project"
         elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$cli_root" == "${INM_BASE_DIRECTORY%/}"* ]]; then
             cli_install_mode="project"
