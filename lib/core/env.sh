@@ -5,7 +5,11 @@
 __CORE_ENV_LOADED=1
 
 format_helper_path="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/helpers/format.sh"
-[ -f "$format_helper_path" ] && source "$format_helper_path"
+# shellcheck source=/dev/null
+[ -f "$format_helper_path" ] && {
+    source "$format_helper_path"
+    __INM_LOADED_FILES="${__INM_LOADED_FILES:+$__INM_LOADED_FILES:}$format_helper_path"
+}
 
 # ---------------------------------------------------------------------
 # setup_environment()
@@ -56,16 +60,26 @@ setup_environment() {
     # Colors via helper
     setup_colors
     # Backward-compat alias
+    # shellcheck disable=SC2034
     NC="${RESET}"
     
     [[ -n "$BASH_VERSION" ]] || {
         log err "This script requires Bash."
+        local config_root="${INM_CONFIG_ROOT:-.inmanage}"
+        local self_env_basename="${INM_SELF_ENV_BASENAME:-.env.inmanage}"
+        local self_env_file="${INM_SELF_ENV_FILE:-${config_root%/}/${self_env_basename}}"
+        local enforced_user=""
+        local current_user=""
 
-        if [ -f ".inmanage/.env.inmanage" ]; then
-            user=$(grep '^INM_ENFORCED_USER=' .inmanage/.env.inmanage | cut -d= -f2 | tr -d '"')
-            log info "Try: sudo -u ${user:-{your-user}} bash ./inmanage.sh"
+        if [ -f "$self_env_file" ]; then
+            enforced_user="$(grep -E '^INM_ENFORCED_USER=' "$self_env_file" | tail -n1 | cut -d= -f2- | tr -d '"')"
+        fi
+
+        current_user="$(id -un 2>/dev/null || true)"
+        if [ -n "$enforced_user" ] && [ "$current_user" != "$enforced_user" ]; then
+            log_hint "ENV" "Try: sudo -u ${enforced_user} bash ./inmanage.sh"
         else
-            log info "Try: sudo -u {your-user} bash ./inmanage.sh"
+            log_hint "ENV" "Try: bash ./inmanage.sh"
         fi
 
         exit 1
@@ -85,6 +99,10 @@ setup_environment() {
     # Script identity (used in logs/help)
     SCRIPT_NAME="${SCRIPT_NAME:-$(basename "$0")}"
     SCRIPT_PATH="${SCRIPT_PATH:-$0}"
+
+    if [[ "${DEBUG:-false}" == true && -n "${__INM_LOADED_FILES:-}" ]]; then
+        log debug "[ENV] Loaded files: ${__INM_LOADED_FILES}"
+    fi
 }
 
 # ---------------------------------------------------------------------
@@ -150,6 +168,18 @@ log() {
 }
 
 # ---------------------------------------------------------------------
+# log_hint()
+# ---------------------------------------------------------------------
+log_hint() {
+    local scope="$1"; shift
+    if [[ -n "$scope" ]]; then
+        log info "[$scope] $*"
+    else
+        log info "$*"
+    fi
+}
+
+# ---------------------------------------------------------------------
 # print_logo()
 # ---------------------------------------------------------------------
 print_logo() {
@@ -162,7 +192,7 @@ print_logo() {
         printf " _/ // /|  / / / / / / /_/ / / / / /_/ / /_/ /  __/_/  \n"
         printf "/___/_/ |_/_/ /_/ /_/\\__,_/_/ /_/\\__,_/\\__, /\\___(_)   \n"
         printf "                                      /____/           ${RESET}\n"
-        printf "${BLUE}${BOLD}THE CLI FOR INVOICE NINJA!${RESET}\n\n"
+        printf "${BLUE}${BOLD}CLI FOR INVOICE NINJA! by DrDBanner${RESET}\n\n"
         printf "\n\n"
     }
 }

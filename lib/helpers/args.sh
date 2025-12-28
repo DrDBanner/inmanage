@@ -32,7 +32,11 @@ parse_named_args() {
 
     if [[ "$DEBUG" = true ]]; then
         for k in "${!_target[@]}"; do
-            printf "[DEBUG][PNA] NAMED_ARGS[%s]=%s\n" "$k" "${_target[$k]}" >&2
+            if command -v log >/dev/null 2>&1; then
+                log debug "[PNA] NAMED_ARGS[$k]=${_target[$k]}"
+            else
+                printf "[DEBUG] [PNA] NAMED_ARGS[%s]=%s\n" "$k" "${_target[$k]}" >&2
+            fi
         done
     fi
 }

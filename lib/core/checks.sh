@@ -88,6 +88,17 @@ check_missing_settings() {
     updated=0
     for key in "${!default_settings[@]}"; do
         if ! grep -q "^$key=" "$INM_SELF_ENV_FILE"; then
+            if [ ! -w "$INM_SELF_ENV_FILE" ]; then
+                local current_user=""
+                current_user="$(id -un 2>/dev/null || true)"
+                log err "[CMS] Config not writable: $INM_SELF_ENV_FILE"
+                if [ -n "${INM_ENFORCED_USER:-}" ] && [ "$current_user" != "$INM_ENFORCED_USER" ]; then
+                    log_hint "CMS" "Fix: sudo -u ${INM_ENFORCED_USER} bash ./inmanage.sh"
+                else
+                    log_hint "CMS" "Fix: sudo chown ${current_user:-<your-user>} \"$INM_SELF_ENV_FILE\""
+                fi
+                return 1
+            fi
             log warn "[CMS] $key not found in $INM_SELF_ENV_FILE. Adding with default value '${default_settings[$key]}'."
             local val="${default_settings[$key]}"
             echo "$key=\"$val\"" >> "$INM_SELF_ENV_FILE"
