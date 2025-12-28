@@ -10,21 +10,15 @@ __SERVICE_CONFIG_LOADED=1
 write_config_setting() {
     local key="$1"
     local value="${default_settings[$key]}"
-    local comment=""
-
-    if [ -n "${default_comments[$key]+_}" ]; then
-        comment="${default_comments[$key]}"
-    elif [ -n "${prompt_texts[$key]+_}" ]; then
-        comment="${prompt_texts[$key]}"
+    local inline_comment=""
+    if [ -n "${default_inline_comments[$key]+_}" ]; then
+        inline_comment="${default_inline_comments[$key]}"
     fi
-
-    if [ -n "$comment" ]; then
-        while IFS= read -r line; do
-            printf "# %s\n" "$line" >> "$INM_SELF_ENV_FILE"
-        done <<< "$comment"
+    if [ -n "$inline_comment" ]; then
+        printf '%s="%s" # %s\n' "$key" "$value" "$inline_comment" >> "$INM_SELF_ENV_FILE"
+    else
+        printf '%s="%s"\n' "$key" "$value" >> "$INM_SELF_ENV_FILE"
     fi
-
-    printf '%s="%s"\n' "$key" "$value" >> "$INM_SELF_ENV_FILE"
 }
 
 # ---------------------------------------------------------------------
@@ -32,13 +26,17 @@ write_config_setting() {
 # ---------------------------------------------------------------------
 write_config_defaults() {
     local key
-    for key in "${prompt_order[@]}"; do
-        write_config_setting "$key"
-    done
+    if [ "${#default_settings_order[@]}" -gt 0 ]; then
+        for key in "${default_settings_order[@]}"; do
+            if [ -n "${default_settings[$key]+_}" ]; then
+                write_config_setting "$key"
+            fi
+        done
+    fi
 
     local remaining_keys=()
     for key in "${!default_settings[@]}"; do
-        if [[ ! " ${prompt_order[*]} " =~  $key  ]]; then
+        if [[ " ${default_settings_order[*]} " != *" ${key} "* ]]; then
             remaining_keys+=("$key")
         fi
     done

@@ -41,6 +41,36 @@ declare -A default_settings=(
 )
 
 # shellcheck disable=SC2034
+default_settings_order=(
+    "INM_BASE_DIRECTORY"
+    "INM_INSTALLATION_DIRECTORY"
+    "INM_ENV_FILE"
+    "INM_CACHE_LOCAL_DIRECTORY"
+    "INM_CACHE_GLOBAL_DIRECTORY"
+    "INM_CACHE_DIR_MODE"
+    "INM_CACHE_FILE_MODE"
+    "INM_CACHE_SUDO_PROMPT"
+    "INM_CACHE_GLOBAL_RETENTION"
+    "INM_DUMP_OPTIONS"
+    "INM_BACKUP_DIRECTORY"
+    "INM_FORCE_READ_DB_PW"
+    "INM_ENFORCED_USER"
+    "INM_ENFORCED_GROUP"
+    "INM_ENFORCED_SHELL"
+    "INM_PHP_EXECUTABLE"
+    "INM_ARTISAN_STRING"
+    "INM_PROGRAM_NAME"
+    "INM_COMPATIBILITY_VERSION"
+    "INM_DIR_MODE"
+    "INM_FILE_MODE"
+    "INM_ENV_MODE"
+    "INM_KEEP_BACKUPS"
+    "INM_GH_API_CREDENTIALS"
+    "INM_MIGRATION_BACKUP"
+    "INM_CLI_COMPATIBILITY"
+)
+
+# shellcheck disable=SC2034
 prompt_order=(
     "INM_BASE_DIRECTORY"
     "INM_INSTALLATION_DIRECTORY"
@@ -65,7 +95,7 @@ declare -A prompt_texts=(
 )
 
 # shellcheck disable=SC2034,SC2190
-declare -A default_comments=(
+declare -A default_inline_comments=(
     ["INM_CACHE_DIR_MODE"]="Empty = auto (775 if group set, else 750)."
     ["INM_CACHE_FILE_MODE"]="Empty = auto (664 if group set, else 640)."
     ["INM_CACHE_SUDO_PROMPT"]="ask|never to enable sudo prompt for cache dir."
