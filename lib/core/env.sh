@@ -36,6 +36,8 @@ setup_environment() {
         /usr/iports/bin
         /usr/iports/sbin
         /usr/iports/mysql84/bin
+        /usr/iports/php82/bin
+        /usr/iports/php84/bin
         /usr/local/mysql/bin
     )
 
