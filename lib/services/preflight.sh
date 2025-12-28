@@ -302,6 +302,15 @@ run_preflight() {
     cpu="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || true)"
     if [ -f /proc/meminfo ]; then
         memtotal=$(awk '/MemTotal/ {printf "%.1fG", $2/1024/1024}' /proc/meminfo 2>/dev/null)
+    elif command -v sysctl >/dev/null 2>&1; then
+        local mem_bytes=""
+        mem_bytes="$(sysctl -n hw.physmem 2>/dev/null || true)"
+        if ! [[ "$mem_bytes" =~ ^[0-9]+$ ]]; then
+            mem_bytes="$(sysctl -n hw.physmem64 2>/dev/null || true)"
+        fi
+        if [[ "$mem_bytes" =~ ^[0-9]+$ ]]; then
+            memtotal=$(awk -v b="$mem_bytes" 'BEGIN {printf "%.1fG", b/1024/1024/1024}')
+        fi
     fi
     if [ -f /etc/os-release ]; then
         # shellcheck disable=SC1091
