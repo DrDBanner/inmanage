@@ -219,7 +219,8 @@ install_self() {
       else
           if command -v find >/dev/null 2>&1; then
               find "$install_dir" -type d -exec chmod "$dir_mode" {} + 2>/dev/null || true
-              find "$install_dir" -type f -exec chmod "$file_mode" {} + 2>/dev/null || true
+              # Preserve executable bits by only applying file_mode to non-executable files.
+              find "$install_dir" -type f ! -perm -111 -exec chmod "$file_mode" {} + 2>/dev/null || true
           else
               log warn "[SELF] 'find' not available; skipping --install-perms."
           fi
