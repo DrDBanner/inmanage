@@ -135,14 +135,15 @@ download_ninja() {
     local checksum_file="${target_file}.sha256"
     local expected_digest=""
     if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" != true ]]; then
+        log info "[DN] Retrieving release digest for v${version}..."
         expected_digest="$(fetch_release_digest "$version" "$(basename "$target_file")")"
+        if [ -n "$expected_digest" ]; then
+            log ok "[DN] Release digest retrieved."
+        else
+            log warn "[DN] Release digest missing for v${version}."
+        fi
     else
         log warn "[DN] SHA check bypassed via --bypass-check-sha."
-    fi
-    if [[ -z "$expected_digest" && "${NAMED_ARGS[bypass_check_sha]:-false}" != true ]]; then
-        log err "[DN] Release digest missing for v${version}; refusing to download."
-        log_hint "DN" "Override with --bypass-check-sha if you accept the risk."
-        return 1
     fi
     if declare -f check_github_rate_limit >/dev/null; then
         check_github_rate_limit
@@ -162,7 +163,13 @@ download_ninja() {
             stored="$(cut -d' ' -f1 "$checksum_file" 2>/dev/null)"
             sum="$(compute_sha256 "$target_file")"
             # Prefer expected_digest if available
-            local reference="${expected_digest:-$stored}"
+            local reference=""
+            if [ -n "$expected_digest" ]; then
+                reference="$expected_digest"
+            elif [ -n "$stored" ]; then
+                reference="$stored"
+                log warn "[DN] Release digest missing for v${version}; using cached checksum file."
+            fi
             if [[ -n "$reference" && "$reference" != "$sum" ]]; then
                 if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" == true ]]; then
                     log warn "[DN] Cached checksum mismatch but bypass enabled; using cached file."
@@ -180,6 +187,11 @@ download_ninja() {
             log debug "[DN] No checksum file; verifying cache now."
             local sum
             sum="$(compute_sha256 "$target_file")"
+            if [[ -z "$expected_digest" && "${NAMED_ARGS[bypass_check_sha]:-false}" != true ]]; then
+                log err "[DN] Release digest missing for v${version}; refusing to use cache without checksum."
+                log_hint "DN" "Override with --bypass-check-sha if you accept the risk."
+                return 1
+            fi
             if [[ -n "$expected_digest" && "$expected_digest" != "$sum" ]]; then
                 if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" == true ]]; then
                     log warn "[DN] Cached file does not match release digest but bypass enabled; using cached file."
@@ -197,6 +209,12 @@ download_ninja() {
                 return 0
             fi
         fi
+    fi
+
+    if [[ -z "$expected_digest" && "${NAMED_ARGS[bypass_check_sha]:-false}" != true ]]; then
+        log err "[DN] Release digest missing for v${version}; refusing to download."
+        log_hint "DN" "Override with --bypass-check-sha if you accept the risk."
+        return 1
     fi
 
     log info "[DN] Downloading Invoice Ninja $version..."
