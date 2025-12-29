@@ -137,6 +137,9 @@ import_database() {
                 return 1
             fi
             log ok "[import_db] Pre-import backup saved to $shadow_dump"
+            if declare -F enforce_ownership >/dev/null 2>&1; then
+                enforce_ownership "$backup_dir"
+            fi
         else
             log err "[import_db] Backup directory unavailable; aborting import. Use --pre-backup=false to override."
             return 1

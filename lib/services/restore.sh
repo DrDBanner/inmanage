@@ -216,6 +216,9 @@ run_restore() {
             mkdir -p "$pre_restore_backup" || { log err "[RESTORE] Cannot create backup dir: $pre_restore_backup"; return 1; }
             log info "[RESTORE] Moving existing app to backup: $pre_restore_backup"
             safe_move_or_copy_and_clean "$target" "$pre_restore_backup" move || { log err "[RESTORE] Failed to backup existing app to $pre_restore_backup"; return 1; }
+            if declare -F enforce_ownership >/dev/null 2>&1; then
+                enforce_ownership "$pre_restore_backup"
+            fi
         fi
     fi
     [[ "$simulate" != true ]] && mkdir -p "$target"
@@ -423,6 +426,10 @@ run_restore() {
         else
             log info "[DRY-RUN] Would enforce ownership and permissions (750) on $target"
         fi
+    fi
+
+    if [[ "$simulate" != true ]] && declare -F cleanup_old_backups >/dev/null 2>&1; then
+        cleanup_old_backups || log warn "[RESTORE] Backup cleanup failed."
     fi
 
     local suffix=""
