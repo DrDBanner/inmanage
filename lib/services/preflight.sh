@@ -1102,6 +1102,10 @@ run_preflight() {
     # ---- ENV (CLI / APP) ----
     read_env_value() {
         local file="$1" key="$2"
+        if declare -F read_env_value_safe >/dev/null 2>&1; then
+            read_env_value_safe "$file" "$key" || true
+            return 0
+        fi
         grep -E "^${key}=" "$file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ' || true
     }
 
@@ -1133,11 +1137,11 @@ run_preflight() {
     if should_run "DB" || should_run "APP"; then
     # Try to hydrate DB vars from app .env if missing
     if [ -z "${DB_HOST:-}" ] && [ -f "${INM_ENV_FILE:-}" ]; then
-        set -a
-        # shellcheck source=/dev/null
-        . "$INM_ENV_FILE" 2>/dev/null || true
-        set +a
-        add_result INFO "DB" "Loaded DB vars from ${INM_ENV_FILE}"
+        if load_env_file_raw "$INM_ENV_FILE"; then
+            add_result INFO "DB" "Loaded DB vars from ${INM_ENV_FILE}"
+        else
+            add_result WARN "DB" "Failed to parse DB vars from ${INM_ENV_FILE}"
+        fi
     fi
 
     # ---- DB connectivity ----

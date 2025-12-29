@@ -220,10 +220,9 @@ provision_prebackup_db() {
     # Hydrate DB vars from app env if not set
     if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
         log debug "[PROV] Loading DB vars from app env: $INM_ENV_FILE"
-        set -a
-        # shellcheck disable=SC1090
-        . "$INM_ENV_FILE"
-        set +a
+        if ! load_env_file_raw "$INM_ENV_FILE"; then
+            log warn "[PROV] Failed to parse app env: $INM_ENV_FILE"
+        fi
     fi
 
     if [[ -z "${DB_DATABASE:-}" || -z "${DB_USERNAME:-}" ]]; then
@@ -259,10 +258,9 @@ provision_prepare_database() {
     fi
     # Load app env to hydrate DB_* vars if not already set
     if [ -f "${INM_ENV_FILE:-}" ]; then
-        set -a
-        # shellcheck disable=SC1090
-        . "${INM_ENV_FILE}"
-        set +a
+        if ! load_env_file_raw "${INM_ENV_FILE}"; then
+            log warn "[PROV] Failed to parse app env: ${INM_ENV_FILE}"
+        fi
     fi
 
     local db_name="${DB_DATABASE:-}"

@@ -147,6 +147,10 @@ run_backup() {
     read_env_value() {
         local file="$1"
         local key="$2"
+        if declare -F read_env_value_safe >/dev/null 2>&1; then
+            read_env_value_safe "$file" "$key" || true
+            return 0
+        fi
         grep -E "^${key}=" "$file" 2>/dev/null | tail -n1 | cut -d= -f2-
     }
 

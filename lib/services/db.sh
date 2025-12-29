@@ -51,10 +51,9 @@ import_database() {
     # Hydrate DB vars from app env if not set
     if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
         log debug "[import_db] Loading DB vars from app env: ${INM_ENV_FILE}"
-        set -a
-        # shellcheck disable=SC1090
-        . "${INM_ENV_FILE}"
-        set +a
+        if ! load_env_file_raw "${INM_ENV_FILE}"; then
+            log warn "[import_db] Failed to parse app env: ${INM_ENV_FILE}"
+        fi
     fi
     local db_config_present=false
     if [[ -n "${DB_HOST:-}" || -n "${DB_USERNAME:-}" || -n "${DB_DATABASE:-}" ]]; then
@@ -195,10 +194,9 @@ purge_database() {
     # Hydrate DB vars from app env if not set
     if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
         log debug "[db purge] Loading DB vars from app env: ${INM_ENV_FILE}"
-        set -a
-        # shellcheck disable=SC1090
-        . "${INM_ENV_FILE}"
-        set +a
+        if ! load_env_file_raw "${INM_ENV_FILE}"; then
+            log warn "[db purge] Failed to parse app env: ${INM_ENV_FILE}"
+        fi
     fi
     local db_config_present=false
     if [[ -n "${DB_HOST:-}" || -n "${DB_USERNAME:-}" || -n "${DB_DATABASE:-}" ]]; then
@@ -329,10 +327,9 @@ db_table_count() {
     # Hydrate DB vars from app env if not set
     if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
         log debug "[db_count] Loading DB vars from app env: $INM_ENV_FILE"
-        set -a
-        # shellcheck disable=SC1090
-        . "$INM_ENV_FILE"
-        set +a
+        if ! load_env_file_raw "$INM_ENV_FILE"; then
+            log warn "[db_count] Failed to parse app env: $INM_ENV_FILE"
+        fi
     fi
 
     if [[ -z "${DB_DATABASE:-}" || -z "${DB_USERNAME:-}" ]]; then
@@ -374,10 +371,9 @@ dump_database() {
     # Hydrate DB vars from app env if not set
     if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
         log debug "[dump_db] Loading DB vars from app env: $INM_ENV_FILE"
-        set -a
-        # shellcheck disable=SC1090
-        . "$INM_ENV_FILE"
-        set +a
+        if ! load_env_file_raw "$INM_ENV_FILE"; then
+            log warn "[dump_db] Failed to parse app env: $INM_ENV_FILE"
+        fi
     fi
 
     log info "[dump_db] Dumping database to $target_file ..."
