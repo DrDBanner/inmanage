@@ -218,7 +218,10 @@ env_user_ini_apply() {
         log err "[ENV] INM_INSTALLATION_PATH is not set. Run from a configured project."
         return 1
     fi
-    mkdir -p "$webroot" 2>/dev/null || true
+    if [[ ! -d "$webroot" ]]; then
+        log err "[ENV] Webroot not found: $webroot (app not installed yet)"
+        return 1
+    fi
     if [[ -z "$target_path" ]]; then
         target_path="${webroot%/}/${filename}"
     elif [[ "$target_path" != /* ]]; then

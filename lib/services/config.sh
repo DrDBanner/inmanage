@@ -14,6 +14,14 @@ write_config_setting() {
     if [ -n "${default_inline_comments[$key]+_}" ]; then
         inline_comment="${default_inline_comments[$key]}"
     fi
+    if [[ "$key" == "INM_PHP_EXECUTABLE" && -z "$value" ]]; then
+        value="php"
+        if [ -n "$inline_comment" ]; then
+            inline_comment="${inline_comment} Auto-set to 'php' because the binary was not detected."
+        else
+            inline_comment="Auto-set to 'php' because the binary was not detected."
+        fi
+    fi
     if [ -n "$inline_comment" ]; then
         printf '%s="%s" # %s\n' "$key" "$value" "$inline_comment" >> "$INM_SELF_ENV_FILE"
     else

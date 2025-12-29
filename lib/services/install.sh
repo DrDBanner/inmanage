@@ -54,8 +54,21 @@ run_installation() {
 
     if [ "$mode" = "Provisioned" ] && [[ "$force" != true ]]; then
         if [[ -n "$install_path" && -d "$install_path" ]] && find "$install_path" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
-            log err "[TAR] Provisioned install is destructive. Re-run with --force."
-            return 1
+            if [[ -t 0 ]]; then
+                log warn "[TAR] Provisioned install is destructive."
+                log info "[TAR] Continue? Type 'yes' to proceed:"
+                if ! read -r -t 60 response; then
+                    log warn "[TAR] No response within 60 seconds. Installation aborted."
+                    return 1
+                fi
+                if [[ ! "$response" =~ ^([Yy]([Ee][Ss])?)$ ]]; then
+                    log info "[TAR] Installation aborted by user."
+                    return 1
+                fi
+            else
+                log err "[TAR] Provisioned install is destructive. Re-run with --force."
+                return 1
+            fi
         fi
     fi
 
@@ -260,6 +273,9 @@ run_installation() {
         log err "[TAR] Failed to deploy new installation"
         return 1
     }
+    if declare -F enforce_ownership >/dev/null 2>&1; then
+        enforce_ownership "$install_path"
+    fi
 
     if [ ! -x "$install_path/artisan" ]; then
         chmod +x "$install_path/artisan" || {
