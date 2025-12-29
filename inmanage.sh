@@ -320,6 +320,12 @@ if [[ "$SHOW_FUNCTION_HELP" == true ]]; then
             *) help_ctx="$LEGACY_CMD";;
         esac
     fi
+    case "$help_ctx" in
+        install|update|backup|restore|cron|provision|prune|prune_versions|prune-versions|prune_backups|prune-backups|clear-cache|clear_cache)
+            help_action="$help_ctx"
+            help_ctx="core"
+            ;;
+    esac
     log debug "[SFH] Showing help. Context: ${help_ctx:-<none>} Action: ${CMD_ACTION:-<none>} Legacy: ${LEGACY_CMD:-<none>}"
     if [[ -n "$help_ctx" && -n "$help_action" ]]; then
         show_action_help "$help_ctx" "$help_action"
