@@ -12,7 +12,7 @@ cleanup_old_versions() {
         log info "[DRY-RUN] Skipping cleanup of old versions."
         return 0
     fi
-    log info "[COV] Cleaning up old update directory versions."
+    log debug "[COV] Cleaning up old update directory versions."
     local update_dirs
     local rollback_dirs
     local install_parent
@@ -55,7 +55,7 @@ cleanup_old_backups() {
         log info "[DRY-RUN] Skipping cleanup of old backups."
         return 0
     fi
-    log info "[COB] Cleaning up old backups."
+    log debug "[COB] Cleaning up old backups."
     local backup_path="$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY"
     local backup_items
     local keep="${INM_KEEP_BACKUPS:-2}"
@@ -84,7 +84,7 @@ cleanup() {
     fi
     local keep="${INM_KEEP_BACKUPS:-2}"
     local cache_keep="${INM_CACHE_GLOBAL_RETENTION:-3}"
-    log info "[CLEAN] Removing old versions/backups/cache (keep backups/rollbacks: ${keep}, cache: ${cache_keep})"
+    log debug "[CLEAN] Removing old versions/backups/cache (keep backups/rollbacks: ${keep}, cache: ${cache_keep})"
     cleanup_old_versions
     cleanup_old_backups
     cleanup_cache

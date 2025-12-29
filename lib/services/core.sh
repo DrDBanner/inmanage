@@ -106,7 +106,7 @@ download_ninja() {
     cache_dir=$(resolve_cache_directory)
     target_file="$cache_dir/invoiceninja_v$version.tar.gz"
     temp_file="${target_file}.part"
-    log info "[DN] Cache directory: $cache_dir"
+    log debug "[DN] Cache directory: $cache_dir"
     # ensure cache dir exists and writable (prefer restricted perms; no sudo)
     if ! mkdir -p "$cache_dir" 2>/dev/null; then
         log err "[DN] Cannot create cache directory: $cache_dir"
@@ -135,10 +135,18 @@ download_ninja() {
     local checksum_file="${target_file}.sha256"
     local expected_digest=""
     if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" != true ]]; then
-        log info "[DN] Retrieving release digest for v${version}..."
+        if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
+            log info "[DN] Retrieving release digest for v${version}..."
+        else
+            log debug "[DN] Retrieving release digest for v${version}..."
+        fi
         expected_digest="$(fetch_release_digest "$version" "$(basename "$target_file")")"
         if [ -n "$expected_digest" ]; then
-            log ok "[DN] Release digest retrieved."
+            if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
+                log ok "[DN] Release digest retrieved."
+            else
+                log debug "[DN] Release digest retrieved."
+            fi
         else
             log warn "[DN] Release digest missing for v${version}."
         fi
@@ -217,7 +225,7 @@ download_ninja() {
         return 1
     fi
 
-    log info "[DN] Downloading Invoice Ninja $version..."
+    log debug "[DN] Downloading Invoice Ninja $version..."
 
     local CURL_AUTH_FLAG=()
     local USERNAME_PASSWORD=""
@@ -260,7 +268,7 @@ download_ninja() {
     local resume_flag=()
     if [ -f "$temp_file" ]; then
         resume_flag=(--continue-at -)
-        log info "[DN] Resuming download (partial file found)."
+        log debug "[DN] Resuming download (partial file found)."
     fi
     local curl_rc=0
     if [ "$use_spinner" = true ]; then
@@ -310,7 +318,7 @@ download_ninja() {
         exit 1
     fi
 
-    log ok "[DN] Invoice Ninja $version downloaded and cached at $target_file"
+    log debug "[DN] Invoice Ninja $version downloaded and cached at $target_file"
     dirname "$target_file"
 }
 

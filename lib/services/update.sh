@@ -80,7 +80,7 @@ run_update() {
                 return 1
             }
         else
-            log info "[UPD] Force flag set. Proceeding with downgrade."
+            log debug "[UPD] Force flag set. Proceeding with downgrade."
         fi
     elif [[ "$installed_version" == "$latest_version" && "$force_update" != true ]]; then
         log info "[UPD] Version $installed_version is already current. Proceed anyway? (yes/no):"
@@ -112,7 +112,7 @@ run_update() {
         local rollback_tag="${install_name}_rollback_${timestamp}"
         local db_backup="${backup_dir%/}/${rollback_tag}_db.sql"
         log info "[UPD] Creating mandatory DB backup: $db_backup"
-        if ! dump_database "$db_backup"; then
+        if ! INM_QUIET_DUMP=true dump_database "$db_backup"; then
             log err "[UPD] DB backup failed; aborting update. Use --no-db-backup to override (not recommended)."
             return 1
         fi
@@ -155,18 +155,18 @@ run_update() {
     install_name="$(basename "$install_path")"
     local new_dir="${install_parent}/${install_name}_$latest_version"
 
-    log info "[UPD] Preparing new version directory: $new_dir"
+    log debug "[UPD] Preparing new version directory: $new_dir"
 
     safe_rm_rf "$new_dir" "$install_parent"
     mkdir -p "$(dirname "$new_dir")"
 
-    log info "[UPD] Moving from extracted cache to $new_dir"
+    log debug "[UPD] Moving from extracted cache to $new_dir"
     safe_move_or_copy_and_clean "$source_dir" "$new_dir" move || {
         log err "[UPD] Failed to move/copy files to new directory"
         return 1
     }
 
-    log info "[UPD] Copying .env to $new_dir"
+    log debug "[UPD] Copying .env to $new_dir"
     cp "$INM_ENV_FILE" "$new_dir/.env" || {
         log err "[UPD] Failed to copy .env"
         return 1
@@ -202,13 +202,13 @@ run_update() {
         preserve_paths+=("${preserve_extra[@]}")
     fi
     if [[ ${#preserve_paths[@]} -gt 0 ]]; then
-        log info "[UPD] Preserving custom paths from existing install"
+        log debug "[UPD] Preserving custom paths from existing install"
         for p in "${preserve_paths[@]}"; do
             [[ -n "$p" ]] && preserve_update_path "$p"
         done
     fi
 
-    log info "[UPD] Moving previous installation to rollback directory"
+    log debug "[UPD] Moving previous installation to rollback directory"
     local rollback_dir="${install_parent}/${install_name}_rollback_${timestamp}"
     if [ -d "$install_path" ]; then
         safe_move_or_copy_and_clean "$install_path" "$rollback_dir" move || {
@@ -231,13 +231,23 @@ run_update() {
     fi
 
     log info "[UPD] Running post-activation artisan tasks"
-    run_artisan migrate --force || log warn "[UPD] artisan migrate failed"
-    run_artisan optimize || log warn "[UPD] artisan optimize failed"
-    run_artisan ninja:post-update || log warn "[UPD] artisan post-update failed"
-    run_artisan ninja:check-data || log warn "[UPD] artisan check-data failed"
-    run_artisan ninja:translations || log warn "[UPD] artisan translations failed"
-    run_artisan ninja:design-update || log warn "[UPD] artisan design-update failed"
-    run_artisan up || log warn "[UPD] artisan up failed"
+    if [[ "${DEBUG:-false}" == true || "${args[debug]:-false}" == true ]]; then
+        run_artisan migrate --force || log warn "[UPD] artisan migrate failed"
+        run_artisan optimize || log warn "[UPD] artisan optimize failed"
+        run_artisan ninja:post-update || log warn "[UPD] artisan post-update failed"
+        run_artisan ninja:check-data || log warn "[UPD] artisan check-data failed"
+        run_artisan ninja:translations || log warn "[UPD] artisan translations failed"
+        run_artisan ninja:design-update || log warn "[UPD] artisan design-update failed"
+        run_artisan up || log warn "[UPD] artisan up failed"
+    else
+        run_artisan migrate --force >/dev/null 2>&1 || log warn "[UPD] artisan migrate failed"
+        run_artisan optimize >/dev/null 2>&1 || log warn "[UPD] artisan optimize failed"
+        run_artisan ninja:post-update >/dev/null 2>&1 || log warn "[UPD] artisan post-update failed"
+        run_artisan ninja:check-data >/dev/null 2>&1 || log warn "[UPD] artisan check-data failed"
+        run_artisan ninja:translations >/dev/null 2>&1 || log warn "[UPD] artisan translations failed"
+        run_artisan ninja:design-update >/dev/null 2>&1 || log warn "[UPD] artisan design-update failed"
+        run_artisan up >/dev/null 2>&1 || log warn "[UPD] artisan up failed"
+    fi
 
     do_snappdf || log warn "[UPD] Snappdf setup failed"
     cleanup || log warn "[UPD] Cache cleanup failed"

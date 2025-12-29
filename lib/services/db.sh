@@ -376,7 +376,9 @@ dump_database() {
         fi
     fi
 
-    log info "[dump_db] Dumping database to $target_file ..."
+    if [[ "${INM_QUIET_DUMP:-false}" != true ]]; then
+        log info "[dump_db] Dumping database to $target_file ..."
+    fi
 
     local db_client=""
     local db_dump=""
@@ -403,9 +405,22 @@ dump_database() {
         fi
         log debug "[dump_db] INM_FORCE_READ_DB_PW=Y → Using .env password (no prompt)"
         dump_cmd+=("-p$DB_PASSWORD")
-        if ! "${dump_cmd[@]}" > "$target_file"; then
-            log err "[dump_db] Database dump failed using .env password"
-            return 1
+        if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
+            if ! "${dump_cmd[@]}" > "$target_file"; then
+                log err "[dump_db] Database dump failed using .env password"
+                return 1
+            fi
+        else
+            local dump_err
+            dump_err="$(mktemp /tmp/.inm_dump_err_XXXXXX)" || dump_err=""
+            if ! "${dump_cmd[@]}" > "$target_file" 2>"$dump_err"; then
+                local err_line=""
+                err_line="$(head -n1 "$dump_err" 2>/dev/null || true)"
+                rm -f "$dump_err"
+                log err "[dump_db] Database dump failed using .env password${err_line:+: $err_line}"
+                return 1
+            fi
+            rm -f "$dump_err"
         fi
     else
 
