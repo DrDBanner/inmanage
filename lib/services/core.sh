@@ -353,9 +353,37 @@ cleanup_cache() {
 # ---------------------------------------------------------------------
 # artisan helpers
 # ---------------------------------------------------------------------
+resolve_php_exec() {
+    local php_exec="${INM_PHP_EXECUTABLE:-}"
+    if [[ -n "$php_exec" && -x "$php_exec" ]]; then
+        printf "%s" "$php_exec"
+        return 0
+    fi
+    php_exec="$(command -v php 2>/dev/null || true)"
+    if [[ -z "$php_exec" && -d /usr/iports ]]; then
+        local candidates=()
+        local php_dir=""
+        for php_dir in /usr/iports/php*/bin/php; do
+            [[ -x "$php_dir" ]] || continue
+            local php_base
+            php_base="$(basename "$(dirname "$php_dir")")"
+            local php_num="${php_base#php}"
+            if [[ "$php_num" =~ ^[0-9]+$ ]]; then
+                candidates+=("${php_num}|${php_dir}")
+            fi
+        done
+        if [ "${#candidates[@]}" -gt 0 ]; then
+            IFS=$'\n' candidates=($(printf '%s\n' "${candidates[@]}" | sort -rn))
+            unset IFS
+            php_exec="${candidates[0]#*|}"
+        fi
+    fi
+    printf "%s" "${php_exec:-php}"
+}
+
 artisan_cmd_string() {
     local app_dir="${1:-${INM_INSTALLATION_PATH%/}}"
-    printf "%s %s" "${INM_PHP_EXECUTABLE:-php}" "${app_dir%/}/artisan"
+    printf "%s %s" "$(resolve_php_exec)" "${app_dir%/}/artisan"
 }
 
 run_artisan_in() {
@@ -373,7 +401,7 @@ run_artisan_in() {
             log err "[ART] Cannot change to app dir: $app_dir"
             exit 1
         }
-        "${INM_PHP_EXECUTABLE:-php}" "$artisan_bin" "$@"
+        "$(resolve_php_exec)" "$artisan_bin" "$@"
     )
 }
 
