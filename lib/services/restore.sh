@@ -39,6 +39,7 @@ run_restore() {
             while IFS= read -r entry; do
                 local path="$INM_BACKUP_DIRECTORY/$entry"
                 [[ "$entry" == *.sha256 ]] && continue
+                [[ "$entry" == restore_pre_* ]] && continue
                 if [[ -f "$path" || -d "$path" ]]; then
                     candidates+=("$path")
                 fi
@@ -116,7 +117,10 @@ run_restore() {
     local stage_root="$tmpdir"
     if [[ -d "$bundle" ]]; then
         log info "[RESTORE] Using bundle directory: $bundle"
-        cp -a "$bundle"/. "$stage_root"/ || { log err "[RESTORE] Failed to stage bundle directory."; return 1; }
+        if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Staging bundle directory..." cp -a "$bundle"/. "$stage_root"/; then
+            log err "[RESTORE] Failed to stage bundle directory."
+            return 1
+        fi
     else
         case "$bundle" in
             *.tar.gz|*.tgz)

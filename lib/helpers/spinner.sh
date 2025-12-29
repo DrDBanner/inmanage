@@ -10,8 +10,18 @@ spinner_can_run() {
     if declare -p NAMED_ARGS >/dev/null 2>&1; then
         [[ "${NAMED_ARGS[debug]:-false}" == true ]] && return 1
     fi
-    [[ -w /dev/tty ]] || return 1
+    [[ -w /dev/tty || -t 2 || -t 1 ]] || return 1
     return 0
+}
+
+spinner_select_tty() {
+    if [[ -w /dev/tty ]]; then
+        printf "%s" "/dev/tty"
+    elif [[ -t 2 ]]; then
+        printf "%s" "/dev/fd/2"
+    elif [[ -t 1 ]]; then
+        printf "%s" "/dev/fd/1"
+    fi
 }
 
 spinner_start() {
@@ -24,7 +34,8 @@ spinner_start() {
         safe_clear
     fi
 
-    SPINNER_TTY="/dev/tty"
+    SPINNER_TTY="$(spinner_select_tty)"
+    [[ -n "$SPINNER_TTY" ]] || return 0
     SPINNER_MSG="$msg"
     SPINNER_STYLE="$style"
 
