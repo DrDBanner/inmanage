@@ -51,6 +51,9 @@ run_installation() {
     local install_name
     install_name="$(basename "$install_path")"
     local force="${NAMED_ARGS[force]:-${force_update:-false}}"
+    if [ "$mode" = "Provisioned" ] && [ ! -e "$install_path" ]; then
+        INM_PROVISION_FRESH_INSTALL=true
+    fi
 
     if [ "$mode" = "Provisioned" ] && [[ "$force" != true ]] && [ -e "$install_path" ]; then
         if [[ -t 0 ]]; then
@@ -200,12 +203,12 @@ run_installation() {
     local extracted
     extracted="$(mktemp -d)"
     if declare -F tar_safe_extract >/dev/null 2>&1; then
-        if ! spinner_run "Extracting Invoice Ninja..." tar_safe_extract "$source_dir/invoiceninja_v$latest_version.tar.gz" "$extracted"; then
+        if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting Invoice Ninja..." tar_safe_extract "$source_dir/invoiceninja_v$latest_version.tar.gz" "$extracted"; then
             log err "[TAR] Failed to extract Invoice Ninja archive."
             safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
             return 1
         fi
-    elif ! spinner_run "Extracting Invoice Ninja..." tar -xzf "$source_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
+    elif ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting Invoice Ninja..." tar -xzf "$source_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
         log err "[TAR] Failed to extract Invoice Ninja archive."
         safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
         return 1

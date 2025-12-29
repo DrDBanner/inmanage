@@ -242,22 +242,20 @@ download_ninja() {
     esac
 
     local download_url="https://github.com/invoiceninja/invoiceninja/releases/download/v$version/invoiceninja.tar.gz"
-    # Show progress when interactive or in debug; otherwise stay quiet
+    # Use spinner when not in debug; show progress bar for debug only.
     local curl_opts=(--fail --location --connect-timeout 20 --max-time 600 --show-error)
     local use_spinner=false
-    if [ -t 1 ] || [[ "${DEBUG:-false}" == true ]]; then
+    if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
         curl_opts+=(--progress-bar)
-        log info "[DN] Download in progress..."
     else
         curl_opts+=(--silent)
-        log info "[DN] Download in progress (quiet mode, use --debug to see progress)..."
         use_spinner=true
     fi
     if [[ -n "${CURL_AUTH_FLAG[*]}" ]]; then
         curl_opts+=("${CURL_AUTH_FLAG[@]}")
     fi
 
-    log info "[DN] Downloading from: $download_url"
+    log debug "[DN] Downloading from: $download_url"
     # Resume partial download if .part exists
     local resume_flag=()
     if [ -f "$temp_file" ]; then
@@ -266,7 +264,7 @@ download_ninja() {
     fi
     local curl_rc=0
     if [ "$use_spinner" = true ]; then
-        spinner_start "Downloading Invoice Ninja..."
+        spinner_start "Fetching release archive..."
         curl "${curl_opts[@]}" "${resume_flag[@]}" "$download_url" -o "$temp_file"
         curl_rc=$?
         spinner_stop
@@ -295,7 +293,6 @@ download_ninja() {
             fi
             echo "$sum_dl  $target_file" > "$checksum_file" 2>/dev/null || true
             apply_cache_file_mode "$target_file" "$checksum_file"
-            log ok "[DN] Download successful."
         else
             log err "[DN] Download failed: File is too small. Please check network."
             rm -f "$temp_file"

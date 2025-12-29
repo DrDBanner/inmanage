@@ -131,11 +131,11 @@ run_update() {
     local extracted
     extracted="$(mktemp -d)"
     if declare -F tar_safe_extract >/dev/null 2>&1; then
-        if ! spinner_run "Extracting Invoice Ninja..." tar_safe_extract "$cache_dir/invoiceninja_v$latest_version.tar.gz" "$extracted"; then
+        if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting Invoice Ninja..." tar_safe_extract "$cache_dir/invoiceninja_v$latest_version.tar.gz" "$extracted"; then
             log err "[UPD] Failed to extract Invoice Ninja archive."
             return 1
         fi
-    elif ! spinner_run "Extracting Invoice Ninja..." tar -xzf "$cache_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
+    elif ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting Invoice Ninja..." tar -xzf "$cache_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
         log err "[UPD] Failed to extract Invoice Ninja archive."
         return 1
     fi

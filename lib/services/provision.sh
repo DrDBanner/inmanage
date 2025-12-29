@@ -134,8 +134,16 @@ provision_post_install() {
 
     local force="${NAMED_ARGS[force]:-${force_update:-false}}"
     if [[ "$force" != true ]]; then
-        log err "[PROV] Provisioning is destructive. Re-run with --force to proceed."
-        return 1
+        local table_count=""
+        if table_count=$(db_table_count 2>/dev/null); then
+            if [[ "$table_count" -gt 0 ]]; then
+                log err "[PROV] Provisioning is destructive. Re-run with --force to proceed."
+                return 1
+            fi
+        elif [[ "${INM_PROVISION_FRESH_INSTALL:-false}" != true ]]; then
+            log err "[PROV] Provisioning is destructive. Re-run with --force to proceed."
+            return 1
+        fi
     fi
 
     local no_backup="${NAMED_ARGS[no_backup]:-${NAMED_ARGS[no-backup]:-false}}"
