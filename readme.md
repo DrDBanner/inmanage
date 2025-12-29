@@ -94,6 +94,8 @@ If the installer created symlinks (system/user/project), you can use `inm` (shor
 
 ## Recommended Invoice Ninja Installation Procedure (provisioned)
 
+Go to your `base-directory` and follow this procedure:
+
 ```bash
 # 1. Check if your environment satisfies the dependencies
 inm core health

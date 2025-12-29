@@ -1,14 +1,15 @@
 # INMANAGE Documentation
 
-Inmanage is the CLI for self-hosted Invoice Ninja. It is built for **convenience**, **certainty**, and **low stress**. Everything is designed to be repeatable and safe.
+Inmanage is the CLI for self-hosted Invoice Ninja. Focus: **convenience**, **certainty**, **low stress**. This document keeps the flow simple while staying complete.
 
 ## Table of contents
 
 - [Mental model](#mental-model)
 - [Files you should know](#files-you-should-know)
-- [Install the CLI](#install-the-cli)
-  - [Install from a different branch](#install-from-a-different-branch)
+- [Invoice Ninja CLI](#invoice-ninja-cli)
+  - [Install CLI](#install-cli)
   - [Switch branches later](#switch-branches-later)
+  - [CLI updates](#cli-updates)
 - [First run](#first-run)
 - [Global switches](#global-switches)
 - [Hooks (pre/post)](#hooks-prepost)
@@ -18,6 +19,7 @@ Inmanage is the CLI for self-hosted Invoice Ninja. It is built for **convenience
   - [Wizard install](#wizard-install)
   - [Clean/forced install](#cleanforced-install)
 - [Updates](#updates)
+- [Uninstall and reinstall](#uninstall-and-reinstall)
 - [Backups](#backups)
 - [Restore](#restore)
 - [Health checks](#health-checks)
@@ -45,20 +47,48 @@ Inmanage is the CLI for self-hosted Invoice Ninja. It is built for **convenience
 - `.inmanage/.env.provision` — provisioned install config (unattended)
 - `<install>/.env` — Invoice Ninja app config
 
-## Install the CLI
+## Invoice Ninja CLI
+
+### Install CLI
+
+Quick install (auto mode):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | bash
 ```
 
-The installer auto-selects the install mode (system when run as root, otherwise user) and creates symlinks (`inm`, `inmanage`) if possible.
-If you choose project mode, run the installer from your base directory.
-System mode requires sudo.
-Ensure the symlink dir is on `PATH` if `inm` is not found.
+Auto mode picks **system** when run as root, otherwise **user**, and creates symlinks (`inm`, `inmanage`) when possible.
+
 Default paths:
-- System: `/usr/local/share/inmanage` (symlinks in `/usr/local/bin`)
-- User: `~/.local/share/inmanage` (symlinks in `~/.local/bin`)
-- Project: `./.inmanage/cli` (symlinks in project root)
+- System (sudo): `/usr/local/share/inmanage` → `/usr/local/bin`
+- User: `~/.local/share/inmanage` → `~/.local/bin`
+- Project (run in base dir): `./.inmanage/cli` → project root
+
+Common installs:
+
+```bash
+# Project install (simple)
+cd /path/to/your/invoiceninja_basedirectory
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | bash -s -- --mode project
+```
+
+```bash
+# System install (simple)
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash
+```
+
+```bash
+# System install with ownership/permissions (optional)
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash -s -- --mode system --install-owner=root:vuser --install-perms=775:664
+```
+
+> [!TIP]
+> If `inm` is not found after a user install, add `~/.local/bin` to `PATH`:
+> `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile`
+
+> [!NOTE]
+> * `sudo -u <user> inm ...` runs the command as that OS user now.
+> * `--run-user <user>` is for install mode only (it sets who owns/should run the CLI after install).
 
 Installer options (`install_inmanage.sh`):
 
@@ -74,34 +104,18 @@ Installer options (`install_inmanage.sh`):
 | `--source PATH` | unset | Use an existing checkout instead of git cloning. |
 | `-h` / `--help` | | Show installer help. |
 
-Installer env vars:
-- `BRANCH` (branch to install)
-- `INSTALLER_BRANCH` (default branch when not set; usually matches the fetched script)
-- `MODE` / `TARGET_DIR` / `SYMLINK_DIR` / `INSTALL_OWNER` / `INSTALL_PERMS` / `RUN_USER` / `SOURCE_DIR` (same as switches)
+Installer env vars mirror the switches:
+`BRANCH`, `INSTALLER_BRANCH`, `MODE`, `TARGET_DIR`, `SYMLINK_DIR`, `INSTALL_OWNER`, `INSTALL_PERMS`, `RUN_USER`, `SOURCE_DIR`.
 
-Use `--source` when you already have a local checkout (e.g., mounted dev workspace or offline/air‑gapped install).
+Use `--source` when you already have a local checkout (e.g. mounted dev workspace or offline/air‑gapped install).
 
-### Install from a different branch
+#### Install from a different branch
 
-Install from `development`:
-
-*System-wide installation*
+Install from `development` (add `sudo` for system installs or `--mode system|user|project`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/development/install_inmanage.sh | sudo BRANCH=development bash -s -- --mode system
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/development/install_inmanage.sh | BRANCH=development bash
 ```
-*User-wide installation*
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/development/install_inmanage.sh | BRANCH=development bash -s -- --mode user
-```
-
-*Project installation*
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/development/install_inmanage.sh | BRANCH=development bash -s -- --mode project
-```
-
 
 You can also pass the branch flag explicitly:
 
@@ -128,13 +142,36 @@ git pull --ff-only
 
 Note: `inm self update` only pulls the current branch; it does not switch branches.
 
-## First run
-
-Run any command from the base directory. If no CLI config exists, you will be prompted to create it.
+### CLI updates
 
 ```bash
-inm core health
+inm self update
 ```
+
+For system-wide CLI installs, run:
+
+```bash
+sudo inm self update
+# or
+sudo -u <user> inm self update
+```
+
+## First run
+
+Run from your base directory. On first run, `inm` will prompt to create `.inmanage/.env.inmanage` (and its folders) if it does not exist. `inm health` can run without a config; most other commands will prompt you to create one when needed.
+
+```bash
+sudo -u www-data inm
+```
+
+If `sudo` isn't needed:
+
+```bash
+inm
+```
+
+> [!NOTE]
+> On first run, use the user who should read/write the Invoice Ninja files (often the webserver user; on shared hosting, your login user). This prevents permission issues. If you later switch users, update `INM_ENFORCED_USER` in `.env.inmanage`.
 
 ## Global switches
 
@@ -213,14 +250,24 @@ inm env set app CUSTOM_BRANDING_NAME "Acme Co"
 
 Repeatable and unattended. Best for staging/production.
 
-1. Generate a provision file:
+> [!WARNING]
+> Provisioned installs are **destructive** (app + DB). A backup is created by default, but `--force` is still required to confirm the risk. Avoid `--no-backup` unless you fully understand the impact.
+
+1. Generate a provision file with the wizard:
    ```bash
-   inm core provision spawn
+   inm core install
    ```
-   `spawn` creates a ready-to-edit `.env.provision` from the bundled `.env.example` (or app `.env` if present).
-2. Edit `.inmanage/.env.provision` (DB creds, APP_URL, etc.)
+   The wizard offers to create `.env.provision` and opens it in your default editor (nano/vi).
+
+   > [!NOTE]
+   > Manual alternative:
+   > ```bash
+   > inm core provision spawn
+   > ```
+   > `spawn` creates a ready-to-edit `.env.provision` from the bundled `.env.example` (or app `.env` if present).
+2. If you already have a prepared `.env.provision`, place it in `.inmanage/.env.provision`.
    - `DB_ELEVATED_USERNAME` and `DB_ELEVATED_PASSWORD` are only used to create the DB/user if needed and are removed after success.
-3. Install:
+3. Execute installation:
    ```bash
    inm core install --provision
    ```
@@ -250,20 +297,11 @@ Provision spawn switches (`inm core provision spawn`):
 | `--latest-backup` | `false` | Use the latest backup after install. |
 | `--force` | `false` | Overwrite an existing provision file. |
 
-Notes:
-- A clean `.env.example` is bundled and used to seed `.env.provision`.
-- `DB_ELEVATED_USERNAME` / `DB_ELEVATED_PASSWORD` are required only if the script should create the DB/user; otherwise the DB must already exist and match the `DB_*` values.
-- Elevated credentials are removed from `.env.provision` after a successful provision.
-- Migration restore can also be driven by `INM_MIGRATION_BACKUP` in `.env.provision` or `.env.inmanage` (set to `LATEST` or a backup path).
-
-What happens on a provisioned install:
-- Create the database and user (when elevated creds are provided).
-- Download and install the latest Invoice Ninja release.
-- Move `.env.provision` to app `.env`.
-- Generate app key, run migrations/seed, warm cache.
-- Create an admin user.
-- Install cronjobs when possible (unless `--no-cron-install` or `--no-backup-cron`).
-- If `INM_MIGRATION_BACKUP` is set, restore that backup after deploy (or continue fresh if not found).
+> [!NOTE]
+> - A clean `.env.example` is bundled and used to seed `.env.provision`.
+> - `DB_ELEVATED_USERNAME` / `DB_ELEVATED_PASSWORD` are required only if the script should create the DB/user; otherwise the DB must already exist and match the `DB_*` values.
+> - Elevated credentials are removed from `.env.provision` after a successful provision.
+> - Migration restore can also be driven by `INM_MIGRATION_BACKUP` in `.env.provision` or `.env.inmanage` (set to `LATEST` or a backup path).
 
 Migration flow (provisioned install):
 
@@ -271,7 +309,7 @@ Migration flow (provisioned install):
    ```bash
    inm core backup --name=migration --compress=tar.gz --include-app=true
    ```
-   Optionally write target-ready values into the backup `.env`:
+   Preferred: write target-ready values into the backup `.env` so the restore can run without manual edits later. The command prompts you for APP_URL and DB values (and optionally extra keys), writes them into the backup bundle (APP_KEY is preserved), and the restored app will use those values immediately.
    ```bash
    inm core backup --create-migration-export
    ```
@@ -282,34 +320,29 @@ Migration flow (provisioned install):
 
 ### Install flow (under the hood)
 
-Provisioned install (high‑level):
+Shared steps (both provisioned and clean):
 
 - Resolve base/app paths and load CLI/app config.
 - Optional hooks: `pre-install`.
 - Archive existing app directory if present.
-- Download Invoice Ninja release and unpack into a temp directory.
-- Place `.env` from `.env.provision`, remove the inm header block.
+- Download the Invoice Ninja release and unpack into a temp directory.
 - Deploy the new app into the install path.
 - Run artisan tasks: `key:generate`, `optimize`, `up`, `ninja:translations`, snappdf setup.
+- Optional cron install (configurable).
+- Optional hooks: `post-install`.
+- Final cache cleanup: `config:clear` + `cache:clear`.
+
+Provisioned‑only steps:
+
+- Place `.env` from `.env.provision` (remove the inm header block).
 - Pre‑provision DB backup if tables exist (unless `--no-backup`).
-- Create DB/user if needed (DB_ELEVATED_*), then `migrate:fresh --seed`.
+- Create DB/user if needed (`DB_ELEVATED_*`), then `migrate:fresh --seed`.
 - Language seeder + create admin user.
-- Optional cron install (configurable via `--cron-mode`, `--cron-jobs`, `--backup-time`).
-- Optional hooks: `post-install`.
-- Final cache cleanup: `config:clear` + `cache:clear`.
+- Optional migration restore if `INM_MIGRATION_BACKUP` is set.
 
-Clean install (high‑level):
+Clean‑only steps:
 
-- Resolve base/app paths and load CLI/app config.
-- Optional hooks: `pre-install`.
-- Archive existing app directory if present.
-- Download Invoice Ninja release and unpack into a temp directory.
-- Deploy the new app into the install path.
 - Place a default, unconfigured `.env` for the web wizard to fill in.
-- Run artisan tasks: `key:generate`, `optimize`, `up`, `ninja:translations`, snappdf setup.
-- Optional cron install (scheduler only by default).
-- Optional hooks: `post-install`.
-- Final cache cleanup: `config:clear` + `cache:clear`.
 
 Mandatory settings to review (common):
 
@@ -331,7 +364,7 @@ Starts the wizard and lets you choose between provisioned and clean install:
 inm core install
 ```
 
-The wizard installs the app and drops a default `.env`. You must complete the web setup to write DB/app values, then manually review `.env` for settings the GUI doesn’t cover.
+For **clean** installs, the wizard drops a default `.env`. You must complete the web setup to write DB/app values, then manually review `.env` for settings the GUI doesn’t cover.
 
 ### Clean/forced install
 
@@ -339,7 +372,10 @@ The wizard installs the app and drops a default `.env`. You must complete the we
 inm core install --clean
 ```
 
-This renames the existing app directory before deploying a fresh version.
+Clean install deploys a fresh app. If an app already exists, it is archived first (same behavior as other install modes).
+
+> [!WARNING]
+> A clean install replaces the app code (DB stays). Use only if you can tolerate downtime and have a rollback plan.
 
 ## Updates
 
@@ -349,6 +385,7 @@ inm core update
 
 - Updates keep the previous version for rollback side by side with the app directory; DB backups land in the backup directory, since DB rollback is needed less often.
 - Uses less RAM than web-based updates, especially on small servers.
+
 
 Update switches (`inm core update`):
 
@@ -367,6 +404,40 @@ Rollback:
 inm update rollback last
 inm update rollback invoiceninja_rollback_YYYYMMDD_HHMMSS
 ```
+Rollback swaps the current app with the selected rollback directory and reuses the existing DB (no DB rollback is applied).
+
+## Uninstall and reinstall
+
+Remove the current install:
+
+```bash
+inm self uninstall
+```
+
+> [!WARNING]
+> `--force` is **destructive** and removes the install directory for the active install mode (system/user/project), plus its symlinks.
+> It does **not** touch your Invoice Ninja app installation.
+
+Common examples:
+
+```bash
+# User install
+inm self uninstall --force
+```
+
+```bash
+# System install
+sudo inm self uninstall --force
+```
+
+```bash
+# Project install (from project root)
+./inm self uninstall --force
+```
+
+If you had multiple installs, uninstalling one does **not** remove the others. To switch back, remove the local `./inm` symlink (project mode), ensure the desired `PATH` entry is present, then run `hash -r` or open a new shell. Use `which inm` to confirm.
+
+Reinstall by running the installer again (see [Install CLI](#install-cli)).
 
 ## Backups
 
@@ -419,6 +490,12 @@ Files backup switches (`inm files backup`):
 ```bash
 inm core restore --file=path --force
 ```
+
+> [!WARNING]
+> Restore can overwrite app files and **drop/import DB tables**. Always verify the target and keep a backup.
+
+> [!TIP]
+> `--pre-backup=true` (default) keeps a pre-restore copy of the current app so you can roll back quickly.
 
 Restore switches (`inm core restore`):
 
@@ -576,22 +653,16 @@ If `sudo` is not available:
 ## FAQ
 
 - **Use with existing installs?** Yes. Run a backup, then use `core update`.
-- **Deletes anything?** No silent deletes; old versions are moved aside.
 - **Web updates okay?** Yes, but inm gives you versioned backups and rollback.
 - **Docker?** Yes, with correct mounts and a real shell for the enforced user.
 - **Failed install?** Retry or rollback to the previous version directory.
 - **Config wrong/old?** Edit or delete `.inmanage/.env.inmanage` to regenerate.
-- **Clean install deletes my app?** No, it renames the old app before deploying.
 - **SQL from backup?** `tar -xf *YYYYMMDD*.tar.gz --wildcards '*.sql' --strip-components=6`
-- **Non-standard .env?** `.env.provision` is seeded from `.env.example`; elevated creds are removed after provision. You can add any valid Invoice Ninja `.env` keys.
-- **Provisioned install over existing app?** It archives the current app first, then installs fresh. DB changes are destructive unless you use `--no-backup` (not recommended). Always keep the generated pre‑provision backup.
 
 ## Troubleshooting (short)
 
 - **Config missing**: run any command from the base directory and create `.inmanage/.env.inmanage` when prompted.
 - **Permission errors**: ensure the enforced user matches your web server user, or use `--override-enforced-user` for a run.
-- **DB ambiguity**: set `INM_DB_CLIENT` explicitly.
-- **Health overview**: run `inm core health` (or `inm core health --checks=CRON,DB,WEB`) for a quick scan.
 
 ## Docker notes
 
@@ -606,34 +677,23 @@ If `sudo` is not available:
 
 ### Docker backups with backup_remote_job.sh
 
-`backup_remote_job.sh` is a helper script generated by inm to pull backup bundles from a server to another machine (local or remote). It standardizes rsync/scp, optional hooks, and file paths so you get consistent, repeatable off-box backups.
+`backup_remote_job.sh` pulls backup bundles from a server to another machine. It standardizes rsync/scp, hooks, and file paths so off‑box backups stay repeatable.
 
-In Docker, this is especially useful because it avoids relying on container snapshots and gives you **app‑level** bundles (DB + files) that can be restored anywhere.
+Docker‑friendly flow:
+- Write backups inside the container to a **mounted volume**.
+- Run `backup_remote_job.sh` on the destination to pull the bundles.
 
-What it does:
+Benefits over container snapshots:
+- App‑level consistency (DB + files in a controlled order).
+- Portability (restore outside Docker or into a fresh container).
+- Clear rollback points (timestamped bundles).
 
-- Triggers (or waits for) a backup on the source.
-- Copies the bundle(s) to your destination machine.
-- Preserves clear, timestamped rollback points.
+Minimal steps:
+1. Ensure `backup_remote_job.sh` is present in your install.
+2. Point it at the mounted backup path.
+3. Run it from the destination host.
 
-How it works with Docker:
-
-- Write backups inside the container into a **mounted volume** so the host can access them.
-- Use `backup_remote_job.sh` on the destination to pull those bundles.
-
-Why this is better than container snapshots:
-
-- **App-level consistency**: inm bundles DB + files in a controlled order.
-- **Portability**: one bundle restores outside Docker or into a fresh container.
-- **Clear rollback**: you know exactly which backup was created and when.
-
-How to run it:
-
-1) Use `backup_remote_job.sh` if it is available in your installation.
-2) Configure it to point at your mounted backup path.
-3) Run it from the destination machine to pull the bundles automatically.
-
-Tip: set `REMOTE_PRE_HOOK` to `docker exec <container> inm core backup` so the backup is created just before the pull.
+Tip: set `REMOTE_PRE_HOOK` to `docker exec <container> inm core backup` so the backup is created right before the pull.
 
 ## libSaxon (XSLT2) for e‑invoicing
 
@@ -646,10 +706,10 @@ php -m | grep -i saxon
 php -r 'var_dump(extension_loaded("saxon"));'
 ```
 
-Notes:
-- On shared hosting, enable the Saxon extension in cPanel if available.
-- On Docker images used by the project, it may already be installed.
-- On bare‑metal Linux, you typically install the shared library first, then compile/enable the PHP extension.
+> [!NOTE]
+> - On shared hosting, enable the Saxon extension in cPanel if available.
+> - On Docker images used by the project, it may already be installed.
+> - On bare‑metal Linux, you typically install the shared library first, then compile/enable the PHP extension.
 
 See the official installation instructions:
 <https://invoiceninja.github.io/en/self-host-installation/#lib-saxon>
