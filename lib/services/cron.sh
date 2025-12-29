@@ -17,7 +17,9 @@ install_cronjob() {
 
     local user="${args[user]:-$INM_ENFORCED_USER}"
     local jobs="${args[jobs]:-${args[cron_jobs]:-${args[cron-jobs]:-both}}}"
+    local create_test_job="${args[create_test_job]:-${args[create-test-job]:-false}}"
     local cron_file="/etc/cron.d/invoiceninja"
+    local remove_test_job="${args[remove_test_job]:-${args[remove-test-job]:-false}}"
     local cron_mode="${args[cron_mode]:-${args[cron-mode]:-${args[mode]:-auto}}}"
     cron_mode="${cron_mode,,}"
     export INM_CRON_INSTALLED_JOBS=""
@@ -142,12 +144,18 @@ install_cronjob() {
     if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
         job_summary="${job_summary:+${job_summary}, }backup@${backup_time}"
     fi
+    if [[ "$create_test_job" == true ]]; then
+        job_summary="${job_summary:+${job_summary}, }test"
+    fi
     log info "[CRON] Jobs selected: ${job_summary:-none}"
     if [[ "$jobs" == "scheduler" || "$jobs" == "both" ]]; then
         log info "[CRON] Will set: schedule:run every minute"
     fi
     if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
         log info "[CRON] Will set: backup at ${backup_time}"
+    fi
+    if [[ "$create_test_job" == true ]]; then
+        log info "[CRON] Will set: cron test file every minute"
     fi
 
     local tmpfile
@@ -193,8 +201,19 @@ install_cronjob() {
     local cli_cmd_escaped
     cli_cmd_escaped="$(escape_squote "$cli_cmd")"
     local base_clean="${INM_BASE_DIRECTORY%/}"
+    if [[ -z "$base_clean" ]]; then
+        base_clean="$(pwd)"
+    fi
     local base_clean_escaped
     base_clean_escaped="$(escape_squote "$base_clean")"
+    local touch_cmd=""
+    if command -v touch >/dev/null 2>&1; then
+        touch_cmd="$(command -v touch)"
+    else
+        touch_cmd="touch"
+    fi
+    local touch_cmd_escaped
+    touch_cmd_escaped="$(escape_squote "$touch_cmd")"
     detect_installed_jobs() {
         local file="$1"
         local has_sched=false
@@ -252,6 +271,10 @@ install_cronjob() {
             if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
                 echo "${backup_cron_expr} $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core backup' >> /dev/null 2>&1"
             fi
+            if [[ "$create_test_job" == true ]]; then
+                echo "# INMANAGE CRON TEST"
+                echo "* * * * * $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${touch_cmd_escaped} crontestfile' >> /dev/null 2>&1"
+            fi
             echo "# INMANAGE CRON END"
         } >> "$tmpfile"
 
@@ -281,6 +304,10 @@ install_cronjob() {
         fi
         if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
             echo "${backup_cron_expr} $user $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core backup' >> /dev/null 2>&1"
+        fi
+        if [[ "$create_test_job" == true ]]; then
+            echo "# INMANAGE CRON TEST"
+            echo "* * * * * $user $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${touch_cmd_escaped} crontestfile' >> /dev/null 2>&1"
         fi
     } > "$tmpfile"; then
         log err "[CRON] Failed to prepare cron file."
@@ -370,6 +397,81 @@ uninstall_cronjob() {
             return 1
             ;;
     esac
+
+    if [[ "$remove_test_job" == true ]]; then
+        remove_test_lines() {
+            awk '!/crontestfile/ && !/INMANAGE CRON TEST/' "$1" > "$2"
+        }
+        local removed=false
+        if [[ "$remove_user_crontab" == true ]]; then
+            if ! command -v crontab >/dev/null 2>&1; then
+                log warn "[CRON] crontab not available; skipping test job removal."
+            else
+                local tmpfile tmpclean
+                tmpfile="$(mktemp)"
+                tmpclean="${tmpfile}.clean"
+                if crontab -l >/dev/null 2>&1; then
+                    crontab -l > "$tmpfile"
+                else
+                    : > "$tmpfile"
+                fi
+                remove_test_lines "$tmpfile" "$tmpclean"
+                if cmp -s "$tmpfile" "$tmpclean"; then
+                    log info "[CRON] No cron test job found in user crontab."
+                else
+                    if crontab "$tmpclean"; then
+                        log ok "[CRON] Removed cron test job from user crontab."
+                        removed=true
+                    else
+                        log err "[CRON] Failed to update user crontab."
+                    fi
+                fi
+                rm -f "$tmpfile" "$tmpclean"
+            fi
+        fi
+        if [[ "$remove_system" == true ]]; then
+            if [[ "$system_cron_possible" != true ]]; then
+                if [[ "$cron_mode" == "system" ]]; then
+                    log err "[CRON] System cron requested but ${cron_dir} is not available."
+                else
+                    log debug "[CRON] System cron unavailable at ${cron_dir}; skipping test job removal."
+                fi
+            else
+                local tmpfile tmpclean
+                tmpfile="$(mktemp)"
+                tmpclean="${tmpfile}.clean"
+                if [[ -f "$cron_file" ]]; then
+                    cat "$cron_file" > "$tmpfile"
+                elif [[ "$can_sudo" == true && $EUID -ne 0 ]]; then
+                    if sudo -n test -f "$cron_file" 2>/dev/null; then
+                        sudo cat "$cron_file" > "$tmpfile"
+                    else
+                        : > "$tmpfile"
+                    fi
+                else
+                    : > "$tmpfile"
+                fi
+                remove_test_lines "$tmpfile" "$tmpclean"
+                if cmp -s "$tmpfile" "$tmpclean"; then
+                    log info "[CRON] No cron test job found in ${cron_file}."
+                else
+                    local tee_cmd=("tee" "$cron_file")
+                    if [[ $EUID -ne 0 && "$can_sudo" == true ]]; then
+                        tee_cmd=("sudo" "tee" "$cron_file")
+                    fi
+                    if cat "$tmpclean" | "${tee_cmd[@]}" >/dev/null; then
+                        log ok "[CRON] Removed cron test job from ${cron_file}."
+                        removed=true
+                    else
+                        log err "[CRON] Failed to update ${cron_file}."
+                    fi
+                fi
+                rm -f "$tmpfile" "$tmpclean"
+            fi
+        fi
+        [[ "$removed" == false ]] && log info "[CRON] No cron test job removed."
+        return 0
+    fi
 
     if [[ "$remove_user_crontab" == true ]]; then
         if ! command -v crontab >/dev/null 2>&1; then

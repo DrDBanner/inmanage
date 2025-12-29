@@ -132,6 +132,7 @@ core actions:
   prune [--override-enforced-user] | prune_versions | prune_backups
   clear-cache
   cron install|uninstall [--user=name] [--jobs=scheduler|backup|both] [--mode=auto|system|crontab] [--backup-time=HH:MM]
+                        [--create-test-job] [--remove-test-job]
   provision spawn [--provision-file=path] [--backup-file=path|--latest-backup]
 EOF
             ;;
@@ -297,8 +298,8 @@ EOF
 core cron install:
   inm core cron install [--user=name] [--jobs=scheduler|backup|both]
                              [--mode=auto|system|crontab] [--cron-file=path]
-                             [--backup-time=HH:MM]
-  inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path]
+                             [--backup-time=HH:MM] [--create-test-job]
+  inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path] [--remove-test-job]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF
