@@ -53,22 +53,22 @@ run_installation() {
     local force="${NAMED_ARGS[force]:-${force_update:-false}}"
 
     if [ "$mode" = "Provisioned" ] && [[ "$force" != true ]]; then
-        if [[ -n "$install_path" && -d "$install_path" ]] && find "$install_path" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
-            if [[ -t 0 ]]; then
-                log warn "[TAR] Provisioned install is destructive."
-                log info "[TAR] Continue? Type 'yes' to proceed:"
-                if ! read -r -t 60 response; then
-                    log warn "[TAR] No response within 60 seconds. Installation aborted."
-                    return 1
-                fi
-                if [[ ! "$response" =~ ^([Yy]([Ee][Ss])?)$ ]]; then
-                    log info "[TAR] Installation aborted by user."
-                    return 1
-                fi
-            else
-                log err "[TAR] Provisioned install is destructive. Re-run with --force."
+        if [[ -t 0 ]]; then
+            log warn "[TAR] Provisioned install is destructive."
+            log info "[TAR] Continue? Type 'yes' to proceed:"
+            if ! read -r -t 60 response; then
+                log warn "[TAR] No response within 60 seconds. Installation aborted."
                 return 1
             fi
+            if [[ ! "$response" =~ ^([Yy]([Ee][Ss])?)$ ]]; then
+                log info "[TAR] Installation aborted by user."
+                return 1
+            fi
+            NAMED_ARGS[force]=true
+            force=true
+        else
+            log err "[TAR] Provisioned install is destructive. Re-run with --force."
+            return 1
         fi
     fi
 
