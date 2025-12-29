@@ -17,9 +17,9 @@ _env_unescape_double_quoted() {
     local unescaped=""
     local i=0
     local len=${#val}
-    while [ $i -lt $len ]; do
+    while [ $i -lt "$len" ]; do
         local ch="${val:$i:1}"
-        if [ "$ch" = "\\" ] && [ $((i + 1)) -lt $len ]; then
+        if [ "$ch" = "\\" ] && [ $((i + 1)) -lt "$len" ]; then
             local next="${val:$((i + 1)):1}"
             case "$next" in
                 "\\"|"\""|'$'|'`')
