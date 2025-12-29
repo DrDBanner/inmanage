@@ -32,32 +32,39 @@ setup_environment() {
         /bin
     )
 
+    local os_id="${INM_OS_ID:-}"
+    if [ -z "$os_id" ]; then
+        os_id="$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+    fi
+    local is_freebsd=0
+    [ "$os_id" = "freebsd" ] && is_freebsd=1
+
     local extra_paths=(
-        /usr/iports/bin
-        /usr/iports/sbin
-        /usr/iports/mysql84/bin
         /usr/local/mysql/bin
     )
     # FreeBSD iports PHP versions: prefer newest installed.
     local php_iports_paths=()
     local php_iports_entries=()
     local php_dir=""
-    for php_dir in /usr/iports/php*/bin; do
-        [[ -d "$php_dir" ]] || continue
-        local php_base
-        php_base="$(basename "$(dirname "$php_dir")")"
-        local php_num="${php_base#php}"
-        if [[ "$php_num" =~ ^[0-9]+$ ]]; then
-            php_iports_entries+=("${php_num}|${php_dir}")
-        fi
-    done
-    if [ "${#php_iports_entries[@]}" -gt 0 ]; then
-        IFS=$'\n' php_iports_entries=($(printf '%s\n' "${php_iports_entries[@]}" | sort -rn))
-        unset IFS
-        local entry
-        for entry in "${php_iports_entries[@]}"; do
-            php_iports_paths+=("${entry#*|}")
+    if [ "$is_freebsd" -eq 1 ] && [ -d /usr/iports ]; then
+        extra_paths+=(/usr/iports/bin /usr/iports/sbin /usr/iports/mysql84/bin)
+        for php_dir in /usr/iports/php*/bin; do
+            [[ -d "$php_dir" ]] || continue
+            local php_base
+            php_base="$(basename "$(dirname "$php_dir")")"
+            local php_num="${php_base#php}"
+            if [[ "$php_num" =~ ^[0-9]+$ ]]; then
+                php_iports_entries+=("${php_num}|${php_dir}")
+            fi
         done
+        if [ "${#php_iports_entries[@]}" -gt 0 ]; then
+            IFS=$'\n' php_iports_entries=($(printf '%s\n' "${php_iports_entries[@]}" | sort -rn))
+            unset IFS
+            local entry
+            for entry in "${php_iports_entries[@]}"; do
+                php_iports_paths+=("${entry#*|}")
+            done
+        fi
     fi
 
     for p in "${default_paths[@]}" "${extra_paths[@]}" "${php_iports_paths[@]}"; do
