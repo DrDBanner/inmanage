@@ -204,16 +204,45 @@ run_preflight() {
     if should_run "CLI"; then
     # ---- CLI self info ----
     local cli_root cli_branch cli_commit cli_dirty=""
+    local cli_version="" cli_version_commit=""
     cli_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
     add_result INFO "CLI" "CLI: $cli_root"
+    if [ -r "$cli_root/VERSION" ]; then
+        cli_version=$(<"$cli_root/VERSION")
+        cli_version_commit="$(printf "%s" "$cli_version" | sed -nE 's/.*commit[:= ]+([0-9a-fA-F]{7,40}).*/\1/p' | head -n1)"
+        if [[ -z "$cli_version_commit" ]] && printf "%s" "$cli_version" | grep -Eq '^[0-9a-fA-F]{7,40}$'; then
+            cli_version_commit="$cli_version"
+        fi
+    fi
     if command -v git >/dev/null 2>&1 && [ -d "$cli_root/.git" ]; then
-        cli_branch="$(git -C "$cli_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-        cli_commit="$(git -C "$cli_root" rev-parse --short HEAD 2>/dev/null || true)"
+        local git_err="" git_out="" git_rc=0
+        git_out="$(git -C "$cli_root" rev-parse --abbrev-ref HEAD 2>&1)"
+        git_rc=$?
+        if [ "$git_rc" -eq 0 ]; then
+            cli_branch="$git_out"
+        else
+            git_err="$git_out"
+        fi
+        git_out="$(git -C "$cli_root" rev-parse --short HEAD 2>&1)"
+        git_rc=$?
+        if [ "$git_rc" -eq 0 ]; then
+            cli_commit="$git_out"
+        else
+            [[ -z "$git_err" ]] && git_err="$git_out"
+        fi
         git -C "$cli_root" status --porcelain >/dev/null 2>&1 && \
             git -C "$cli_root" status --porcelain | grep -q . && cli_dirty="*"
+        if [[ -z "$cli_commit" && -n "$cli_version_commit" ]]; then
+            cli_commit="$cli_version_commit"
+        fi
         cli_branch="${cli_branch:-unknown}"
         cli_commit="${cli_commit:-unknown}"
         add_result INFO "CLI" "Source: git checkout (branch=${cli_branch} commit=${cli_commit}${cli_dirty})"
+        if echo "$git_err" | grep -qi "dubious ownership"; then
+            add_result WARN "CLI" "Git ownership check blocked access. Fix: git config --global --add safe.directory $cli_root"
+        elif echo "$git_err" | grep -qi "permission denied"; then
+            add_result WARN "CLI" "Git metadata not readable at $cli_root (try: sudo or adjust ownership)."
+        fi
         local cli_commit_date
         cli_commit_date="$(git -C "$cli_root" log -1 --format=%cd --date=iso 2>/dev/null || true)"
         [[ -n "$cli_commit_date" ]] && add_result INFO "CLI" "Last commit date: $cli_commit_date"
@@ -221,9 +250,7 @@ run_preflight() {
         add_result WARN "CLI" "Source: no git metadata (tarball/snapshot install)"
     fi
     # Optional VERSION file in repo root
-    if [ -f "$cli_root/VERSION" ]; then
-        local cli_version
-        cli_version=$(<"$cli_root/VERSION")
+    if [ -n "$cli_version" ]; then
         add_result INFO "CLI" "Version file: ${cli_version}"
     fi
     # Detect install mode for CLI
