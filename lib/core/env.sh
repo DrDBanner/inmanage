@@ -18,7 +18,7 @@ format_helper_path="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/helpers/for
 setup_environment() {
     # shellcheck disable=SC2034
     local original_path="$PATH"
-    local clean_path=""
+    local clean_path="${PATH:-}"
 
     # Preserve original home for defaults before any user switching
     export INM_ORIGINAL_HOME="${INM_ORIGINAL_HOME:-${HOME:-}}"
@@ -60,18 +60,10 @@ setup_environment() {
         done
     fi
 
-    IFS=':' read -ra path_parts <<< "$PATH"
-    for dir in "${path_parts[@]}"; do
-        [[ -d "$dir" ]] && case ":$clean_path:" in
-            *":$dir:"*) : ;;  # already present → skip
-            *) clean_path="${clean_path:+$clean_path:}$dir" ;;
-        esac
-    done
-
     for p in "${default_paths[@]}" "${extra_paths[@]}" "${php_iports_paths[@]}"; do
         [[ -d "$p" ]] && case ":$clean_path:" in
             *":$p:"*) : ;;    # already present → skip
-            *) clean_path="$clean_path:$p" ;;
+            *) clean_path="${clean_path:+$clean_path:}$p" ;;
         esac
     done
 
