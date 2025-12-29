@@ -51,13 +51,21 @@ EOF
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --mode=*) MODE="${1#*=}"; shift ;;
       --mode) MODE="$2"; shift 2 ;;
+      --target=*) TARGET_DIR="${1#*=}"; shift ;;
       --target) TARGET_DIR="$2"; shift 2 ;;
+      --symlink-dir=*) SYMLINK_DIR="${1#*=}"; shift ;;
       --symlink-dir) SYMLINK_DIR="$2"; shift 2 ;;
+      --install-owner=*) INSTALL_OWNER="${1#*=}"; shift ;;
       --install-owner) INSTALL_OWNER="$2"; shift 2 ;;
+      --install-perms=*) INSTALL_PERMS="${1#*=}"; shift ;;
       --install-perms) INSTALL_PERMS="$2"; shift 2 ;;
+      --run-user=*) RUN_USER="${1#*=}"; shift ;;
       --run-user) RUN_USER="$2"; shift 2 ;;
+      --branch=*) BRANCH="${1#*=}"; shift ;;
       --branch) BRANCH="$2"; shift 2 ;;
+      --source=*) SOURCE_DIR="${1#*=}"; shift ;;
       --source) SOURCE_DIR="$2"; shift 2 ;;
       -h|--help) usage; exit 0 ;;
       *) log ERR "Unknown arg: $1"; usage; exit 1 ;;
