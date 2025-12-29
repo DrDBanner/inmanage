@@ -285,6 +285,12 @@ run_installation() {
     if declare -F enforce_ownership >/dev/null 2>&1; then
         enforce_ownership "$install_path"
     fi
+    if [[ -n "${INM_DIR_MODE:-}" ]] && declare -F enforce_dir_permissions >/dev/null 2>&1; then
+        enforce_dir_permissions "$INM_DIR_MODE" "$install_path"
+    fi
+    if [[ -n "${INM_FILE_MODE:-}" ]] && declare -F enforce_file_permissions >/dev/null 2>&1; then
+        enforce_file_permissions "$INM_FILE_MODE" "$install_path"
+    fi
 
     if [ ! -x "$install_path/artisan" ]; then
         chmod +x "$install_path/artisan" || {

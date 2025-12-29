@@ -223,6 +223,12 @@ run_update() {
         return 1
     }
     enforce_ownership "$install_path"
+    if [[ -n "${INM_DIR_MODE:-}" ]] && declare -F enforce_dir_permissions >/dev/null 2>&1; then
+        enforce_dir_permissions "$INM_DIR_MODE" "$install_path"
+    fi
+    if [[ -n "${INM_FILE_MODE:-}" ]] && declare -F enforce_file_permissions >/dev/null 2>&1; then
+        enforce_file_permissions "$INM_FILE_MODE" "$install_path"
+    fi
 
     log info "[UPD] Running post-activation artisan tasks"
     run_artisan migrate --force || log warn "[UPD] artisan migrate failed"
