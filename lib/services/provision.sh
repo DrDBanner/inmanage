@@ -183,11 +183,11 @@ provision_post_install() {
             log warn "[PROV] Language seeder failed; language list may be incomplete."
         fi
     fi
-    if run_artisan ninja:create-account --email=admin@admin.com --password=admin; then
-        local cron_jobs="${NAMED_ARGS[cron_jobs]:-${NAMED_ARGS[cron-jobs]:-both}}"
-        local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
-        local cron_ok=true
-        local cron_skipped=false
+        if run_artisan ninja:create-account --email=admin@admin.com --password=admin; then
+            local cron_jobs="${NAMED_ARGS[cron_jobs]:-${NAMED_ARGS[cron-jobs]:-both}}"
+            local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
+            local cron_ok=true
+            local cron_skipped=false
         local cron_mode="${NAMED_ARGS[cron_mode]:-${NAMED_ARGS[cron-mode]:-auto}}"
         local no_cron="${NAMED_ARGS[no_cron_install]:-${NAMED_ARGS[no-cron-install]:-false}}"
         local no_backup_cron="${NAMED_ARGS[no_backup_cron]:-${NAMED_ARGS[no-backup-cron]:-false}}"
@@ -199,16 +199,19 @@ provision_post_install() {
             log info "[PROV] Cron install skipped by flag (--no-cron-install)."
             cron_ok=false
             cron_skipped=true
-        else
-            if ! install_cronjob "user=$cron_user" "jobs=$cron_jobs" "mode=$cron_mode" "backup_time=$backup_time"; then
-                cron_ok=false
+            else
+                if ! install_cronjob "user=$cron_user" "jobs=$cron_jobs" "mode=$cron_mode" "backup_time=$backup_time"; then
+                    cron_ok=false
+                fi
             fi
+            if [ -f "${INM_ENV_FILE:-}" ]; then
+                load_env_file_raw "$INM_ENV_FILE" || log warn "[PROV] Failed to load app env for summary."
+            fi
+            print_provisioned_summary "$cron_ok" "$cron_jobs" "$cron_skipped"
+        else
+            log err "[PROV] Failed to create default user"
+            return 1
         fi
-        print_provisioned_summary "$cron_ok" "$cron_jobs" "$cron_skipped"
-    else
-        log err "[PROV] Failed to create default user"
-        return 1
-    fi
     return 0
 }
 

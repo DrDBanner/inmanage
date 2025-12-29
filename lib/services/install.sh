@@ -52,7 +52,7 @@ run_installation() {
     install_name="$(basename "$install_path")"
     local force="${NAMED_ARGS[force]:-${force_update:-false}}"
 
-    if [ "$mode" = "Provisioned" ] && [[ "$force" != true ]]; then
+    if [ "$mode" = "Provisioned" ] && [[ "$force" != true ]] && [ -e "$install_path" ]; then
         if [[ -t 0 ]]; then
             log warn "[TAR] Provisioned install is destructive."
             log info "[TAR] Continue? Type 'yes' to proceed:"

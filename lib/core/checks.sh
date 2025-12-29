@@ -66,7 +66,7 @@ load_env_file_raw() {
             key="${BASH_REMATCH[1]}"
             raw="${BASH_REMATCH[2]}"
             # filter relevant prefixes only
-            if [[ ! "$key" =~ ^(DB_|ELEVATED_|NINJA_|PDF_|INM_)[A-Z_]*$ ]]; then
+            if [[ ! "$key" =~ ^(APP_|DB_|ELEVATED_|MAIL_|NINJA_|PDF_|INM_)[A-Z_]*$ ]]; then
                 continue
             fi
             # trim leading spaces from val
