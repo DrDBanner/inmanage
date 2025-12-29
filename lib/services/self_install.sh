@@ -455,7 +455,7 @@ self_switch_mode() {
 
   if [[ "$force_clean" == true ]]; then
     log info "[SELF] Removing old install at $old_root"
-    rm -rf "$old_root"
+    safe_rm_rf "$old_root" "$(dirname "$old_root")"
   else
     log info "[SELF] Old install left at $old_root (use --force-clean-old to remove)."
   fi
@@ -550,7 +550,7 @@ self_uninstall() {
         ;;
     esac
     log warn "[SELF] Removing install directory (destructive): $root"
-    rm -rf "$root"
+    safe_rm_rf "$root" "$(dirname "$root")"
   else
     log info "[SELF] Install directory left at $root (use --force to delete, destructive)."
   fi

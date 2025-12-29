@@ -28,16 +28,22 @@ cleanup_old_versions() {
     rollback_dirs=$(find "$install_parent" -maxdepth 1 -type d -name "${install_name}_rollback_*" 2>/dev/null | sort -r | tail -n +$((keep + 1)))
 
     if [ -n "$update_dirs" ]; then
-        echo "$update_dirs" | xargs -r rm -rf || {
-            log err "[COV] Failed to clean up old versions."
-            exit 1
-        }
+        while IFS= read -r dir; do
+            [[ -z "$dir" ]] && continue
+            safe_rm_rf "$dir" "$install_parent" || {
+                log err "[COV] Failed to clean up old versions."
+                exit 1
+            }
+        done <<< "$update_dirs"
     fi
     if [ -n "$rollback_dirs" ]; then
-        echo "$rollback_dirs" | xargs -r rm -rf || {
-            log err "[COV] Failed to clean up old rollbacks."
-            exit 1
-        }
+        while IFS= read -r dir; do
+            [[ -z "$dir" ]] && continue
+            safe_rm_rf "$dir" "$install_parent" || {
+                log err "[COV] Failed to clean up old rollbacks."
+                exit 1
+            }
+        done <<< "$rollback_dirs"
     fi
 }
 
@@ -57,10 +63,13 @@ cleanup_old_backups() {
     backup_items=$(find "$backup_path" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) | sort -r | tail -n +$((keep + 1)))
 
     if [ -n "$backup_items" ]; then
-        echo "$backup_items" | xargs -r rm -rf || {
-            log err "[COB] Failed to clean up old backup items."
-            exit 1
-        }
+        while IFS= read -r item; do
+            [[ -z "$item" ]] && continue
+            safe_rm_rf "$item" "$backup_path" || {
+                log err "[COB] Failed to clean up old backup items."
+                exit 1
+            }
+        done <<< "$backup_items"
     fi
     log debug "[COB] Cleaning up done."
 }

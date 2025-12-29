@@ -32,6 +32,15 @@ else
     exit 1
 fi
 
+if [ -f "${LIB_DIR}/helpers/distro_compatibility.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/distro_compatibility.sh"
+    compat_init
+else
+    echo "[ERR] Missing distro compatibility helper: ${LIB_DIR}/helpers/distro_compatibility.sh" >&2
+    exit 1
+fi
+
 if [ -f "${LIB_DIR}/helpers/prompt.sh" ]; then
     # shellcheck source=/dev/null
     source "${LIB_DIR}/helpers/prompt.sh"

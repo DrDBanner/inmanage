@@ -199,9 +199,15 @@ run_installation() {
 
     local extracted
     extracted="$(mktemp -d)"
-    if ! spinner_run "Extracting Invoice Ninja..." tar -xzf "$source_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
+    if declare -F tar_safe_extract >/dev/null 2>&1; then
+        if ! spinner_run "Extracting Invoice Ninja..." tar_safe_extract "$source_dir/invoiceninja_v$latest_version.tar.gz" "$extracted"; then
+            log err "[TAR] Failed to extract Invoice Ninja archive."
+            safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
+            return 1
+        fi
+    elif ! spinner_run "Extracting Invoice Ninja..." tar -xzf "$source_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
         log err "[TAR] Failed to extract Invoice Ninja archive."
-        rm -rf "$extracted"
+        safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
         return 1
     fi
 
@@ -214,17 +220,17 @@ run_installation() {
     local temp_dir="${install_parent}/${install_name}_temp"
     mkdir -p "$install_parent" || {
         log err "[TAR] Failed to create install parent: $install_parent"
-        rm -rf "$extracted"
+        safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
         return 1
     }
-    rm -rf "$temp_dir"
+    safe_rm_rf "$temp_dir" "$(dirname "$temp_dir")" || true
     log info "[TAR] Preparing clean installation from archive: $source_dir/invoiceninja_v$latest_version.tar.gz"
     safe_move_or_copy_and_clean "$source_root" "$temp_dir" move || {
         log err "[TAR] Failed to move/copy extracted files"
-        rm -rf "$extracted"
+        safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
         return 1
     }
-    rm -rf "$extracted"
+    safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
 
     local archived_dir="${install_parent}/${install_name}_rollback_${timestamp}"
     local target_dir="${install_parent}/${install_name}_temp"

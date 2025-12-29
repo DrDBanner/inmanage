@@ -81,6 +81,10 @@ fetch_release_digest() {
 # ---------------------------------------------------------------------
 compute_sha256() {
     local file="$1"
+    if declare -F compat_compute_sha256 >/dev/null 2>&1; then
+        compat_compute_sha256 "$file" || return 1
+        return 0
+    fi
     sha256sum "$file" | awk '{print $1}'
 }
 
@@ -134,6 +138,11 @@ download_ninja() {
         expected_digest="$(fetch_release_digest "$version" "$(basename "$target_file")")"
     else
         log warn "[DN] SHA check bypassed via --bypass-check-sha."
+    fi
+    if [[ -z "$expected_digest" && "${NAMED_ARGS[bypass_check_sha]:-false}" != true ]]; then
+        log err "[DN] Release digest missing for v${version}; refusing to download."
+        log_hint "DN" "Override with --bypass-check-sha if you accept the risk."
+        return 1
     fi
     if declare -f check_github_rate_limit >/dev/null; then
         check_github_rate_limit

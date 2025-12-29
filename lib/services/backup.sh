@@ -256,7 +256,7 @@ run_backup() {
         fi
 
         cleanup_stage() {
-            [[ "$simulate" != true && -n "$stage" && -d "$stage" ]] && rm -rf "$stage"
+            [[ "$simulate" != true && -n "$stage" && -d "$stage" ]] && safe_rm_rf "$stage" "$(dirname "$stage")"
         }
 
         if [[ "$db" == "true" ]]; then
@@ -394,7 +394,7 @@ run_backup() {
                 run_with_spinner "Creating zip bundle..." bash -c "cd \"$stage\" && zip -r \"$bundle_path\" . >/dev/null" || { cleanup_stage; log err "[BACKUP] Failed to create zip bundle."; return 1; }
                 ;;
                 false)
-                    rm -rf "$bundle_path"
+                    safe_rm_rf "$bundle_path" "$backup_dir"
                     if ! rsync -a "$stage"/ "$bundle_path"/; then
                         cleanup_stage
                         log err "[BACKUP] Failed to sync bundle directory."
@@ -414,8 +414,13 @@ run_backup() {
 
         if [[ "$simulate" != true && "$compress" != "false" && -f "$bundle_path" ]]; then
             local checksum_target="${bundle_path}.sha256"
-            (cd "$backup_dir" && sha256sum "$(basename "$bundle_path")" > "$(basename "$checksum_target")") && \
-                log ok "[BACKUP] Checksum written: $checksum_target"
+            if declare -F compat_write_sha256_file >/dev/null 2>&1; then
+                compat_write_sha256_file "$bundle_path" "$checksum_target" && \
+                    log ok "[BACKUP] Checksum written: $checksum_target"
+            else
+                (cd "$backup_dir" && sha256sum "$(basename "$bundle_path")" > "$(basename "$checksum_target")") && \
+                    log ok "[BACKUP] Checksum written: $checksum_target"
+            fi
         elif [[ "$simulate" == true && "$compress" != "false" ]]; then
             log info "[DRY-RUN] Would create checksum for $bundle_path"
         fi
@@ -472,22 +477,22 @@ run_backup() {
                 tar.gz)
                     local env_stage
                     env_stage="$(mktemp -d)" || { log err "[BACKUP] Could not create temp dir for .env."; return 1; }
-                    cp "$env_source" "$env_stage/.env" || { rm -rf "$env_stage"; log warn "[BACKUP] Could not copy .env"; }
+                    cp "$env_source" "$env_stage/.env" || { safe_rm_rf "$env_stage" "$(dirname "$env_stage")"; log warn "[BACKUP] Could not copy .env"; }
                     if [[ "$create_migration_export" == "true" ]]; then
-                        apply_migration_export "$env_stage/.env" || { rm -rf "$env_stage"; return 1; }
+                        apply_migration_export "$env_stage/.env" || { safe_rm_rf "$env_stage" "$(dirname "$env_stage")"; return 1; }
                     fi
                     tar -czf "$env_target" -C "$env_stage" ".env" || log warn "[BACKUP] Could not archive .env"
-                    rm -rf "$env_stage"
+                    safe_rm_rf "$env_stage" "$(dirname "$env_stage")"
                     ;;
                 zip)
                     local env_stage
                     env_stage="$(mktemp -d)" || { log err "[BACKUP] Could not create temp dir for .env."; return 1; }
-                    cp "$env_source" "$env_stage/.env" || { rm -rf "$env_stage"; log warn "[BACKUP] Could not copy .env"; }
+                    cp "$env_source" "$env_stage/.env" || { safe_rm_rf "$env_stage" "$(dirname "$env_stage")"; log warn "[BACKUP] Could not copy .env"; }
                     if [[ "$create_migration_export" == "true" ]]; then
-                        apply_migration_export "$env_stage/.env" || { rm -rf "$env_stage"; return 1; }
+                        apply_migration_export "$env_stage/.env" || { safe_rm_rf "$env_stage" "$(dirname "$env_stage")"; return 1; }
                     fi
                     (cd "$env_stage" && zip -j "$env_target" ".env") >/dev/null || log warn "[BACKUP] Could not archive .env"
-                    rm -rf "$env_stage"
+                    safe_rm_rf "$env_stage" "$(dirname "$env_stage")"
                     ;;
                 false)
                     cp "$env_source" "$env_target" || log warn "[BACKUP] Could not copy .env"
@@ -528,7 +533,7 @@ run_backup() {
                         run_with_spinner "Archiving storage..." bash -c "cd \"$install_root\" && zip -r \"$storage_target\" storage >/dev/null" || { log err "[BACKUP] Archiving storage failed."; return 1; }
                         ;;
                     false)
-                        rm -rf "$storage_target"
+                        safe_rm_rf "$storage_target" "$backup_dir"
                         mkdir -p "$storage_target"
                         run_with_spinner "Copying storage..." rsync -a "$storage_src/." "$storage_target/" || { log err "[BACKUP] Copying storage failed."; return 1; }
                         ;;
@@ -568,7 +573,7 @@ run_backup() {
                         run_with_spinner "Archiving uploads..." bash -c "cd \"$install_root\" && zip -r \"$uploads_target\" public/uploads >/dev/null" || log warn "[BACKUP] Archiving uploads failed."
                         ;;
                     false)
-                        rm -rf "$uploads_target"
+                        safe_rm_rf "$uploads_target" "$backup_dir"
                         mkdir -p "$uploads_target"
                         run_with_spinner "Copying uploads..." rsync -a "$uploads_src/." "$uploads_target/" || log warn "[BACKUP] Copying uploads failed."
                         ;;
@@ -600,7 +605,7 @@ run_backup() {
                     run_with_spinner "Archiving app..." bash -c "cd \"$(dirname "$install_root")\" && zip -r \"$app_target\" \"$(basename "$install_root")\" -x \"$(basename "$backup_dir")/*\" \".cache/*\" >/dev/null" || log warn "[BACKUP] Archiving app failed."
                     ;;
                 false)
-                    rm -rf "$app_target"
+                    safe_rm_rf "$app_target" "$backup_dir"
                     mkdir -p "$app_target"
                         run_with_spinner "Copying app files..." rsync -a --exclude "$(basename "$backup_dir")" --exclude ".cache" "$install_root/." "$app_target/" || log warn "[BACKUP] Copying app failed."
                     ;;
@@ -642,10 +647,10 @@ run_backup() {
                         log info "[BACKUP] Creating extra archive (zip) -> $extra_target"
                         run_with_spinner "Archiving extras..." bash -c "cd \"$extra_stage\" && zip -r \"$extra_target\" . >/dev/null" || log warn "[BACKUP] Archiving extras failed."
                     fi
-                    rm -rf "$extra_stage"
+                    safe_rm_rf "$extra_stage" "$(dirname "$extra_stage")"
                     ;;
                 false)
-                    rm -rf "$extra_target"
+                    safe_rm_rf "$extra_target" "$backup_dir"
                     mkdir -p "$extra_target"
                     for p in "${extra_paths[@]}"; do
                         local resolved
@@ -673,8 +678,12 @@ run_backup() {
         for f in "${outputs[@]}"; do
             if [[ -f "$f" ]]; then
                 local cfile="${f}.sha256"
-                (cd "$(dirname "$f")" && sha256sum "$(basename "$f")" > "$(basename "$cfile")") && \
-                    log ok "[BACKUP] Checksum written: $cfile"
+                if declare -F compat_write_sha256_file >/dev/null 2>&1; then
+                    compat_write_sha256_file "$f" "$cfile" && log ok "[BACKUP] Checksum written: $cfile"
+                else
+                    (cd "$(dirname "$f")" && sha256sum "$(basename "$f")" > "$(basename "$cfile")") && \
+                        log ok "[BACKUP] Checksum written: $cfile"
+                fi
             fi
         done
         enforce_ownership "$backup_dir"

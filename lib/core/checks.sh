@@ -168,7 +168,7 @@ check_missing_settings() {
 # ---------------------------------------------------------------------
 check_commands() {
     local mode="${1:-full}"
-    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "grep" "xargs" "php" "touch" "sed" "sudo" "tee" "rsync" "awk" "jq" "git" "composer" "zip" "unzip" "sha256sum")
+    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "grep" "xargs" "php" "touch" "sed" "sudo" "tee" "rsync" "awk" "jq" "git" "composer" "zip" "unzip")
     if [ "$mode" = "self" ]; then
         local filtered=()
         local cmd=""
@@ -186,9 +186,15 @@ check_commands() {
 
     for cmd in "${commands[@]}"; do
         if ! command -v "$cmd" &>/dev/null; then
+            if [[ "$cmd" == "sudo" ]] && command -v doas >/dev/null 2>&1; then
+                continue
+            fi
             missing_commands+=("$cmd")
         fi
     done
+    if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1 && ! command -v sha256 >/dev/null 2>&1; then
+        missing_commands+=("sha256sum/shasum/sha256")
+    fi
 
     if [ "$mode" = "full" ]; then
         local db_client=""

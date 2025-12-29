@@ -130,7 +130,12 @@ run_update() {
     # Extract from cache tarball
     local extracted
     extracted="$(mktemp -d)"
-    if ! spinner_run "Extracting Invoice Ninja..." tar -xzf "$cache_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
+    if declare -F tar_safe_extract >/dev/null 2>&1; then
+        if ! spinner_run "Extracting Invoice Ninja..." tar_safe_extract "$cache_dir/invoiceninja_v$latest_version.tar.gz" "$extracted"; then
+            log err "[UPD] Failed to extract Invoice Ninja archive."
+            return 1
+        fi
+    elif ! spinner_run "Extracting Invoice Ninja..." tar -xzf "$cache_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
         log err "[UPD] Failed to extract Invoice Ninja archive."
         return 1
     fi
@@ -152,7 +157,7 @@ run_update() {
 
     log info "[UPD] Preparing new version directory: $new_dir"
 
-    rm -rf "$new_dir"
+    safe_rm_rf "$new_dir" "$install_parent"
     mkdir -p "$(dirname "$new_dir")"
 
     log info "[UPD] Moving from extracted cache to $new_dir"

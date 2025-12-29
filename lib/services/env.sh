@@ -301,6 +301,10 @@ env_get() {
         log err "[ENV] Missing key. Usage: env get KEY"
         return 1
     fi
+    if ! _env_key_valid "$key"; then
+        log err "[ENV] Invalid key: $key"
+        return 1
+    fi
     local val
     val=$(_env_run "$access" "$owner" cat "$env_file" | grep -E "^${key}=" | tail -n1 | cut -d= -f2-)
     if [[ -n "$val" ]]; then
@@ -323,6 +327,10 @@ env_unset() {
     access="$(_env_access_mode "$env_file" "write" "$owner")" || return 1
     if [[ -z "$key" ]]; then
         log err "[ENV] Missing key. Usage: env unset KEY"
+        return 1
+    fi
+    if ! _env_key_valid "$key"; then
+        log err "[ENV] Invalid key: $key"
         return 1
     fi
     if [[ "${DRY_RUN:-false}" == true ]]; then
@@ -362,6 +370,11 @@ _env_escape_value() {
     printf "%s" "$out"
 }
 
+_env_key_valid() {
+    local key="$1"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
+}
+
 env_set() {
     local target="app" pair
     if [[ "$1" == "app" || "$1" == "cli" ]]; then
@@ -379,6 +392,10 @@ env_set() {
     fi
     local key="${pair%%=*}"
     local value="${pair#*=}"
+    if ! _env_key_valid "$key"; then
+        log err "[ENV] Invalid key: $key"
+        return 1
+    fi
     local allow_placeholders=false
     if [[ "$target" == "cli" ]]; then
         allow_placeholders=true

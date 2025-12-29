@@ -81,7 +81,7 @@ run_restore() {
 
     local tmpdir
     tmpdir="$(mktemp -d)"
-    cleanup_tmp_restore() { rm -rf "$tmpdir"; }
+    cleanup_tmp_restore() { safe_rm_rf "$tmpdir" "$(dirname "$tmpdir")" || true; }
     trap cleanup_tmp_restore EXIT
 
     local stage_root="$tmpdir"
@@ -92,11 +92,19 @@ run_restore() {
         case "$bundle" in
             *.tar.gz|*.tgz)
                 log info "[RESTORE] Extracting tar bundle -> $stage_root"
-                tar -xzf "$bundle" -C "$stage_root" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
+                if declare -F tar_safe_extract >/dev/null 2>&1; then
+                    tar_safe_extract "$bundle" "$stage_root" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
+                else
+                    tar -xzf "$bundle" -C "$stage_root" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
+                fi
                 ;;
             *.zip)
                 log info "[RESTORE] Extracting zip bundle -> $stage_root"
-                unzip -q "$bundle" -d "$stage_root" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
+                if declare -F zip_safe_extract >/dev/null 2>&1; then
+                    zip_safe_extract "$bundle" "$stage_root" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
+                else
+                    unzip -q "$bundle" -d "$stage_root" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
+                fi
                 ;;
             *)
                 log info "[RESTORE] Staging file -> $stage_root"
