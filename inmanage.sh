@@ -505,6 +505,10 @@ dispatch_command() {
                     if skip_if_dry_run "db restore"; then return 0; fi
                     call_with_named_args import_database
                     ;;
+                purge)
+                    if skip_if_dry_run "db purge"; then return 0; fi
+                    call_with_named_args purge_database
+                    ;;
                 create)
                     if skip_if_dry_run "db create"; then return 0; fi
                     call_with_named_args create_database

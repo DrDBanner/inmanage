@@ -141,6 +141,8 @@ db actions:
   backup [--compress=tar.gz|zip|false] [--name=...]
   restore --file=path [--force] [--purge=true]
          # Requires --force (destructive).
+  purge --force
+         # Drops all tables in the current DB (no drop/create).
   create
 EOF
             ;;
@@ -337,6 +339,15 @@ EOF
 db restore:
   inm db restore --file=path [--force] [--purge=true]
   - Requires --force (destructive)
+  
+  Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
+EOF
+                    ;;
+                purge)
+                    cat <<'EOF'
+db purge:
+  inm db purge --force
+  - Drops all tables/views in the current DB (destructive)
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF

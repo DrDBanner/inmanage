@@ -543,6 +543,15 @@ DB create switches (`inm db create`):
 | `--db-user=user` | `DB_USERNAME` | Override DB user for creation. |
 | `--db-pass=pass` | `DB_PASSWORD` | Override DB password for creation. |
 
+DB purge (drop all tables/views, keep DB):
+
+```bash
+inm db purge --force
+```
+
+> [!WARNING]
+> Destructive: removes all tables/views in the configured database. The database itself is kept and requires DROP privileges.
+
 ## Health checks
 
 ```bash

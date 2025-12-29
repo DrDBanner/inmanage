@@ -174,6 +174,154 @@ import_database() {
 }
 
 # ---------------------------------------------------------------------
+# purge_database()
+# Drops all tables/views in the current database without drop/create.
+# ---------------------------------------------------------------------
+purge_database() {
+    if [[ "${DRY_RUN:-false}" == true ]]; then
+        log info "[DRY-RUN] Skipping DB purge."
+        return 0
+    fi
+
+    local -A ARGS
+    parse_named_args ARGS "$@"
+
+    local force="${ARGS[force]:-${force_update:-false}}"
+    if [[ "$force" != true ]]; then
+        log err "[db purge] Purge is destructive. Re-run with --force to proceed."
+        return 1
+    fi
+
+    # Hydrate DB vars from app env if not set
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
+        log debug "[db purge] Loading DB vars from app env: ${INM_ENV_FILE}"
+        set -a
+        # shellcheck disable=SC1090
+        . "${INM_ENV_FILE}"
+        set +a
+    fi
+    local db_config_present=false
+    if [[ -n "${DB_HOST:-}" || -n "${DB_USERNAME:-}" || -n "${DB_DATABASE:-}" ]]; then
+        db_config_present=true
+    fi
+
+    # Prompt if still missing essentials
+    if [[ -z "${DB_USERNAME:-}" ]]; then
+        DB_USERNAME=$(prompt_var "MYSQL_USER" "root" "MySQL/MariaDB user for purge:" false 60) || return 1
+    fi
+    if [[ -z "${DB_DATABASE:-}" ]]; then
+        DB_DATABASE=$(prompt_var "MYSQL_DB" "" "MySQL/MariaDB database to purge:" false 60) || return 1
+    fi
+    if [[ -z "${DB_HOST:-}" ]]; then
+        DB_HOST=$(prompt_var "MYSQL_HOST" "localhost" "MySQL/MariaDB host:" false 60) || return 1
+    fi
+    if [[ -z "${DB_PASSWORD:-}" && "${INM_FORCE_READ_DB_PW^^}" == "Y" ]]; then
+        DB_PASSWORD=$(prompt_var "MYSQL_PASS" "" "Password for ${DB_USERNAME}:" true 60) || return 1
+    fi
+
+    local db_client=""
+    db_client="$(select_db_client true "$db_config_present")"
+    if [ -z "$db_client" ]; then
+        log err "[db purge] No MySQL/MariaDB client found. Please install mysql or mariadb client tools."
+        return 1
+    fi
+
+    local db_cmd=("$db_client" "-u${DB_USERNAME}" "-h${DB_HOST}" "-P${DB_PORT:-3306}")
+    [[ -n "${DB_PASSWORD:-}" ]] && db_cmd+=("-p${DB_PASSWORD}")
+
+    if ! "${db_cmd[@]}" -e "SELECT 1" >/dev/null 2>&1; then
+        log warn "[db purge] Initial DB credentials failed; prompting for elevated DB user."
+        local elev_user elev_pw
+        elev_user=$(prompt_var "MYSQL_USER" "${DB_USERNAME:-root}" "MySQL/MariaDB user for purge (e.g., root):" false 60) || return 1
+        elev_pw=$(prompt_var "MYSQL_PASS" "" "Password for ${elev_user} (leave blank if none):" true 60) || return 1
+        db_cmd=("$db_client" "-u${elev_user}" "-h${DB_HOST}" "-P${DB_PORT:-3306}")
+        [[ -n "$elev_pw" ]] && db_cmd+=("-p${elev_pw}")
+        DB_USERNAME="$elev_user"
+        DB_PASSWORD="$elev_pw"
+        if ! "${db_cmd[@]}" -e "SELECT 1" >/dev/null 2>&1; then
+            if [[ "${DB_HOST}" == "localhost" || "${DB_HOST}" == "127.0.0.1" ]]; then
+                db_cmd=("$db_client" "-u${elev_user}" "-S" "${DB_SOCKET:-/var/run/mysqld/mysqld.sock}")
+                [[ -n "$elev_pw" ]] && db_cmd+=("-p${elev_pw}")
+                if ! "${db_cmd[@]}" -e "SELECT 1" >/dev/null 2>&1; then
+                    log err "[db purge] Could not connect with provided elevated credentials (host or socket)."
+                    return 1
+                fi
+            else
+                log err "[db purge] Could not connect with provided elevated credentials."
+                return 1
+            fi
+        fi
+    fi
+
+    local rows=()
+    local query_output=""
+    if ! query_output=$("${db_cmd[@]}" -N -B -e "SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.tables WHERE table_schema='${DB_DATABASE}'" 2>/dev/null); then
+        log err "[db purge] Could not list tables for ${DB_DATABASE}."
+        return 1
+    fi
+    while IFS= read -r row; do
+        [[ -n "$row" ]] && rows+=("$row")
+    done <<< "$query_output"
+
+    if [ "${#rows[@]}" -eq 0 ]; then
+        log ok "[db purge] No tables found in ${DB_DATABASE}."
+        return 0
+    fi
+
+    local tables=()
+    local views=()
+    local row
+    for row in "${rows[@]}"; do
+        local name type
+        name="${row%%$'\t'*}"
+        type="${row#*$'\t'}"
+        if [[ "$type" == "VIEW" ]]; then
+            views+=("$name")
+        else
+            tables+=("$name")
+        fi
+    done
+
+    log warn "[db purge] Removing ${#tables[@]} tables and ${#views[@]} views from '${DB_DATABASE}'."
+
+    local batch_size=50
+    local i
+    if [ "${#views[@]}" -gt 0 ]; then
+        for ((i=0; i<${#views[@]}; i+=batch_size)); do
+            local chunk=("${views[@]:i:batch_size}")
+            local drop_list=""
+            local v
+            for v in "${chunk[@]}"; do
+                v="${v//\`/``}"
+                drop_list="${drop_list:+$drop_list,}\`$v\`"
+            done
+            if ! "${db_cmd[@]}" "$DB_DATABASE" -e "DROP VIEW IF EXISTS ${drop_list};"; then
+                log err "[db purge] Failed to drop views in ${DB_DATABASE}."
+                return 1
+            fi
+        done
+    fi
+
+    if [ "${#tables[@]}" -gt 0 ]; then
+        for ((i=0; i<${#tables[@]}; i+=batch_size)); do
+            local chunk=("${tables[@]:i:batch_size}")
+            local drop_list=""
+            local t
+            for t in "${chunk[@]}"; do
+                t="${t//\`/``}"
+                drop_list="${drop_list:+$drop_list,}\`$t\`"
+            done
+            if ! "${db_cmd[@]}" "$DB_DATABASE" -e "SET FOREIGN_KEY_CHECKS=0; DROP TABLE IF EXISTS ${drop_list}; SET FOREIGN_KEY_CHECKS=1;"; then
+                log err "[db purge] Failed to drop tables in ${DB_DATABASE}."
+                return 1
+            fi
+        done
+    fi
+
+    log ok "[db purge] Database '${DB_DATABASE}' is now empty."
+}
+
+# ---------------------------------------------------------------------
 # db_table_count()
 # Returns the number of tables in the current DB. Prints count on success.
 # ---------------------------------------------------------------------
