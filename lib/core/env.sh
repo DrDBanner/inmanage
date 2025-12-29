@@ -60,10 +60,7 @@ setup_environment() {
         if [ "${#php_iports_entries[@]}" -gt 0 ]; then
             IFS=$'\n' php_iports_entries=($(printf '%s\n' "${php_iports_entries[@]}" | sort -rn))
             unset IFS
-            local entry
-            for entry in "${php_iports_entries[@]}"; do
-                php_iports_paths+=("${entry#*|}")
-            done
+            php_iports_paths+=("${php_iports_entries[0]#*|}")
         fi
     fi
 
