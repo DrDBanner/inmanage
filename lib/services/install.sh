@@ -227,7 +227,7 @@ run_installation() {
         return 1
     }
     safe_rm_rf "$temp_dir" "$(dirname "$temp_dir")" || true
-    log info "[TAR] Preparing clean installation from archive: $source_dir/invoiceninja_v$latest_version.tar.gz"
+    log info "[TAR] Preparing installation staging from archive: $source_dir/invoiceninja_v$latest_version.tar.gz"
     safe_move_or_copy_and_clean "$source_root" "$temp_dir" move || {
         log err "[TAR] Failed to move/copy extracted files"
         safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
