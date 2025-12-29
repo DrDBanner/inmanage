@@ -112,7 +112,7 @@ run_restore() {
     local tmpdir
     tmpdir="$(mktemp -d)"
     cleanup_tmp_restore() { safe_rm_rf "$tmpdir" "$(dirname "$tmpdir")" || true; }
-    trap cleanup_tmp_restore EXIT
+    trap cleanup_tmp_restore RETURN
 
     local stage_root="$tmpdir"
     if [[ -d "$bundle" ]]; then
@@ -126,17 +126,29 @@ run_restore() {
             *.tar.gz|*.tgz)
                 log info "[RESTORE] Extracting tar bundle -> $stage_root"
                 if declare -F tar_safe_extract >/dev/null 2>&1; then
-                    tar_safe_extract "$bundle" "$stage_root" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
+                    if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting backup..." tar_safe_extract "$bundle" "$stage_root"; then
+                        log err "[RESTORE] Failed to extract bundle."
+                        return 1
+                    fi
                 else
-                    tar -xzf "$bundle" -C "$stage_root" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
+                    if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting backup..." tar -xzf "$bundle" -C "$stage_root"; then
+                        log err "[RESTORE] Failed to extract bundle."
+                        return 1
+                    fi
                 fi
                 ;;
             *.zip)
                 log info "[RESTORE] Extracting zip bundle -> $stage_root"
                 if declare -F zip_safe_extract >/dev/null 2>&1; then
-                    zip_safe_extract "$bundle" "$stage_root" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
+                    if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting backup..." zip_safe_extract "$bundle" "$stage_root"; then
+                        log err "[RESTORE] Failed to extract bundle."
+                        return 1
+                    fi
                 else
-                    unzip -q "$bundle" -d "$stage_root" || { log err "[RESTORE] Failed to extract bundle."; return 1; }
+                    if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting backup..." unzip -q "$bundle" -d "$stage_root"; then
+                        log err "[RESTORE] Failed to extract bundle."
+                        return 1
+                    fi
                 fi
                 ;;
             *)
@@ -204,16 +216,19 @@ run_restore() {
     fi
     [[ "$simulate" != true ]] && mkdir -p "$target"
 
-    if [[ "$include_app" == true && -n "$app_dir" ]]; then
-        if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would restore application files -> $target"
-        else
-            log info "[RESTORE] Restoring application files via rsync -> $target"
-            rsync -a "$app_dir"/ "$target"/ || { log err "[RESTORE] Failed to restore application files."; return 1; }
-        fi
-    elif [[ "$include_app" == true ]]; then
-        if [[ "$autofill_app" != "0" ]]; then
+        if [[ "$include_app" == true && -n "$app_dir" ]]; then
             if [[ "$simulate" == true ]]; then
+                log info "[DRY-RUN] Would restore application files -> $target"
+            else
+                log info "[RESTORE] Restoring application files via rsync -> $target"
+                if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Restoring app files..." rsync -a "$app_dir"/ "$target"/; then
+                    log err "[RESTORE] Failed to restore application files."
+                    return 1
+                fi
+            fi
+        elif [[ "$include_app" == true ]]; then
+            if [[ "$autofill_app" != "0" ]]; then
+                if [[ "$simulate" == true ]]; then
                 log info "[DRY-RUN] Would download and install a fresh app because backup lacks app files."
             else
                 log warn "[RESTORE] No application directory found in backup. Attempting fresh install (autofill app)."
@@ -228,38 +243,44 @@ run_restore() {
         fi
     fi
 
-    if [[ -n "$storage_dir" ]]; then
-        local storage_dest="$target/storage"
-        if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would restore storage -> $storage_dest"
-        else
-            log info "[RESTORE] Restoring storage via rsync -> $storage_dest"
-            mkdir -p "$storage_dest"
-            rsync -a "$storage_dir"/ "$storage_dest"/ || log warn "[RESTORE] Restoring storage failed."
+        if [[ -n "$storage_dir" ]]; then
+            local storage_dest="$target/storage"
+            if [[ "$simulate" == true ]]; then
+                log info "[DRY-RUN] Would restore storage -> $storage_dest"
+            else
+                log info "[RESTORE] Restoring storage via rsync -> $storage_dest"
+                mkdir -p "$storage_dest"
+                if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Restoring storage..." rsync -a "$storage_dir"/ "$storage_dest"/; then
+                    log warn "[RESTORE] Restoring storage failed."
+                fi
+            fi
         fi
-    fi
 
-    if [[ -n "$uploads_dir" ]]; then
-        local uploads_dest="$target/public/uploads"
-        if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would restore uploads -> $uploads_dest"
-        else
-            log info "[RESTORE] Restoring uploads via rsync -> $uploads_dest"
-            mkdir -p "$uploads_dest"
-            rsync -a "$uploads_dir"/ "$uploads_dest"/ || log warn "[RESTORE] Restoring uploads failed."
+        if [[ -n "$uploads_dir" ]]; then
+            local uploads_dest="$target/public/uploads"
+            if [[ "$simulate" == true ]]; then
+                log info "[DRY-RUN] Would restore uploads -> $uploads_dest"
+            else
+                log info "[RESTORE] Restoring uploads via rsync -> $uploads_dest"
+                mkdir -p "$uploads_dest"
+                if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Restoring uploads..." rsync -a "$uploads_dir"/ "$uploads_dest"/; then
+                    log warn "[RESTORE] Restoring uploads failed."
+                fi
+            fi
         fi
-    fi
 
-    if [[ -n "$extra_dir" ]]; then
-        local extra_dest="$target/extra"
-        if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would restore extra paths -> $extra_dest"
-        else
-            log info "[RESTORE] Restoring extra paths via rsync -> $extra_dest"
-            mkdir -p "$extra_dest"
-            rsync -a "$extra_dir"/ "$extra_dest"/ || log warn "[RESTORE] Restoring extra paths failed."
+        if [[ -n "$extra_dir" ]]; then
+            local extra_dest="$target/extra"
+            if [[ "$simulate" == true ]]; then
+                log info "[DRY-RUN] Would restore extra paths -> $extra_dest"
+            else
+                log info "[RESTORE] Restoring extra paths via rsync -> $extra_dest"
+                mkdir -p "$extra_dest"
+                if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Restoring extra paths..." rsync -a "$extra_dir"/ "$extra_dest"/; then
+                    log warn "[RESTORE] Restoring extra paths failed."
+                fi
+            fi
         fi
-    fi
 
     local user_ini_src=""
     user_ini_src=$(find "$stage_root" -maxdepth 5 -type f -name ".user.ini" 2>/dev/null | head -n1)
