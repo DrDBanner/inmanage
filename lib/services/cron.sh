@@ -48,6 +48,18 @@ install_cronjob() {
     if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
         can_sudo=true
     fi
+    local cron_dir
+    cron_dir="$(dirname "$cron_file")"
+    local system_cron_available=false
+    if [[ -d "$cron_dir" ]]; then
+        if [[ $EUID -eq 0 ]]; then
+            system_cron_available=true
+        elif [[ "$can_sudo" == true ]]; then
+            if sudo -n test -w "$cron_dir" 2>/dev/null; then
+                system_cron_available=true
+            fi
+        fi
+    fi
 
     check_existing_cron_entries() {
         local found=false
@@ -84,18 +96,17 @@ install_cronjob() {
     local mode_reason="auto"
     case "$cron_mode" in
         ""|auto)
-            if [[ $EUID -ne 0 ]]; then
-                if [[ "$can_sudo" == true ]]; then
-                    use_user_crontab=false
-                    mode_reason="auto->system (sudo available)"
-                else
-                    log warn "[CRON] sudo requires a password or is not allowed; trying user crontab."
-                    use_user_crontab=true
-                    mode_reason="auto->crontab (sudo unavailable)"
-                fi
-            else
+            if [[ "$system_cron_available" == true ]]; then
                 use_user_crontab=false
-                mode_reason="auto->system (running as root)"
+                mode_reason="auto->system (cron.d writable)"
+            else
+                if command -v crontab >/dev/null 2>&1; then
+                    use_user_crontab=true
+                    mode_reason="auto->crontab (cron.d unavailable)"
+                else
+                    log err "[CRON] No usable system cron.d and crontab is missing; cannot install."
+                    return 1
+                fi
             fi
             ;;
         crontab)
@@ -105,8 +116,8 @@ install_cronjob() {
         system)
             use_user_crontab=false
             mode_reason="system (forced)"
-            if [[ $EUID -ne 0 && "$can_sudo" != true ]]; then
-                log err "[CRON] System cron requested but sudo/root not available."
+            if [[ "$system_cron_available" != true ]]; then
+                log err "[CRON] System cron requested but ${cron_dir} is not writable or missing."
                 return 1
             fi
             ;;
