@@ -1671,53 +1671,65 @@ php_thresholds() {
         php_emit "$add_fn" OK "$tag" "memory_limit unlimited (-1)"
     elif [ -n "$mem_mb" ] && [ "$mem_mb" -ge 256 ] 2>/dev/null; then
         php_emit "$add_fn" OK "$tag" "memory_limit ${mem:-unset}"
+    elif [ -n "$mem_mb" ] && [ "$mem_mb" -ge 128 ] 2>/dev/null; then
+        php_emit "$add_fn" WARN "$tag" "memory_limit ${mem:-unset} (consider >=256M)"
     else
-        php_emit "$add_fn" WARN "$tag" "memory_limit <256M (${mem:-unset})"
+        php_emit "$add_fn" ERR "$tag" "memory_limit too low (${mem:-unset})"
     fi
 
     if [ -n "$inputvars" ] && [ "$inputvars" -ge 5000 ] 2>/dev/null; then
         php_emit "$add_fn" OK "$tag" "max_input_vars $inputvars"
+    elif [ -n "$inputvars" ] && [ "$inputvars" -ge 3000 ] 2>/dev/null; then
+        php_emit "$add_fn" WARN "$tag" "max_input_vars $inputvars (consider >=5000)"
     else
-        php_emit "$add_fn" WARN "$tag" "max_input_vars <5000 (${inputvars:-unset})"
+        php_emit "$add_fn" ERR "$tag" "max_input_vars too low (${inputvars:-unset})"
     fi
 
     case "$(printf '%s' "$opc" | tr '[:upper:]' '[:lower:]')" in
         1|on|enabled|true) opc="enabled" ;;
     esac
     if [ "$opc" = "enabled" ]; then
-        php_emit "$add_fn" OK "$tag" "OPcache enabled"
+        php_emit "$add_fn" INFO "$tag" "OPcache enabled"
     else
-        php_emit "$add_fn" WARN "$tag" "OPcache disabled"
+        php_emit "$add_fn" INFO "$tag" "OPcache disabled (use OPcache or another cache like Redis/Memcached)"
     fi
 
     if [[ "$max_exec" == "0" ]]; then
         php_emit "$add_fn" OK "$tag" "max_execution_time unlimited (0)"
     elif [ -n "$max_exec" ] && [ "$max_exec" -ge 180 ] 2>/dev/null; then
         php_emit "$add_fn" OK "$tag" "max_execution_time ${max_exec}"
+    elif [ -n "$max_exec" ] && [ "$max_exec" -ge 60 ] 2>/dev/null; then
+        php_emit "$add_fn" WARN "$tag" "max_execution_time ${max_exec} (consider >=180 for large imports)"
     else
-        php_emit "$add_fn" WARN "$tag" "max_execution_time <180 (${max_exec:-unset})"
+        php_emit "$add_fn" ERR "$tag" "max_execution_time too low (${max_exec:-unset})"
     fi
 
     if [[ "$max_input_time" == "-1" ]]; then
         php_emit "$add_fn" OK "$tag" "max_input_time -1 (use max_execution_time)"
     elif [ -n "$max_input_time" ] && [ "$max_input_time" -ge 180 ] 2>/dev/null; then
         php_emit "$add_fn" OK "$tag" "max_input_time ${max_input_time}"
+    elif [ -n "$max_input_time" ] && [ "$max_input_time" -ge 60 ] 2>/dev/null; then
+        php_emit "$add_fn" WARN "$tag" "max_input_time ${max_input_time} (consider >=180 for large imports)"
     else
-        php_emit "$add_fn" WARN "$tag" "max_input_time <180 (${max_input_time:-unset})"
+        php_emit "$add_fn" ERR "$tag" "max_input_time too low (${max_input_time:-unset})"
     fi
 
     local post_mb upload_mb
     post_mb="$(mem_to_mb "$post_max")"
     upload_mb="$(mem_to_mb "$upload_max")"
-    if [ -n "$post_mb" ] && [ "$post_mb" -ge 50 ] 2>/dev/null; then
+    if [ -n "$post_mb" ] && [ "$post_mb" -ge 128 ] 2>/dev/null; then
         php_emit "$add_fn" OK "$tag" "post_max_size ${post_max}"
+    elif [ -n "$post_mb" ] && [ "$post_mb" -ge 50 ] 2>/dev/null; then
+        php_emit "$add_fn" WARN "$tag" "post_max_size ${post_max} (consider >=128M for large imports)"
     else
-        php_emit "$add_fn" WARN "$tag" "post_max_size <50M (${post_max:-unset})"
+        php_emit "$add_fn" ERR "$tag" "post_max_size too low (${post_max:-unset})"
     fi
-    if [ -n "$upload_mb" ] && [ "$upload_mb" -ge 50 ] 2>/dev/null; then
+    if [ -n "$upload_mb" ] && [ "$upload_mb" -ge 128 ] 2>/dev/null; then
         php_emit "$add_fn" OK "$tag" "upload_max_filesize ${upload_max}"
+    elif [ -n "$upload_mb" ] && [ "$upload_mb" -ge 50 ] 2>/dev/null; then
+        php_emit "$add_fn" WARN "$tag" "upload_max_filesize ${upload_max} (consider >=128M for large imports)"
     else
-        php_emit "$add_fn" WARN "$tag" "upload_max_filesize <50M (${upload_max:-unset})"
+        php_emit "$add_fn" ERR "$tag" "upload_max_filesize too low (${upload_max:-unset})"
     fi
 
     local realpath_mb

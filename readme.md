@@ -95,14 +95,18 @@ If the installer created symlinks (system/user/project), you can use `inm` (shor
 ## Recommended Invoice Ninja Installation Procedure (provisioned)
 
 ```bash
-# 1. Run installation wizard
+# 1. Check if your environment satisfies the dependencies
+inm core health
+
+# 2. Run installation wizard
 inm core install
 
-# 2. Select provisioned by pressing enter
+# 3. Select `provisioned` by pressing enter
 [ENTER]
 
-# 3. 
-# edit .inmanage/.env.provision; Then run the installer
+# 4. 
+# edit .inmanage/.env.provision; 
+# Then run the installer
 inm core install --provision
 ```
 
