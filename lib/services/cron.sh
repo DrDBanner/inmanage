@@ -132,14 +132,17 @@ install_cronjob() {
     local effective_user="$user"
     if [[ "$use_user_crontab" == true ]]; then
         effective_user="$(id -un 2>/dev/null || echo "$user")"
+        if [[ -n "$user" && "$user" != "$effective_user" ]]; then
+            log warn "[CRON] User crontab ignores --user; using current user '${effective_user}'."
+        fi
     fi
     log info "[CRON] install_cronjob called (mode=${cron_mode:-auto} jobs=${jobs} backup-time=${backup_time} user=${effective_user})"
     if [[ "$use_user_crontab" == true ]]; then
         log info "[CRON] Mode resolved: crontab (${mode_reason})"
-        log info "[CRON] Target: user crontab"
+        log info "[CRON] Target: user crontab (user=${effective_user})"
     else
         log info "[CRON] Mode resolved: system (${mode_reason})"
-        log info "[CRON] Target: ${cron_file}"
+        log info "[CRON] Target: ${cron_file} (user=${user})"
     fi
     local job_summary=""
     if [[ "$jobs" == "scheduler" || "$jobs" == "both" ]]; then
