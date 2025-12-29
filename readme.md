@@ -31,6 +31,10 @@ The installer auto-selects the install mode (system when run as root, otherwise 
 - User install: default without sudo; installs to `~/.local/share/inmanage`, symlinks in `~/.local/bin`.
 - Project install: run from your base directory; installs to `./.inmanage/cli`, symlinks in the project root.
 
+Optional for system installs:
+- `--install-owner USER:GROUP` to set ownership (e.g. `root:vuser`)
+- `--install-perms DIR:FILE` to set permissions (e.g. `775:664`)
+
 Per project:
 
 ```bash
@@ -44,6 +48,12 @@ Per system:
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash
 ```
 
+Per system with ownership/permissions (optional):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash -s -- --mode system --install-owner=root:vuser --install-perms=775:664
+```
+*Ownership/permissions may be required so your current user can read the installed CLI version and update it if needed.*
 
 
 

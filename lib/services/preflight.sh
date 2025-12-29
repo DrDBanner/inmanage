@@ -687,7 +687,7 @@ run_preflight() {
     else
         add_result WARN "APP" "App directory missing or unset: ${INM_INSTALLATION_PATH:-<unset>}"
         if [ -n "$app_cfg_hint" ]; then
-            add_result WARN "APP" "Config found (${app_cfg_hint}) but app directory is missing. Fix: move existing app to ${INM_INSTALLATION_PATH%/} or run 'inm core install --provision' (recommended). For guidance, run 'inm core install --help'."
+            add_result WARN "APP" "Config found (${app_cfg_hint}) but app directory is missing. Fix: move app to ${INM_INSTALLATION_PATH%/} or run 'inm core install --provision'. Help: 'inm core install --help' or docs."
         fi
     fi
     fi
@@ -754,7 +754,7 @@ run_preflight() {
 
         if should_run "EXT"; then
             # Extensions
-            local exts=(pdo_mysql openssl tokenizer xml gd mbstring bcmath curl zip fileinfo intl)
+            local exts=(bcmath ctype curl fileinfo gd gmp iconv imagick intl mbstring mysqli openssl pdo_mysql soap tokenizer xml zip)
             for ext in "${exts[@]}"; do
                 if php -m | grep -qi "^$ext$"; then
                     add_result OK "EXT" "$ext"

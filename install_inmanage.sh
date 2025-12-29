@@ -11,6 +11,8 @@ BRANCH="${BRANCH:-$INSTALLER_BRANCH}"
 MODE="${MODE:-}"
 TARGET_DIR="${TARGET_DIR:-}"
 SYMLINK_DIR="${SYMLINK_DIR:-}"
+INSTALL_OWNER="${INSTALL_OWNER:-}"
+INSTALL_PERMS="${INSTALL_PERMS:-}"
 SOURCE_DIR="${SOURCE_DIR:-}"
 RUN_USER="${RUN_USER:-${RUN_AS_USER:-}}"
 TMP_DIR=""
@@ -24,7 +26,7 @@ usage() {
   cat <<EOF
 inmanage installer
 
-Usage: bash install_inmanage.sh [--mode system|user|project] [--target DIR] [--symlink-dir DIR] [--run-user USER] [--branch BRANCH] [--source PATH]
+Usage: bash install_inmanage.sh [--mode system|user|project] [--target DIR] [--symlink-dir DIR] [--install-owner USER:GROUP] [--install-perms DIR:FILE] [--run-user USER] [--branch BRANCH] [--source PATH]
 
 Modes:
   system          install to /usr/local/share/inmanage, symlinks to /usr/local/bin (requires sudo)
@@ -37,6 +39,8 @@ Notes:
 
 Options:
   --source PATH   Use an existing checkout at PATH instead of git cloning.
+  --install-owner USER:GROUP  Set ownership on the install directory (system installs).
+  --install-perms DIR:FILE    Set permissions on the install directory (e.g. 775:664).
 
 Examples:
   curl -fsSL ${REPO_URL%.*}/raw/${BRANCH}/install_inmanage.sh | bash
@@ -50,6 +54,8 @@ parse_args() {
       --mode) MODE="$2"; shift 2 ;;
       --target) TARGET_DIR="$2"; shift 2 ;;
       --symlink-dir) SYMLINK_DIR="$2"; shift 2 ;;
+      --install-owner) INSTALL_OWNER="$2"; shift 2 ;;
+      --install-perms) INSTALL_PERMS="$2"; shift 2 ;;
       --run-user) RUN_USER="$2"; shift 2 ;;
       --branch) BRANCH="$2"; shift 2 ;;
       --source) SOURCE_DIR="$2"; shift 2 ;;
@@ -111,6 +117,8 @@ run_self_install() {
   [[ -n "$MODE" ]] && args+=("--install-mode=$MODE")
   [[ -n "$TARGET_DIR" ]] && args+=("--target-dir=$TARGET_DIR")
   [[ -n "$SYMLINK_DIR" ]] && args+=("--symlink-dir=$SYMLINK_DIR")
+  [[ -n "$INSTALL_OWNER" ]] && args+=("--install-owner=$INSTALL_OWNER")
+  [[ -n "$INSTALL_PERMS" ]] && args+=("--install-perms=$INSTALL_PERMS")
   [[ -n "$RUN_USER" ]] && args+=("--run-user=$RUN_USER")
 
   log INFO "Bootstrap source: $SOURCE_DIR"

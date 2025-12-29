@@ -26,6 +26,8 @@ install_self() {
 
   local install_dir="${NAMED_ARGS[target_dir]:-${NAMED_ARGS[--target-dir]:-}}"
   local install_mode="${NAMED_ARGS[install_mode]:-${NAMED_ARGS[--install-mode]:-}}"
+  local install_owner="${NAMED_ARGS[install_owner]:-${NAMED_ARGS[--install-owner]:-}}"
+  local install_perms="${NAMED_ARGS[install_perms]:-${NAMED_ARGS[--install-perms]:-}}"
   local current_user
   current_user="$(whoami)"
   local is_root=false
@@ -197,8 +199,30 @@ install_self() {
       fi
   fi
   if [[ "$install_mode" == "1" && ${EUID:-$(id -u)} -eq 0 ]]; then
-      if ! chmod -R go+rX "$install_dir" 2>/dev/null; then
-          log warn "[SELF] Failed to relax permissions on $install_dir for non-root users."
+      if [[ -z "$install_perms" ]]; then
+          if ! chmod -R go+rX "$install_dir" 2>/dev/null; then
+              log warn "[SELF] Failed to relax permissions on $install_dir for non-root users."
+          fi
+      fi
+  fi
+
+  if [[ -n "$install_owner" ]]; then
+      if ! chown -R "$install_owner" "$install_dir" 2>/dev/null; then
+          log warn "[SELF] Failed to set ownership on $install_dir to $install_owner"
+      fi
+  fi
+  if [[ -n "$install_perms" ]]; then
+      local dir_mode file_mode
+      IFS=':' read -r dir_mode file_mode <<< "$install_perms"
+      if [[ -z "$dir_mode" || -z "$file_mode" ]]; then
+          log warn "[SELF] --install-perms expects DIR:FILE (e.g. 775:664); got '$install_perms'"
+      else
+          if command -v find >/dev/null 2>&1; then
+              find "$install_dir" -type d -exec chmod "$dir_mode" {} + 2>/dev/null || true
+              find "$install_dir" -type f -exec chmod "$file_mode" {} + 2>/dev/null || true
+          else
+              log warn "[SELF] 'find' not available; skipping --install-perms."
+          fi
       fi
   fi
 
@@ -351,6 +375,9 @@ install_self() {
   esac
 
   log info "[SELF] Tip: Run 'inm core install' from your project root to create .inmanage/.env.inmanage."
+  if declare -F hash >/dev/null 2>&1 || command -v hash >/dev/null 2>&1; then
+    hash -r 2>/dev/null || true
+  fi
 }
 
 # ---------------------------------------------------------------------

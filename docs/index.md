@@ -67,6 +67,8 @@ Installer options (`install_inmanage.sh`):
 | `--mode system / user / project` | auto | Install mode (system when run as root, otherwise user). |
 | `--target DIR` | mode default | Install directory. |
 | `--symlink-dir DIR` | mode default | Where to place `inm`/`inmanage` symlinks. |
+| `--install-owner USER:GROUP` | unset | Set ownership on install directory (system installs). |
+| `--install-perms DIR:FILE` | unset | Set permissions on install directory (e.g. `775:664`). |
 | `--run-user USER` | auto | User that will run CLI/cron tasks (used for user installs). |
 | `--branch BRANCH` | fetched branch | Git branch to install. |
 | `--source PATH` | unset | Use an existing checkout instead of git cloning. |
@@ -75,7 +77,7 @@ Installer options (`install_inmanage.sh`):
 Installer env vars:
 - `BRANCH` (branch to install)
 - `INSTALLER_BRANCH` (default branch when not set; usually matches the fetched script)
-- `MODE` / `TARGET_DIR` / `SYMLINK_DIR` / `RUN_USER` / `SOURCE_DIR` (same as switches)
+- `MODE` / `TARGET_DIR` / `SYMLINK_DIR` / `INSTALL_OWNER` / `INSTALL_PERMS` / `RUN_USER` / `SOURCE_DIR` (same as switches)
 
 Use `--source` when you already have a local checkout (e.g., mounted dev workspace or offline/air‑gapped install).
 

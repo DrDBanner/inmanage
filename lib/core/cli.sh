@@ -156,7 +156,7 @@ EOF
         self)
             cat <<'EOF'
 self actions:
-  install
+  install [--install-owner=USER:GROUP] [--install-perms=DIR:FILE]
   update
   version
   switch-mode    # reinstall in another mode; optionally clean old install/symlinks
