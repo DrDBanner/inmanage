@@ -10,6 +10,32 @@ __CORE_CHECKS_LOADED=1
 # ---------------------------------------------------------------------
 
 # ---------------------------------------------------------------------
+# _env_unescape_double_quoted()
+# ---------------------------------------------------------------------
+_env_unescape_double_quoted() {
+    local val="$1"
+    local unescaped=""
+    local i=0
+    local len=${#val}
+    while [ $i -lt $len ]; do
+        local ch="${val:$i:1}"
+        if [ "$ch" = "\\" ] && [ $((i + 1)) -lt $len ]; then
+            local next="${val:$((i + 1)):1}"
+            case "$next" in
+                "\\"|"\""|'$'|'`')
+                    unescaped+="$next"
+                    i=$((i + 2))
+                    continue
+                    ;;
+            esac
+        fi
+        unescaped+="$ch"
+        i=$((i + 1))
+    done
+    printf "%s" "$unescaped"
+}
+
+# ---------------------------------------------------------------------
 # load_env_file_raw()
 # Parses and exports selected variables from an env file safely.
 # ---------------------------------------------------------------------
@@ -45,10 +71,10 @@ load_env_file_raw() {
             fi
             # trim leading spaces from val
             val="${raw#"${raw%%[![:space:]]*}"}"
-            # quoted values: strip only outer quotes, keep inner content as-is
-            if [[ "$val" =~ ^\"(.*)\"$ ]]; then
-                val="${BASH_REMATCH[1]}"
-            elif [[ "$val" =~ ^\'(.*)\'$ ]]; then
+            # quoted values: strip outer quotes and allow inline comments
+            if [[ "$val" =~ ^\"(.*)\"[[:space:]]*(#.*)?$ ]]; then
+                val="$(_env_unescape_double_quoted "${BASH_REMATCH[1]}")"
+            elif [[ "$val" =~ ^\'(.*)\'[[:space:]]*(#.*)?$ ]]; then
                 val="${BASH_REMATCH[1]}"
             else
                 # unquoted: drop inline comment, trim trailing spaces
@@ -71,6 +97,29 @@ load_env_file_raw() {
 
     rm -f "$tmpfile"
     log debug "[ENV] Successfully loaded vars from: $file"
+}
+
+# ---------------------------------------------------------------------
+# read_env_value_safe()
+# Reads a key from an env file with quote/comment handling.
+# ---------------------------------------------------------------------
+read_env_value_safe() {
+    local file="$1"
+    local key="$2"
+    local line val raw
+    line="$(grep -E "^${key}=" "$file" 2>/dev/null | tail -n1)"
+    [[ -z "$line" ]] && return 0
+    raw="${line#*=}"
+    val="${raw#"${raw%%[![:space:]]*}"}"
+    if [[ "$val" =~ ^\"(.*)\"[[:space:]]*(#.*)?$ ]]; then
+        val="$(_env_unescape_double_quoted "${BASH_REMATCH[1]}")"
+    elif [[ "$val" =~ ^\'(.*)\'[[:space:]]*(#.*)?$ ]]; then
+        val="${BASH_REMATCH[1]}"
+    else
+        val="${val%%#*}"
+        val="${val%"${val##*[![:space:]]}"}"
+    fi
+    printf "%s" "$val"
 }
 
 # ---------------------------------------------------------------------

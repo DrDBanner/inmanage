@@ -348,6 +348,20 @@ env_unset() {
     fi
 }
 
+_env_escape_value() {
+    local value="$1"
+    local allow_placeholders="${2:-false}"
+    local out="$value"
+    if [[ "$allow_placeholders" == true ]]; then
+        out="${out//\\\$\{/\$\{}"
+    fi
+    out="${out//\\/\\\\}"
+    out="${out//\"/\\\"}"
+    out="${out//\$/\\\$}"
+    out="${out//\`/\\\`}"
+    printf "%s" "$out"
+}
+
 env_set() {
     local target="app" pair
     if [[ "$1" == "app" || "$1" == "cli" ]]; then
@@ -365,6 +379,12 @@ env_set() {
     fi
     local key="${pair%%=*}"
     local value="${pair#*=}"
+    local allow_placeholders=false
+    if [[ "$target" == "cli" ]]; then
+        allow_placeholders=true
+    fi
+    local escaped_value
+    escaped_value="$(_env_escape_value "$value" "$allow_placeholders")"
     if [[ "${DRY_RUN:-false}" == true ]]; then
         log info "[DRY-RUN] Would set $key in $env_file"
         return 0
@@ -375,8 +395,8 @@ env_set() {
         return 1
     }
     # shellcheck disable=SC2016
-    cmd='grep -v -E "^${KEY}=" "$ENV_FILE" > "$TMP" 2>/dev/null || true; printf "%s\n" "${KEY}=${VALUE}" >> "$TMP"'
-    _env_run_shell "$access" "$owner" "$cmd" KEY="$key" VALUE="$value" ENV_FILE="$env_file" TMP="$tmp_file" || return 1
+    cmd='grep -v -E "^${KEY}=" "$ENV_FILE" > "$TMP" 2>/dev/null || true; printf "%s\n" "${KEY}=\"${VALUE}\"" >> "$TMP"'
+    _env_run_shell "$access" "$owner" "$cmd" KEY="$key" VALUE="$escaped_value" ENV_FILE="$env_file" TMP="$tmp_file" || return 1
     _env_replace_file "$access" "$owner" "$env_file" "$tmp_file" || return 1
     if [[ "$target" == "app" && -n "${INM_ENV_MODE:-}" ]]; then
         _env_run "$access" "$owner" chmod "${INM_ENV_MODE}" "$env_file" 2>/dev/null || true

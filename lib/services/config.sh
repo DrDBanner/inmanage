@@ -7,6 +7,17 @@ __SERVICE_CONFIG_LOADED=1
 # ---------------------------------------------------------------------
 # write_config_setting()
 # ---------------------------------------------------------------------
+_config_escape_value() {
+    local value="$1"
+    local out="$value"
+    out="${out//\\\$\{/\$\{}"
+    out="${out//\\/\\\\}"
+    out="${out//\"/\\\"}"
+    out="${out//\$/\\\$}"
+    out="${out//\`/\\\`}"
+    printf "%s" "$out"
+}
+
 write_config_setting() {
     local key="$1"
     local value="${default_settings[$key]}"
@@ -22,10 +33,12 @@ write_config_setting() {
             inline_comment="Auto-set to 'php' because the binary was not detected."
         fi
     fi
+    local escaped_value
+    escaped_value="$(_config_escape_value "$value")"
     if [ -n "$inline_comment" ]; then
-        printf '%s="%s" # %s\n' "$key" "$value" "$inline_comment" >> "$INM_SELF_ENV_FILE"
+        printf '%s="%s" # %s\n' "$key" "$escaped_value" "$inline_comment" >> "$INM_SELF_ENV_FILE"
     else
-        printf '%s="%s"\n' "$key" "$value" >> "$INM_SELF_ENV_FILE"
+        printf '%s="%s"\n' "$key" "$escaped_value" >> "$INM_SELF_ENV_FILE"
     fi
 }
 
