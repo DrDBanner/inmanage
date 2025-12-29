@@ -111,8 +111,12 @@ run_restore() {
 
     local tmpdir
     tmpdir="$(mktemp -d)"
-    cleanup_tmp_restore() { safe_rm_rf "$tmpdir" "$(dirname "$tmpdir")" || true; }
-    trap cleanup_tmp_restore RETURN
+    cleanup_tmp_restore() {
+        local dir="$1"
+        [[ -n "$dir" ]] || return 0
+        safe_rm_rf "$dir" "$(dirname "$dir")" || true
+    }
+    trap 'cleanup_tmp_restore "$tmpdir"; trap - RETURN' RETURN
 
     local stage_root="$tmpdir"
     if [[ -d "$bundle" ]]; then
