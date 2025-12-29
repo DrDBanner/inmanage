@@ -20,17 +20,55 @@ run_preflight() {
     parse_named_args ARGS "$@"
     local pf_label="${INM_PREFLIGHT_LABEL:-PREFLIGHT}"
     local enforced_owner=""
-    if [ -n "${ENFORCED_USER:-}" ]; then
+    local enforced_user="${ENFORCED_USER:-${INM_ENFORCED_USER:-}}"
+    if [ -n "$enforced_user" ]; then
         local enforced_group="${INM_ENFORCED_GROUP:-}"
         if [ -z "$enforced_group" ]; then
-            enforced_group="$(id -gn "$ENFORCED_USER" 2>/dev/null || true)"
-            [[ -z "$enforced_group" ]] && enforced_group="$ENFORCED_USER"
+            enforced_group="$(id -gn "$enforced_user" 2>/dev/null || true)"
+            [[ -z "$enforced_group" ]] && enforced_group="$enforced_user"
         fi
-        enforced_owner="${ENFORCED_USER}:${enforced_group}"
+        enforced_owner="${enforced_user}:${enforced_group}"
     fi
     local fast="${ARGS[fast]:-false}"
     local skip_snappdf="${ARGS[skip_snappdf]:-false}"
     local skip_github="${ARGS[skip_github]:-false}"
+    local cli_config_present=false
+    if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
+        cli_config_present=true
+    fi
+    local current_user
+    current_user="$(id -un 2>/dev/null || true)"
+    local can_enforce=false
+    if [ -n "$enforced_user" ] && { [ "$EUID" -eq 0 ] || [ "$current_user" = "$enforced_user" ]; }; then
+        can_enforce=true
+    fi
+    INM_PREFLIGHT_CAN_ENFORCE="$can_enforce"
+    local preflight_cleanup_enabled=false
+    if [ "$cli_config_present" != true ]; then
+        preflight_cleanup_enabled=true
+    fi
+    local -a preflight_created_dirs=()
+    preflight_track_created_dir() {
+        local dir="$1"
+        local existing
+        for existing in "${preflight_created_dirs[@]}"; do
+            [[ "$existing" == "$dir" ]] && return 0
+        done
+        preflight_created_dirs+=("$dir")
+    }
+    preflight_cleanup_created_dirs() {
+        if [[ "$preflight_cleanup_enabled" != true ]]; then
+            return 0
+        fi
+        local i dir
+        for ((i=${#preflight_created_dirs[@]}-1; i>=0; i--)); do
+            dir="${preflight_created_dirs[i]}"
+            if rmdir "$dir" 2>/dev/null; then
+                log debug "[PREFLIGHT] Removed temp dir: $dir"
+            fi
+        done
+    }
+    trap preflight_cleanup_created_dirs RETURN
 
     # Optional check filter (CSV of tags, e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,MAIL,APP,CRON,SNAPPDF)
     normalize_check_tag() {
@@ -826,11 +864,6 @@ run_preflight() {
         diskline=$(df -hP "$INM_BASE_DIRECTORY" | awk 'NR==2{print "avail:"$4" used:"$3" mount:"$6}')
         add_result INFO "FS" "$diskline (Disk @base)"
     fi
-    local cli_config_present=false
-    if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
-        cli_config_present=true
-    fi
-
     # Base, app, backup directories
     local fs_items=()
     if [ "$cli_config_present" = true ]; then
@@ -867,7 +900,21 @@ run_preflight() {
         dir="${entry%%|*}"
         label="${entry#*|}"
         [ -z "$dir" ] && continue
-        mkdir -p "$dir" 2>/dev/null
+        local created_dir=false
+        if [[ ! -d "$dir" ]]; then
+            if mkdir -p "$dir" 2>/dev/null; then
+                created_dir=true
+                preflight_track_created_dir "$dir"
+            fi
+        fi
+        if [[ "$created_dir" == true && "$can_enforce" == true ]]; then
+            if declare -F enforce_ownership >/dev/null 2>&1; then
+                enforce_ownership "$dir"
+            fi
+            if [[ -n "${INM_DIR_MODE:-}" ]] && declare -F enforce_dir_permissions >/dev/null 2>&1; then
+                enforce_dir_permissions "$INM_DIR_MODE" "$dir"
+            fi
+        fi
         local sz=""
         if [ -d "$dir" ] && command -v du >/dev/null 2>&1; then
             if command -v timeout >/dev/null 2>&1; then
@@ -888,13 +935,21 @@ run_preflight() {
                 sz=$(du -sh "$dir" 2>/dev/null | awk '{print $1}')
             fi
         fi
+        local created_note=""
+        if [[ "$created_dir" == true ]]; then
+            if [[ "$preflight_cleanup_enabled" == true ]]; then
+                created_note=" (created by preflight; removed after check)"
+            else
+                created_note=" (created by preflight)"
+            fi
+        fi
         if touch "$dir/.inm_perm_test" 2>/dev/null; then
             rm -f "$dir/.inm_perm_test"
-            local detail="Writable: $dir ($label)"
+            local detail="Writable: $dir ($label)${created_note}"
             [[ -n "$sz" ]] && detail+=" (Size: $sz)"
             add_result OK "FS" "$detail"
         else
-            local hint="$label not writable: $dir"
+            local hint="$label not writable: $dir${created_note}"
             if [ -n "${enforced_owner:-}" ]; then
                 hint+=" (hint: chown -R ${enforced_owner} \"$dir\" or run 'inm core health --fix-permissions')"
             fi
@@ -916,11 +971,38 @@ run_preflight() {
         local gc_path gc_parent
         gc_path="$(expand_path_vars "$INM_CACHE_GLOBAL_DIRECTORY")"
         gc_parent="$(dirname "$gc_path")"
-        mkdir -p "$gc_parent" 2>/dev/null || true
-        if mkdir -p "$gc_path" 2>/dev/null && touch "$gc_path/.inm_perm_test" 2>/dev/null; then
+        if [[ -d "$gc_parent" ]]; then
+            :
+        else
+            mkdir -p "$gc_parent" 2>/dev/null || true
+        fi
+        local gc_created=false
+        if [[ ! -d "$gc_path" ]]; then
+            mkdir -p "$gc_path" 2>/dev/null && gc_created=true
+        fi
+        if [[ "$gc_created" == true ]]; then
+            preflight_track_created_dir "$gc_path"
+        fi
+        if [[ "$gc_created" == true && "$can_enforce" == true ]]; then
+            if declare -F enforce_ownership >/dev/null 2>&1; then
+                enforce_ownership "$gc_path"
+            fi
+            if declare -F apply_cache_dir_mode >/dev/null 2>&1; then
+                apply_cache_dir_mode "$gc_path"
+            fi
+        fi
+        if touch "$gc_path/.inm_perm_test" 2>/dev/null; then
             rm -f "$gc_path/.inm_perm_test"
             cache_global_state="ok"
-            cache_global_detail="Writable: $gc_path (Cache global)"
+            if [[ "$gc_created" == true ]]; then
+                if [[ "$preflight_cleanup_enabled" == true ]]; then
+                    cache_global_detail="Writable: $gc_path (Cache global) (created by preflight; removed after check)"
+                else
+                    cache_global_detail="Writable: $gc_path (Cache global) (created by preflight)"
+                fi
+            else
+                cache_global_detail="Writable: $gc_path (Cache global)"
+            fi
             cache_global_mode="$(_fs_get_mode "$gc_path")"
             if [[ -n "$cache_global_mode" ]]; then
                 local other=$((cache_global_mode % 10))
@@ -941,11 +1023,33 @@ run_preflight() {
     if [ -n "${INM_CACHE_LOCAL_DIRECTORY:-}" ]; then
         local lc_path
         lc_path="$(expand_path_vars "$INM_CACHE_LOCAL_DIRECTORY")"
-        mkdir -p "$lc_path" 2>/dev/null
+        local lc_created=false
+        if [[ ! -d "$lc_path" ]]; then
+            mkdir -p "$lc_path" 2>/dev/null && lc_created=true
+        fi
+        if [[ "$lc_created" == true ]]; then
+            preflight_track_created_dir "$lc_path"
+        fi
+        if [[ "$lc_created" == true && "$can_enforce" == true ]]; then
+            if declare -F enforce_ownership >/dev/null 2>&1; then
+                enforce_ownership "$lc_path"
+            fi
+            if declare -F apply_cache_dir_mode >/dev/null 2>&1; then
+                apply_cache_dir_mode "$lc_path"
+            fi
+        fi
         if touch "$lc_path/.inm_perm_test" 2>/dev/null; then
             rm -f "$lc_path/.inm_perm_test"
             cache_local_state="ok"
-            cache_local_detail="Writable: $lc_path (Cache local)"
+            if [[ "$lc_created" == true ]]; then
+                if [[ "$preflight_cleanup_enabled" == true ]]; then
+                    cache_local_detail="Writable: $lc_path (Cache local) (created by preflight; removed after check)"
+                else
+                    cache_local_detail="Writable: $lc_path (Cache local) (created by preflight)"
+                fi
+            else
+                cache_local_detail="Writable: $lc_path (Cache local)"
+            fi
             cache_local_mode="$(_fs_get_mode "$lc_path")"
             if [[ -n "$cache_local_mode" ]]; then
                 local other=$((cache_local_mode % 10))
@@ -1808,7 +1912,28 @@ check_web_php() {
     fi
 
     # Ensure webroot exists and is writable before probing
-    mkdir -p "$webroot" 2>/dev/null || true
+    local webroot_created=false
+    local can_enforce="${INM_PREFLIGHT_CAN_ENFORCE:-false}"
+    if [[ ! -d "$webroot" ]]; then
+        if mkdir -p "$webroot" 2>/dev/null; then
+            webroot_created=true
+            if declare -F preflight_track_created_dir >/dev/null 2>&1; then
+                preflight_track_created_dir "$webroot"
+            fi
+        fi
+    fi
+    if [[ "$webroot_created" == true && "$can_enforce" == true ]]; then
+        if declare -F enforce_ownership >/dev/null 2>&1; then
+            enforce_ownership "$webroot"
+        fi
+        if [[ -n "${INM_DIR_MODE:-}" ]] && declare -F enforce_dir_permissions >/dev/null 2>&1; then
+            enforce_dir_permissions "$INM_DIR_MODE" "$webroot"
+        fi
+    fi
+    if [[ ! -d "$webroot" ]]; then
+        ${add_fn:-log warn} WARN "WEBPHP" "Webroot missing and not created: $webroot"
+        return 1
+    fi
     if ! touch "$webroot/.inm_probe_touch" 2>/dev/null; then
         ${add_fn:-log warn} WARN "WEBPHP" "Cannot write probe to webroot: $webroot (user: $(whoami)). Hint: chown -R ${enforced_owner:-www-data:www-data} \"$webroot\" or run with --override_enforced_user=true to adjust perms."
         return 1

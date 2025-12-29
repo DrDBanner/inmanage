@@ -305,6 +305,14 @@ uninstall_cronjob() {
     if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
         can_sudo=true
     fi
+    local cron_dir
+    cron_dir="$(dirname "$cron_file")"
+    local system_cron_possible=false
+    if [[ -d "$cron_dir" ]]; then
+        if [[ $EUID -eq 0 || "$can_sudo" == true ]]; then
+            system_cron_possible=true
+        fi
+    fi
 
     local remove_user_crontab=false
     local remove_system=false
@@ -353,6 +361,14 @@ uninstall_cronjob() {
     fi
 
     if [[ "$remove_system" == true ]]; then
+        if [[ "$system_cron_possible" != true ]]; then
+            if [[ "$cron_mode" == "system" ]]; then
+                log err "[CRON] System cron requested but ${cron_dir} is not available."
+            else
+                log debug "[CRON] System cron unavailable at ${cron_dir}; skipping system removal."
+            fi
+            return 0
+        fi
         if [[ -f "$cron_file" ]]; then
             if [[ $EUID -ne 0 ]]; then
                 if [[ "$can_sudo" != true ]]; then
@@ -366,10 +382,8 @@ uninstall_cronjob() {
         elif [[ "$can_sudo" == true && $EUID -ne 0 ]]; then
             if sudo -n test -f "$cron_file" 2>/dev/null; then
                 sudo rm -f "$cron_file" && log ok "[CRON] Removed $cron_file"
-            else
-                log info "[CRON] No cron file found at $cron_file."
             fi
-        else
+        elif [[ -d "$cron_dir" ]]; then
             log info "[CRON] No cron file found at $cron_file."
         fi
     fi
