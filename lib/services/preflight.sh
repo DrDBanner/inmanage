@@ -70,7 +70,7 @@ run_preflight() {
     }
     trap preflight_cleanup_created_dirs RETURN
 
-    # Optional check filter (CSV of tags, e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,MAIL,APP,CRON,SNAPPDF)
+    # Optional check filter (CSV of tags, e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,MAIL,APP,CRON,SNAPPDF,PERM)
     normalize_check_tag() {
         local raw="$1"
         local tag="${raw^^}"
@@ -90,6 +90,7 @@ run_preflight() {
             MAIL|SMTP|EMAIL) echo "MAIL" ;;
             DB|DATABASE|MYSQL|MARIADB) echo "DB" ;;
             APP|APPLICATION) echo "APP" ;;
+            PERM|PERMISSION|PERMISSIONS) echo "PERM" ;;
             CRON|SCHEDULER) echo "CRON" ;;
             SNAPPDF|SNAPDF|PDF) echo "SNAPPDF" ;;
             *) echo "" ;;
@@ -154,7 +155,12 @@ run_preflight() {
         return 1
     fi
 
+    # prefer globally parsed NAMED_ARGS to survive re-exec user switches
+    local fix_permissions="${NAMED_ARGS[fix_permissions]:-${NAMED_ARGS[fix-permissions]:-${ARGS[fix_permissions]:-${ARGS[fix-permissions]:-false}}}}"
     local checks_filter="${NAMED_ARGS[checks]:-${NAMED_ARGS[check]:-${ARGS[checks]:-${ARGS[check]:-}}}}"
+    if [ "$fix_permissions" = true ] && [ -z "$checks_filter" ]; then
+        checks_filter="APP,PERM"
+    fi
     declare -A PF_ALLOW=()
     if [[ -n "$checks_filter" ]]; then
         local -a unknown_checks=()
@@ -170,13 +176,13 @@ run_preflight() {
         done
         if [[ ${#unknown_checks[@]} -gt 0 ]]; then
             log err "[${pf_label}] Unknown check tags: ${unknown_checks[*]}"
-            log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF"
+            log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF,PERM"
             $errexit_set && set -e
             return 1
         fi
         if [[ ${#PF_ALLOW[@]} -eq 0 ]]; then
             log err "[${pf_label}] No valid check tags in --checks=$checks_filter"
-            log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF"
+            log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF,PERM"
             $errexit_set && set -e
             return 1
         fi
@@ -210,9 +216,6 @@ run_preflight() {
             *)    ;;
         esac
     }
-
-    # prefer globally parsed NAMED_ARGS to survive re-exec user switches
-    local fix_permissions="${NAMED_ARGS[fix_permissions]:-${NAMED_ARGS[fix-permissions]:-${ARGS[fix_permissions]:-${ARGS[fix-permissions]:-false}}}}"
 
     local ok=0 warn=0 err=0
     local phpv=""
