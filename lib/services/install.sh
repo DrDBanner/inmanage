@@ -15,7 +15,7 @@ run_installation() {
     local mode="$1"
     if [[ -z "$mode" && "${NAMED_ARGS[provision]:-false}" == "true" ]]; then
         mode="Provisioned"
-        log info "[TAR] Provision mode enabled via --provision."
+        log debug "[TAR] Provision mode enabled via --provision."
     elif [[ -z "$mode" ]]; then
         if [[ -t 0 ]]; then
             local choice
@@ -26,11 +26,11 @@ run_installation() {
                 provisioned|provision|prov|p)
                     mode="Provisioned"
                     NAMED_ARGS[provision]=true
-                    log info "[TAR] Provisioned install selected (recommended)."
+                    log debug "[TAR] Provisioned install selected (recommended)."
                     ;;
                 wizard|guided|gui|clean|g)
                     mode="Wizard"
-                    log info "[TAR] Wizard install selected."
+                    log debug "[TAR] Wizard install selected."
                     ;;
                 *)
                     mode="Provisioned"
@@ -39,7 +39,7 @@ run_installation() {
                     ;;
             esac
         else
-            log info "[TAR] Non-interactive install; use --provision for recommended provisioned install."
+            log debug "[TAR] Non-interactive install; use --provision for recommended provisioned install."
         fi
     fi
     local env_file timestamp latest_version response source_dir
@@ -108,12 +108,12 @@ run_installation() {
                 if prompt_confirm "CREATE_PROVISION" "yes" "No provision file found. Create one now? [Y/n]" false 60; then
                     must_create=true
                 else
-                    log info "[PROV] Provision file not created."
+                    log debug "[PROV] Provision file not created."
                 fi
             else
                 if [[ "${NAMED_ARGS[provision]:-false}" == "true" ]]; then
                     use_existing=true
-                    log info "[PROV] Using provision file: $env_file"
+                    log debug "[PROV] Using provision file: $env_file"
                 elif ! prompt_confirm "USE_EXISTING_PROVISION" "yes" "Provision file exists. Use it? (no = create a new one) [Y/n]" false 60; then
                     must_create=true
                 else
@@ -143,14 +143,14 @@ run_installation() {
 
                 if [ -n "$editor" ] && { [ "$must_create" = true ] || [[ "${NAMED_ARGS[provision]:-false}" != "true" ]]; }; then
                     log info "[PROV] Opening provision file in ${editor}."
-                    log info "[PROV] If you're not familiar with ${editor}, please review its basics first."
-                    log info "[PROV] For .env values, see Invoice Ninja docs. DB_ELEVATED_* is only for creating DB/user."
+                    log debug "[PROV] If you're not familiar with ${editor}, please review its basics first."
+                    log debug "[PROV] For .env values, see Invoice Ninja docs. DB_ELEVATED_* is only for creating DB/user."
                     "$editor" "$env_file"
                 elif [ -z "$editor" ] && { [ "$must_create" = true ] || [[ "${NAMED_ARGS[provision]:-false}" != "true" ]]; }; then
                     log warn "[PROV] No editor found (nano/vi). Edit manually: $env_file"
                 fi
             elif [ -f "$env_file" ]; then
-                log info "[PROV] Using provision file: $env_file"
+                log debug "[PROV] Using provision file: $env_file"
             else
                 log warn "[PROV] Provision file not found at: $env_file"
             fi
@@ -184,7 +184,7 @@ run_installation() {
                 return 0
             fi
         else
-            log info "[TAR] Forced install – archiving current version"
+            log debug "[TAR] Forced install – archiving current version"
         fi
 
         safe_move_or_copy_and_clean "$src_path" "$rollback_dir" new || {
@@ -227,7 +227,7 @@ run_installation() {
         return 1
     }
     safe_rm_rf "$temp_dir" "$(dirname "$temp_dir")" || true
-    log info "[TAR] Preparing installation staging from archive: $source_dir/invoiceninja_v$latest_version.tar.gz"
+    log debug "[TAR] Staging extracted files into: $temp_dir (from $source_dir/invoiceninja_v$latest_version.tar.gz)"
     safe_move_or_copy_and_clean "$source_root" "$temp_dir" move || {
         log err "[TAR] Failed to move/copy extracted files"
         safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
@@ -267,7 +267,7 @@ run_installation() {
         log warn "[TAR] No .env found – installation will not be functional without manual setup"
         # shellcheck disable=SC2154
         if [ "$force_update" = true ]; then
-            log info "[TAR] Force mode enabled – proceeding anyway"
+            log debug "[TAR] Force mode enabled – proceeding anyway"
         else
             log warn "[TAR] Abort or continue? Type 'yes' to proceed:"
             read -r confirm
@@ -301,10 +301,17 @@ run_installation() {
 
     log info "[TAR] Running post-installation artisan tasks"
 
-    run_artisan key:generate --force || log warn "[TAR] artisan key:generate failed"
-    run_artisan optimize || log warn "[TAR] artisan optimize failed"
-    run_artisan up || log warn "[TAR] artisan up failed"
-    run_artisan ninja:translations || log warn "[TAR] artisan translations failed"
+    if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
+        run_artisan key:generate --force || log warn "[TAR] artisan key:generate failed"
+        run_artisan optimize || log warn "[TAR] artisan optimize failed"
+        run_artisan up || log warn "[TAR] artisan up failed"
+        run_artisan ninja:translations || log warn "[TAR] artisan translations failed"
+    else
+        run_artisan key:generate --force >/dev/null 2>&1 || log warn "[TAR] artisan key:generate failed"
+        run_artisan optimize >/dev/null 2>&1 || log warn "[TAR] artisan optimize failed"
+        run_artisan up >/dev/null 2>&1 || log warn "[TAR] artisan up failed"
+        run_artisan ninja:translations >/dev/null 2>&1 || log warn "[TAR] artisan translations failed"
+    fi
     do_snappdf || log warn "[TAR] Snappdf setup failed"
 
     # shellcheck disable=SC2059
@@ -312,7 +319,7 @@ run_installation() {
         provision_prepare_database || return 1
         # Migration-aware: if INM_MIGRATION_BACKUP is set, attempt restore after deploy
         if [ -n "${INM_MIGRATION_BACKUP:-}" ]; then
-            log info "[PROV] Migration backup detected: ${INM_MIGRATION_BACKUP}"
+            log debug "[PROV] Migration backup detected: ${INM_MIGRATION_BACKUP}"
             local backup_path=""
             if [ "${INM_MIGRATION_BACKUP}" = "LATEST" ]; then
                 if [ -d "${INM_BACKUP_DIRECTORY:-./.backups}" ]; then
@@ -322,7 +329,7 @@ run_installation() {
                 backup_path="$INM_MIGRATION_BACKUP"
             fi
             if [ -n "$backup_path" ]; then
-                log info "[PROV] Restoring migration backup: $backup_path"
+                log debug "[PROV] Restoring migration backup: $backup_path"
                 local saved_named=("${NAMED_ARGS[@]}")
                 NAMED_ARGS[file]="$backup_path"
                 NAMED_ARGS[include_app]=true
@@ -349,7 +356,7 @@ run_installation() {
             cron_jobs="scheduler"
         fi
         if [[ "$no_cron" == true ]]; then
-            log info "[TAR] Cron install skipped by flag (--no-cron-install)."
+            log debug "[TAR] Cron install skipped by flag (--no-cron-install)."
             cron_ok=false
             cron_skipped=true
         else

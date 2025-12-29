@@ -58,7 +58,7 @@ spawn_provision_file() {
     if [ -f "$env_example" ]; then
         src_env="$env_example"
     else
-        log info "[PROV] Downloading .env.example for provisioning"
+        log debug "[PROV] Downloading .env.example for provisioning"
         mkdir -p "$(dirname "$env_example")" 2>/dev/null || true
         curl -sL ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} \
             "https://raw.githubusercontent.com/invoiceninja/invoiceninja/v5-stable/.env.example" \
@@ -73,10 +73,10 @@ spawn_provision_file() {
 
     if [ -z "$src_env" ] && [ -f "${INM_ENV_FILE:-}" ]; then
         src_env="$INM_ENV_FILE"
-        log info "[PROV] Seeding from app env: $src_env"
+        log debug "[PROV] Seeding from app env: $src_env"
     elif [ -z "$src_env" ] && [ -f "${SCRIPT_DIR:-.}/.env.example" ]; then
         src_env="${SCRIPT_DIR:-.}/.env.example"
-        log info "[PROV] Seeding from bundled .env.example: $src_env"
+        log debug "[PROV] Seeding from bundled .env.example: $src_env"
     fi
 
     if [ -z "$src_env" ]; then
@@ -110,10 +110,10 @@ spawn_provision_file() {
     fi
     if [ -n "$migration_backup" ]; then
         printf "\nINM_MIGRATION_BACKUP=%s\n" "$migration_backup" >> "$target"
-        log info "[PROV] Added migration backup reference: $migration_backup"
+        log debug "[PROV] Added migration backup reference: $migration_backup"
     elif [ "$latest_backup" = true ]; then
         printf "\nINM_MIGRATION_BACKUP=LATEST\n" >> "$target"
-        log info "[PROV] Will use latest backup during provisioned install."
+        log debug "[PROV] Will use latest backup during provisioned install."
     fi
 
     if [ -f "$target" ]; then
@@ -170,11 +170,19 @@ provision_post_install() {
         fi
     fi
 
-    run_artisan migrate:fresh --seed --force || {
-        log err "[PROV] Failed to migrate and seed"
-        return 1
-    }
-    run_artisan ninja:translations || log warn "[PROV] Translation download failed; language list may be incomplete."
+    if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
+        run_artisan migrate:fresh --seed --force || {
+            log err "[PROV] Failed to migrate and seed"
+            return 1
+        }
+        run_artisan ninja:translations || log warn "[PROV] Translation download failed; language list may be incomplete."
+    else
+        run_artisan migrate:fresh --seed --force >/dev/null 2>&1 || {
+            log err "[PROV] Failed to migrate and seed"
+            return 1
+        }
+        run_artisan ninja:translations >/dev/null 2>&1 || log warn "[PROV] Translation download failed; language list may be incomplete."
+    fi
     local seeder=""
     if [ -f "${INM_INSTALLATION_PATH%/}/database/seeders/LanguageSeeder.php" ]; then
         seeder="LanguageSeeder"
@@ -183,15 +191,33 @@ provision_post_install() {
     else
         seeder="LanguageSeeder"
     fi
-    if ! run_artisan db:seed --class="$seeder" --force; then
+    if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
+        run_artisan db:seed --class="$seeder" --force || {
+            if [ "$seeder" != "LanguagesSeeder" ]; then
+                run_artisan db:seed --class=LanguagesSeeder --force || \
+                    log warn "[PROV] Language seeder failed; language list may be incomplete."
+            else
+                log warn "[PROV] Language seeder failed; language list may be incomplete."
+            fi
+        }
+    elif ! run_artisan db:seed --class="$seeder" --force >/dev/null 2>&1; then
         if [ "$seeder" != "LanguagesSeeder" ]; then
-            run_artisan db:seed --class=LanguagesSeeder --force || \
+            run_artisan db:seed --class=LanguagesSeeder --force >/dev/null 2>&1 || \
                 log warn "[PROV] Language seeder failed; language list may be incomplete."
         else
             log warn "[PROV] Language seeder failed; language list may be incomplete."
         fi
     fi
-        if run_artisan ninja:create-account --email=admin@admin.com --password=admin; then
+        if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
+            run_artisan ninja:create-account --email=admin@admin.com --password=admin || {
+                log err "[PROV] Failed to create default user"
+                return 1
+            }
+        elif ! run_artisan ninja:create-account --email=admin@admin.com --password=admin >/dev/null 2>&1; then
+            log err "[PROV] Failed to create default user"
+            return 1
+        fi
+        if true; then
             local cron_jobs="${NAMED_ARGS[cron_jobs]:-${NAMED_ARGS[cron-jobs]:-both}}"
             local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
             local cron_ok=true
@@ -204,7 +230,7 @@ provision_post_install() {
             cron_jobs="scheduler"
         fi
         if [[ "$no_cron" == true ]]; then
-            log info "[PROV] Cron install skipped by flag (--no-cron-install)."
+            log debug "[PROV] Cron install skipped by flag (--no-cron-install)."
             cron_ok=false
             cron_skipped=true
             else
@@ -216,9 +242,6 @@ provision_post_install() {
                 load_env_file_raw "$INM_ENV_FILE" || log warn "[PROV] Failed to load app env for summary."
             fi
             print_provisioned_summary "$cron_ok" "$cron_jobs" "$cron_skipped"
-        else
-            log err "[PROV] Failed to create default user"
-            return 1
         fi
     return 0
 }
@@ -248,12 +271,12 @@ provision_prebackup_db() {
     }
 
     local target_file="${backup_dir%/}/${DB_DATABASE}_preprovision_$(date +%Y%m%d-%H%M%S).sql"
-    log info "[PROV] Creating pre-provision DB backup: $target_file"
-    if ! dump_database "$target_file"; then
+    log debug "[PROV] Creating pre-provision DB backup: $target_file"
+    if ! INM_QUIET_DUMP=true dump_database "$target_file"; then
         log err "[PROV] Pre-provision backup failed: $target_file"
         return 1
     fi
-    log ok "[PROV] Pre-provision backup saved: $target_file"
+    log debug "[PROV] Pre-provision backup saved: $target_file"
     return 0
 }
 
