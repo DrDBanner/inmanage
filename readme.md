@@ -9,63 +9,78 @@ Inmanage is the CLI for self-hosted Invoice Ninja. Focus: **save time**, **less 
 **Full documentation:**
 <https://github.com/DrDBanner/inmanage/blob/main/docs/index.md>
 
-## Recommended Invoice Ninja CLI Installation Procedure
+Things you need
+
+- Bash shell
+- A working webserver (Apache or Nginx)
+- The user that owns the Invoice Ninja files (often the webserver user)
+- Database credentials (from `.env` or `.my.cnf`)
+- Common CLI tools (git, curl, tar, rsync, php, jq, composer, zip/unzip, etc.)
+
+## Invoice Ninja CLI - Installation Procedure
+
+Per user:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | bash
 ```
 
 The installer auto-selects the install mode (system when run as root, otherwise user).
-- Full install: system-wide (requires sudo/root)
-- Local install: user context (~/.local/bin)
-- Project install: once per project
 
-If you choose project mode, run the installer from your base directory.
-For system installs via curl|bash, add `--mode system` and run with sudo.
-User installs live in `~/.local/share/inmanage` (XDG).
+- System install: run with sudo; installs to `/usr/local/share/inmanage`, symlinks in `/usr/local/bin`.
+- User install: default without sudo; installs to `~/.local/share/inmanage`, symlinks in `~/.local/bin`.
+- Project install: run from your base directory; installs to `./.inmanage/cli`, symlinks in the project root.
 
-Then go to your base directory and run the first command:
-
-*Run as the webserver user to avoid permission issues when creating the project's config files and folders:*
+Per project:
 
 ```bash
 cd /path/to/your/invoiceninja_basedirectory
-sudo -u www-data inm core health
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | bash -s -- --mode project
 ```
 
-*If `sudo` isn't needed.*
+Per system:
 
 ```bash
-inm core health
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash
 ```
+
+
+
+
+First run (creates `.inmanage/.env.inmanage` and folders):
+
+```bash
+cd /path/to/your/invoiceninja_basedirectory
+sudo -u www-data inm
+```
+
+If `sudo` isn't needed:
+
+```bash
+inm
+```
+
 > [!NOTE]
 > * Run the script as a user who can read the `.env` file of your Invoice Ninja installation. Typically, this is the web server user, such as `www-data`, `httpd`, `web`, `apache`, or `nginx`. In shared hosting environments, it is often the logged-in user (e.g., `u439534522`).
+> * `sudo -u <user> inm ...` runs the command as that OS user now. `--run-user <user>` is for install mode only (it sets who owns/should run the CLI after install).
 > * Ensure you set the correct username in the script’s `.env.inmanage` file under `INM_ENFORCED_USER` and especially on the first run (otherwise you'll need to change permissions afterwards).
 > * In restricted environments (e.g., shared hosting with GitHub rate limits), set the `INM_GH_API_CREDENTIALS` variable in `.env.inmanage` as `USERNAME:PASSWORD` or `token:x-oauth` if needed.
 
-
-
-If the installer created symlinks (system/user/project), you can use `inm` (short) or `inmanage`. Otherwise run the CLI from its install path; creating a project-local symlink is recommended.
+If the installer created symlinks (system/user/project), you can use `inm` (short) or `inmanage`. Otherwise run the CLI from its install path with `./inm` or `./inmanage`.
 
 *Typical directory structure:*
 
 ```text
 /var/www/billing.yourdomain.com/            # The base-directory
 ├── .inmanage/                              # The Project's CLI Configuration directory. (automatically created)
-├── .cache/                                 # Optional. Project Cache.
+│   └── cli/                                # Optional binaries folder if project wide installation
+├── .cache/                                 # Optional. Local Project Cache.
 ├── .backup/                                # Backups go here.
 ├── invoiceninja/                           # The current/future Invoice Ninja installation-directory
 │   └── public/                             # Document root (set this as your web server root folder)
 ```
 
-### Prerequisites
 
-- BASH shell
-- Working and configured webserver (e.g. Apache or Nginx)
-- Access to the webserver user (e.g. www-data) or knowledge of who owns the Invoice Ninja files
-- Valid credentials for the database (either via .env file or .my.cnf)
-- Git (for fetching the script) and some other basic tools like `curl` `wc` `tar` `cp` `mv` `mkdir` `chown` `find` `rm` `grep` `xargs` `php` `touch` `sed` `sudo` `tee` `rsync` `awk` `jq` `git` `composer` `zip` `unzip` `sha256sum`
-- Basic familiarity with command-line operations
 
 ## Recommended Invoice Ninja Installation Procedure (provisioned)
 

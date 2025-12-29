@@ -31,8 +31,8 @@ declare -A default_settings=(
     ["INM_ARTISAN_STRING"]="\${INM_PHP_EXECUTABLE} \${INM_BASE_DIRECTORY}\${INM_INSTALLATION_DIRECTORY}/artisan"
     ["INM_PROGRAM_NAME"]="InvoiceNinja"
     ["INM_COMPATIBILITY_VERSION"]="5+"
-    ["INM_DIR_MODE"]="750" # Default directory mode for app dirs when fixing perms.
-    ["INM_FILE_MODE"]="640" # Default file mode for app files when fixing perms.
+    ["INM_DIR_MODE"]="2775" # Default directory mode for app dirs when fixing perms.
+    ["INM_FILE_MODE"]="644" # Default file mode for app files when fixing perms.
     ["INM_ENV_MODE"]="600" # Strict mode for app .env when fixing perms.
     ["INM_KEEP_BACKUPS"]="2"
     ["INM_GH_API_CREDENTIALS"]="" # Format username:password or token:x-oauth.
@@ -77,6 +77,7 @@ prompt_order=(
     "INM_KEEP_BACKUPS"
     "INM_FORCE_READ_DB_PW"
     "INM_ENFORCED_USER"
+    "INM_ENFORCED_GROUP"
     "INM_GH_API_CREDENTIALS"
 )
 

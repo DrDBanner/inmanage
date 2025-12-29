@@ -267,7 +267,8 @@ install_self() {
         done
         log ok "[SELF] Installed global symlinks in $default_bin"
       elif [[ ":$PATH:" != *":$link_dir:"* ]]; then
-        log warn "[SELF] Add '$link_dir' to your PATH."
+        log warn "[SELF] PATH does not include $link_dir; add it manually."
+        log info "[SELF] One-liner example: echo 'export PATH=\"$link_dir:\$PATH\"' >> ~/.profile && source ~/.profile"
       fi
       ;;
     3)
@@ -327,6 +328,7 @@ install_self() {
       log ok "[INSTALL] Project install completed in: $app_dir"
       log info "[INSTALL] Run './inmanage core install' (or '--provision') from project root."
       log info "[INSTALL] Config stays in ${project_root}/.inmanage/.env.inmanage (keep it outside the app)."
+      log info "[INSTALL] Tip: Use ./inm (project root). For global access: ln -sf \"${link_root%/}/inm\" ~/.local/bin/inm"
 
       if [[ -n "$run_user" && "$run_user" != "$current_user" ]]; then
           log info "[INSTALL] Ensuring global symlinks for enforced user '$run_user'."
