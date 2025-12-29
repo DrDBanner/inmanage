@@ -26,7 +26,6 @@ install_cronjob() {
     export INM_CRON_INSTALL_TARGET=""
     local backup_time="${args[backup_time]:-${args[backup-time]:-${INM_CRON_BACKUP_TIME:-03:24}}}"
     export INM_CRON_BACKUP_TIME="$backup_time"
-    log info "[CRON] install_cronjob called (mode=${cron_mode:-auto} jobs=${jobs} backup-time=${backup_time} user=${user})"
     local backup_hour=""
     local backup_min=""
     if [[ "$backup_time" =~ ^([01]?[0-9]|2[0-3]):[0-5][0-9]$ ]]; then
@@ -130,6 +129,11 @@ install_cronjob() {
     esac
 
     check_existing_cron_entries
+    local effective_user="$user"
+    if [[ "$use_user_crontab" == true ]]; then
+        effective_user="$(id -un 2>/dev/null || echo "$user")"
+    fi
+    log info "[CRON] install_cronjob called (mode=${cron_mode:-auto} jobs=${jobs} backup-time=${backup_time} user=${effective_user})"
     if [[ "$use_user_crontab" == true ]]; then
         log info "[CRON] Mode resolved: crontab (${mode_reason})"
         log info "[CRON] Target: user crontab"
@@ -399,6 +403,7 @@ uninstall_cronjob() {
     esac
 
     if [[ "$remove_test_job" == true ]]; then
+        log info "[CRON] Removing cron test job only."
         remove_test_lines() {
             awk '!/crontestfile/ && !/INMANAGE CRON TEST/' "$1" > "$2"
         }
