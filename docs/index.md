@@ -251,7 +251,7 @@ inm env set app CUSTOM_BRANDING_NAME "Acme Co"
 Repeatable and unattended. Best for staging/production.
 
 > [!WARNING]
-> Provisioned installs are **destructive** (app + DB). A backup is created by default, but `--force` is still required to confirm the risk. Avoid `--no-backup` unless you fully understand the impact.
+> Provisioned installs are **destructive** (app + DB). A backup is created by default. `--force` is required for non‑wizard runs to confirm the risk; the wizard handles confirmation interactively. Avoid `--no-backup` unless you fully understand the impact.
 
 1. Generate a provision file with the wizard:
    ```bash
