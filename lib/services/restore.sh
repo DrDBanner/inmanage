@@ -79,6 +79,35 @@ run_restore() {
         return 0
     fi
 
+    if [[ "$force" != true ]]; then
+        local bundle_has_db=false
+        if [[ -d "$bundle" ]]; then
+            if find "$bundle" -maxdepth 4 -type f \( -name "db.sql" -o -name "*_db.sql" \) -print -quit | grep -q .; then
+                bundle_has_db=true
+            fi
+        else
+            case "$bundle" in
+                *.sql|*_db.sql)
+                    bundle_has_db=true
+                    ;;
+                *.tar.gz|*.tgz)
+                    if tar -tzf "$bundle" 2>/dev/null | grep -qE '(^|/)(db\.sql|[^/]*_db\.sql)$'; then
+                        bundle_has_db=true
+                    fi
+                    ;;
+                *.zip)
+                    if unzip -l "$bundle" 2>/dev/null | grep -qE '(^|/)(db\.sql|[^/]*_db\.sql)$'; then
+                        bundle_has_db=true
+                    fi
+                    ;;
+            esac
+        fi
+        if [[ "$bundle_has_db" == true ]]; then
+            log err "[RESTORE] Database restore is destructive. Re-run with --force to proceed."
+            return 1
+        fi
+    fi
+
     local tmpdir
     tmpdir="$(mktemp -d)"
     cleanup_tmp_restore() { safe_rm_rf "$tmpdir" "$(dirname "$tmpdir")" || true; }
