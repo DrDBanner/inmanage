@@ -155,6 +155,46 @@ install_cronjob() {
         log err "[CRON] Failed to create temp file for crontab."
         return 1
     fi
+    escape_squote() {
+        printf "%s" "${1//\'/\'\\\'\'}"
+    }
+    resolve_cli_command() {
+        local candidate
+        local resolved=""
+        local base_clean="${INM_BASE_DIRECTORY%/}"
+        local candidates=()
+        if [[ -n "${SCRIPT_PATH:-}" ]]; then
+            candidates+=("$SCRIPT_PATH")
+        fi
+        if command -v inm >/dev/null 2>&1; then
+            candidates+=("$(command -v inm)")
+        fi
+        if command -v inmanage >/dev/null 2>&1; then
+            candidates+=("$(command -v inmanage)")
+        fi
+        if [[ -n "$base_clean" ]]; then
+            candidates+=("${base_clean}/inmanage" "${base_clean}/inm")
+        fi
+        for candidate in "${candidates[@]}"; do
+            [[ -z "$candidate" ]] && continue
+            resolved="$(realpath "$candidate" 2>/dev/null || echo "$candidate")"
+            if [ -x "$resolved" ]; then
+                printf "%s" "$resolved"
+                return 0
+            fi
+        done
+        return 1
+    }
+    local cli_cmd=""
+    cli_cmd="$(resolve_cli_command)" || {
+        cli_cmd="inmanage"
+        log warn "[CRON] Could not resolve CLI path; falling back to '${cli_cmd}' (PATH-dependent)."
+    }
+    local cli_cmd_escaped
+    cli_cmd_escaped="$(escape_squote "$cli_cmd")"
+    local base_clean="${INM_BASE_DIRECTORY%/}"
+    local base_clean_escaped
+    base_clean_escaped="$(escape_squote "$base_clean")"
     detect_installed_jobs() {
         local file="$1"
         local has_sched=false
@@ -210,8 +250,7 @@ install_cronjob() {
                 echo "* * * * * $(artisan_cmd_string) schedule:run >> /dev/null 2>&1"
             fi
             if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
-                local base_clean="${INM_BASE_DIRECTORY%/}"
-                echo "${backup_cron_expr} $INM_ENFORCED_SHELL -c \"${base_clean}/inmanage core backup\" >> /dev/null 2>&1"
+                echo "${backup_cron_expr} $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core backup' >> /dev/null 2>&1"
             fi
             echo "# INMANAGE CRON END"
         } >> "$tmpfile"
@@ -241,8 +280,7 @@ install_cronjob() {
             echo "* * * * * $user $(artisan_cmd_string) schedule:run >> /dev/null 2>&1"
         fi
         if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
-            local base_clean="${INM_BASE_DIRECTORY%/}"
-            echo "${backup_cron_expr} $user $INM_ENFORCED_SHELL -c \"${base_clean}/inmanage core backup\" >> /dev/null 2>&1"
+            echo "${backup_cron_expr} $user $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core backup' >> /dev/null 2>&1"
         fi
     } > "$tmpfile"; then
         log err "[CRON] Failed to prepare cron file."
