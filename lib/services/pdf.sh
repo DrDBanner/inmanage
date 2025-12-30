@@ -14,7 +14,8 @@ do_snappdf() {
         pdf_gen=$(grep -E '^PDF_GENERATOR=' "$INM_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
     fi
     if [[ "${pdf_gen,,}" != "snappdf" ]]; then
-        log info "[SNAP] PDF_GENERATOR is not 'snappdf'; skipping snappdf setup."
+        local gen_label="${pdf_gen:-unset}"
+        log info "[SNAP] Snappdf mode: off (PDF_GENERATOR=${gen_label})"
         return 0
     fi
 

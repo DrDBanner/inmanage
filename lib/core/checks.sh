@@ -85,7 +85,18 @@ load_env_file_raw() {
         fi
     done < "$file"
 
-    log debug "[ENV] Parsed data: $(tr "\n" " " < "$tmpfile")"
+    local redacted_data=""
+    local sensitive_re='(^|_)(PASS(WORD)?|TOKEN|SECRET|KEY|CREDENTIALS)$'
+    while IFS= read -r line; do
+        local key="${line#export }"
+        key="${key%%=*}"
+        if [[ "$key" =~ $sensitive_re ]]; then
+            redacted_data+="export ${key}=REDACTED "
+        else
+            redacted_data+="${line} "
+        fi
+    done < "$tmpfile"
+    log debug "[ENV] Parsed data: ${redacted_data% }"
 
     # shellcheck disable=SC1091
     # shellcheck disable=SC1090
