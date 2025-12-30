@@ -140,6 +140,9 @@ import_database() {
             if declare -F enforce_ownership >/dev/null 2>&1; then
                 enforce_ownership "$backup_dir"
             fi
+            if declare -F cleanup_old_backups >/dev/null 2>&1; then
+                cleanup_old_backups || log warn "[import_db] Backup cleanup failed."
+            fi
         else
             log err "[import_db] Backup directory unavailable; aborting import. Use --pre-backup=false to override."
             return 1
