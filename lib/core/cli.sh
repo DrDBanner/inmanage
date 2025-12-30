@@ -127,7 +127,7 @@ core actions:
          # Default: single full bundle (app+env+db). Flags narrow scope or add extras.
   restore --file=... [--force] [--include-app=true|false] [--target=...] [--latest] [--auto-select=true|false]
          # DB import requires --force.
-  health | info [--checks=TAG1,TAG2] [--check=TAG1,TAG2] [--fix-permissions]
+  health | info [--checks=TAG1,TAG2] [--check=TAG1,TAG2] [--exclude=TAG1,TAG2] [--fix-permissions]
   versions
   prune [--override-enforced-user] | prune_versions | prune_backups
   clear-cache
@@ -245,7 +245,7 @@ EOF
                 health|info)
                     cat <<'EOF'
 core health (info):
-  inm core health [--checks=TAG1,TAG2] [--check=TAG1,TAG2] [--fix-permissions]
+  inm core health [--checks=TAG1,TAG2] [--check=TAG1,TAG2] [--exclude=TAG1,TAG2] [--fix-permissions]
                        [--no-cli-clear]
   Tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF
   
