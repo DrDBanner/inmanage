@@ -47,6 +47,10 @@ enforce_user_switch() {
 
         log debug "[ENV] Switching to user '${args[user]}'."
         log debug "[ENV] If you don't want to switch users, put your current user into the INM_ENFORCED_USER variable in your config file."
+        local fix_perms="${args[fix_permissions]:-${args[fix-permissions]:-false}}"
+        if [[ "$current_user" == "root" && "$fix_perms" == "true" ]]; then
+            log info "[ENV] Hint: use --override-enforced-user to keep root for --fix-permissions."
+        fi
 
         exec sudo -u "${args[user]}" env INM_ORIGINAL_HOME="$original_home" bash "$memyselfasscript" "${providedargs[@]}"
     fi
