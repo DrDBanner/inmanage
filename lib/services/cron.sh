@@ -22,6 +22,12 @@ install_cronjob() {
     local remove_test_job="${args[remove_test_job]:-${args[remove-test-job]:-false}}"
     local cron_mode="${args[cron_mode]:-${args[cron-mode]:-${args[mode]:-auto}}}"
     cron_mode="${cron_mode,,}"
+    jobs="${jobs,,}"
+    case "$jobs" in
+        scheduler|schedule|artisan|artisan:scheduler)
+            jobs="artisan"
+            ;;
+    esac
     export INM_CRON_INSTALLED_JOBS=""
     export INM_CRON_INSTALL_TARGET=""
     local backup_time="${args[backup_time]:-${args[backup-time]:-${INM_CRON_BACKUP_TIME:-03:24}}}"
@@ -152,8 +158,8 @@ install_cronjob() {
         log info "[CRON] Target: ${cron_file} (user=${user})"
     fi
     local job_summary=""
-    if [[ "$jobs" == "scheduler" || "$jobs" == "both" ]]; then
-        job_summary="scheduler"
+    if [[ "$jobs" == "artisan" || "$jobs" == "both" ]]; then
+        job_summary="artisan"
     fi
     if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
         job_summary="${job_summary:+${job_summary}, }backup@${backup_time}"
@@ -162,7 +168,7 @@ install_cronjob() {
         job_summary="${job_summary:+${job_summary}, }test"
     fi
     log info "[CRON] Jobs selected: ${job_summary:-none}"
-    if [[ "$jobs" == "scheduler" || "$jobs" == "both" ]]; then
+    if [[ "$jobs" == "artisan" || "$jobs" == "both" ]]; then
         log info "[CRON] Will set: schedule:run every minute"
     fi
     if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
@@ -241,7 +247,7 @@ install_cronjob() {
         if [[ "$has_sched" == true && "$has_backup" == true ]]; then
             printf "%s" "both"
         elif [[ "$has_sched" == true ]]; then
-            printf "%s" "scheduler"
+            printf "%s" "artisan"
         elif [[ "$has_backup" == true ]]; then
             printf "%s" "backup"
         else
@@ -291,7 +297,7 @@ install_cronjob() {
 
         {
             echo "# INMANAGE CRON BEGIN"
-            if [[ "$jobs" == "scheduler" || "$jobs" == "both" ]]; then
+            if [[ "$jobs" == "artisan" || "$jobs" == "both" ]]; then
                 echo "* * * * * $(artisan_cmd_string) schedule:run >> /dev/null 2>&1"
             fi
             if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
@@ -329,7 +335,7 @@ install_cronjob() {
 
     if ! {
         echo "# Invoice Ninja cronjobs"
-        if [[ "$jobs" == "scheduler" || "$jobs" == "both" ]]; then
+        if [[ "$jobs" == "artisan" || "$jobs" == "both" ]]; then
             echo "* * * * * $user $(artisan_cmd_string) schedule:run >> /dev/null 2>&1"
         fi
         if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then

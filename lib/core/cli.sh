@@ -18,7 +18,7 @@ core:
   install                     Install Invoice Ninja
                               --clean --provision --version=<v>
                               --cron-mode=auto|system|crontab --no-cron-install
-                              --cron-jobs=scheduler|backup|both --no-backup-cron --backup-time=HH:MM
+                              --cron-jobs=artisan|backup|both --no-backup-cron --backup-time=HH:MM
                               --bypass-check-sha
                               Provisioned install is recommended (uses .inmanage/.env.provision; create with core provision spawn)
 
@@ -131,7 +131,7 @@ core actions:
   versions
   prune [--override-enforced-user] | prune_versions | prune_backups
   clear-cache
-  cron install|uninstall [--user=name] [--jobs=scheduler|backup|both] [--mode=auto|system|crontab] [--backup-time=HH:MM]
+  cron install|uninstall [--user=name] [--jobs=artisan|backup|both] [--mode=auto|system|crontab] [--backup-time=HH:MM]
                         [--create-test-job] [--remove-test-job]
   provision spawn [--provision-file=path] [--backup-file=path|--latest-backup]
 EOF
@@ -203,7 +203,7 @@ core install:
   - Optional: --no-backup to skip pre-provision DB backup
   - Optional: --no-cron-install to skip cron setup
   - Optional: --cron-mode=auto|system|crontab to force cron install mode
-  - Optional: --cron-jobs=scheduler|backup|both to override installed cron jobs
+  - Optional: --cron-jobs=artisan|backup|both to override installed cron jobs
   - Optional: --no-backup-cron to skip the backup cron job
   - Optional: --backup-time=HH:MM for the backup cron schedule (default 03:24)
   - Optional: --bypass-check-sha to skip release digest verification (not recommended)
@@ -296,7 +296,7 @@ EOF
                 cron)
                     cat <<'EOF'
 core cron install:
-  inm core cron install [--user=name] [--jobs=scheduler|backup|both]
+  inm core cron install [--user=name] [--jobs=artisan|backup|both]
                              [--mode=auto|system|crontab] [--cron-file=path]
                              [--backup-time=HH:MM] [--create-test-job]
   inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path] [--remove-test-job]

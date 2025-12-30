@@ -368,7 +368,7 @@ run_installation() {
         export INM_PROVISION_FILE_USED="$env_file"
         provision_post_install || return 1
     else
-        local cron_jobs="${NAMED_ARGS[cron_jobs]:-${NAMED_ARGS[cron-jobs]:-scheduler}}"
+        local cron_jobs="${NAMED_ARGS[cron_jobs]:-${NAMED_ARGS[cron-jobs]:-artisan}}"
         local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
         local cron_ok=true
         local cron_skipped=false
@@ -377,7 +377,7 @@ run_installation() {
         local no_backup_cron="${NAMED_ARGS[no_backup_cron]:-${NAMED_ARGS[no-backup-cron]:-false}}"
         local backup_time="${NAMED_ARGS[backup_time]:-${NAMED_ARGS[backup-time]:-03:24}}"
         if [[ "$no_backup_cron" == true ]]; then
-            cron_jobs="scheduler"
+            cron_jobs="artisan"
         fi
         if [[ "$no_cron" == true ]]; then
             log debug "[TAR] Cron install skipped by flag (--no-cron-install)."

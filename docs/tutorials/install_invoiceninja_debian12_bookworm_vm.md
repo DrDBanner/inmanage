@@ -820,7 +820,7 @@ The database and user are configured.
 
 It's a good time to make your first backup now!
 
-Cron installed (scheduler + backup).
+Cron installed (artisan + backup).
 
 dd@win81:/var/www/billing.debian12vm.local$
 

@@ -24,6 +24,7 @@ Inmanage is the CLI for self-hosted Invoice Ninja. Focus: **convenience**, **cer
 - [Restore](#restore)
 - [Health checks](#health-checks)
 - [Cron](#cron)
+- [Notification system (heartbeat)](#notification-system-heartbeat)
 - [Environment helper](#environment-helper)
 - [Cache and downloads](#cache-and-downloads)
 - [Database client selection](#database-client-selection)
@@ -282,7 +283,7 @@ Install switches (`inm core install`):
 | `--no-backup` | `false` | Skip pre-provision DB backup (provisioned install only). |
 | `--no-cron-install` | `false` | Skip cron installation (useful if you manage cron yourself). |
 | `--cron-mode=auto / system / crontab` | `auto` | Force cron install mode. `auto` chooses system cron if possible, otherwise user crontab. |
-| `--cron-jobs=scheduler / backup / both` | `both` | Which cron jobs to install during setup. |
+| `--cron-jobs=artisan / backup / both` | `both` | Which cron jobs to install during setup. |
 | `--no-backup-cron` | `false` | Skip the backup cron job during setup. |
 | `--backup-time=HH:MM` | `03:24` | Backup cron schedule (24h). |
 | `--bypass-check-sha` | `false` | Skip release digest verification (not recommended). |
@@ -624,7 +625,7 @@ Cron switches (`inm core cron install`):
 | Switch | Default | Description |
 | --- | --- | --- |
 | `--user=name` | enforced user | User for cron entries. |
-| `--jobs=scheduler / backup / both` | `both` | Which jobs to install. |
+| `--jobs=artisan / backup / both` | `both` | Which jobs to install. |
 | `--mode=auto / system / crontab` | `auto` | Force cron install mode. |
 | `--backup-time=HH:MM` | `03:24` | Backup cron schedule (24h). |
 | `--cron-file=path` | `/etc/cron.d/invoiceninja` | Target cron file (root mode only). |
@@ -650,6 +651,31 @@ inm core cron uninstall --remove-test-job
 
 > [!NOTE]
 > Some systems use `${HOME}/cronfile` for user cron entries. If it exists, inm will use it as the base and keep it updated.
+
+## Notification system (heartbeat)
+
+> [!NOTE]
+> Draft design: this section documents the intended interface and config. Implementation may follow.
+
+Goal: send notifications for **non‑interactive** failures (e.g., scheduled backups, missing cron jobs, or a failing daily health check).
+
+Planned config keys (add to `.inmanage/.env.inmanage`):
+
+- `INM_NOTIFY_ENABLED=true|false` — master switch.
+- `INM_NOTIFY_EMAIL_TO=you@example.com` — primary target (v1: email only).
+- `INM_NOTIFY_LEVEL=ERR|WARN` — minimum severity to send.
+- `INM_NOTIFY_NONINTERACTIVE_ONLY=true|false` — only send when no TTY is attached.
+- `INM_NOTIFY_HEARTBEAT_ENABLED=true|false` — enable daily health heartbeat.
+- `INM_NOTIFY_HEARTBEAT_TIME=HH:MM` — cron schedule for the heartbeat.
+- `INM_NOTIFY_HEARTBEAT_INCLUDE=TAG1,TAG2` — optional include filter.
+- `INM_NOTIFY_HEARTBEAT_EXCLUDE=TAG1,TAG2` — optional exclude filter.
+
+Planned commands:
+
+- `inm core health --notify-test` — send a test notification immediately.
+- `inm core cron install --create-heartbeat` — install a daily heartbeat cron job.
+
+Email settings are read from the app `.env` (MAIL_*), with CLI config as fallback if present.
 
 ## Environment helper
 

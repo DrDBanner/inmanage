@@ -251,9 +251,9 @@ provision_post_install() {
         local no_cron="${NAMED_ARGS[no_cron_install]:-${NAMED_ARGS[no-cron-install]:-false}}"
         local no_backup_cron="${NAMED_ARGS[no_backup_cron]:-${NAMED_ARGS[no-backup-cron]:-false}}"
         local backup_time="${NAMED_ARGS[backup_time]:-${NAMED_ARGS[backup-time]:-03:24}}"
-        if [[ "$no_backup_cron" == true ]]; then
-            cron_jobs="scheduler"
-        fi
+            if [[ "$no_backup_cron" == true ]]; then
+                cron_jobs="artisan"
+            fi
         if [[ "$no_cron" == true ]]; then
             log debug "[PROV] Cron install skipped by flag (--no-cron-install)."
             cron_ok=false

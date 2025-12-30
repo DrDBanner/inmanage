@@ -17,16 +17,19 @@ install_cli_hint() {
 }
 
 print_cron_manual_instructions() {
-    local jobs="${1:-scheduler}"
+    local jobs="${1:-artisan}"
     local user="${2:-$INM_ENFORCED_USER}"
     local cli_cmd
     cli_cmd="$(install_cli_hint)"
     local base_clean="${INM_BASE_DIRECTORY%/}"
 
     printf "${MAGENTA}Cron install failed.${RESET}\n"
+    case "${jobs,,}" in
+        scheduler|schedule|artisan|artisan:scheduler) jobs="artisan" ;;
+    esac
     printf "Try: ${CYAN}%s core cron install --user=%s --jobs=%s${RESET}\n" "$cli_cmd" "$user" "$jobs"
     printf "Or add to ${CYAN}/etc/cron.d/invoiceninja${RESET} (root):\n"
-    if [[ "$jobs" == "scheduler" || "$jobs" == "both" ]]; then
+    if [[ "$jobs" == "artisan" || "$jobs" == "both" ]]; then
         printf "  ${CYAN}* * * * * %s %s schedule:run >> /dev/null 2>&1${RESET}\n" "$user" "$(artisan_cmd_string)"
     fi
     local backup_time="${INM_CRON_BACKUP_TIME:-03:24}"
@@ -67,14 +70,17 @@ print_provisioned_summary() {
     printf "The database and user are configured.\n\n"
     printf "${YELLOW}It's a good time to make your first backup now!${RESET}\n\n"
     local installed_jobs="${INM_CRON_INSTALLED_JOBS:-$cron_jobs}"
+    case "${installed_jobs,,}" in
+        scheduler|schedule|artisan|artisan:scheduler) installed_jobs="artisan" ;;
+    esac
     local cron_target="${INM_CRON_INSTALL_TARGET:-}"
 
     if [[ "$cron_skipped" == true ]]; then
         printf "${YELLOW}Cron install skipped (--no-cron-install).${RESET}\n\n"
     elif [[ "$cron_ok" == true ]]; then
         case "$installed_jobs" in
-            both) printf "${GREEN}Cron installed (scheduler + backup).${RESET}\n" ;;
-            scheduler) printf "${GREEN}Cron installed (scheduler).${RESET}\n" ;;
+            both) printf "${GREEN}Cron installed (artisan + backup).${RESET}\n" ;;
+            artisan) printf "${GREEN}Cron installed (artisan).${RESET}\n" ;;
             backup) printf "${GREEN}Cron installed (backup).${RESET}\n" ;;
             *) printf "${GREEN}Cron installed.${RESET}\n" ;;
         esac
@@ -92,7 +98,7 @@ print_provisioned_summary() {
 
 print_wizard_summary() {
     local cron_ok="${1:-false}"
-    local cron_jobs="${2:-scheduler}"
+    local cron_jobs="${2:-artisan}"
     local cron_skipped="${3:-false}"
     local setup_url="https://your.url/setup"
     if [[ -n "${APP_URL:-}" ]]; then
@@ -104,14 +110,17 @@ print_wizard_summary() {
     printf "${WHITE}Open your browser at your configured address ${CYAN}%s${RESET} to complete database setup.${RESET}\n\n" "$setup_url"
     printf "${YELLOW}It's a good time to make your first backup now!${RESET}\n\n"
     local installed_jobs="${INM_CRON_INSTALLED_JOBS:-$cron_jobs}"
+    case "${installed_jobs,,}" in
+        scheduler|schedule|artisan|artisan:scheduler) installed_jobs="artisan" ;;
+    esac
     local cron_target="${INM_CRON_INSTALL_TARGET:-}"
 
     if [[ "$cron_skipped" == true ]]; then
         printf "${YELLOW}Cron install skipped (--no-cron-install).${RESET}\n\n"
     elif [[ "$cron_ok" == true ]]; then
         case "$installed_jobs" in
-            both) printf "${GREEN}Cron installed (scheduler + backup).${RESET}\n" ;;
-            scheduler) printf "${GREEN}Cron installed (scheduler).${RESET}\n" ;;
+            both) printf "${GREEN}Cron installed (artisan + backup).${RESET}\n" ;;
+            artisan) printf "${GREEN}Cron installed (artisan).${RESET}\n" ;;
             backup) printf "${GREEN}Cron installed (backup).${RESET}\n" ;;
             *) printf "${GREEN}Cron installed.${RESET}\n" ;;
         esac

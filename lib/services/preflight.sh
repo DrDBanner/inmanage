@@ -1263,6 +1263,20 @@ run_preflight() {
                 local v="${!k}"
                 add_result INFO "ENVCLI" "${k}=${v:-<unset>}"
             done
+            local notify_keys=(
+                INM_NOTIFY_ENABLED
+                INM_NOTIFY_EMAIL_TO
+                INM_NOTIFY_LEVEL
+                INM_NOTIFY_NONINTERACTIVE_ONLY
+                INM_NOTIFY_HEARTBEAT_ENABLED
+                INM_NOTIFY_HEARTBEAT_TIME
+                INM_NOTIFY_HEARTBEAT_INCLUDE
+                INM_NOTIFY_HEARTBEAT_EXCLUDE
+            )
+            for k in "${notify_keys[@]}"; do
+                local v="${!k}"
+                add_result INFO "ENVCLI" "${k}=${v:-<unset>}"
+            done
         else
             add_result WARN "ENVCLI" "Not installed (yet) – CLI env missing (${INM_SELF_ENV_FILE:-unset})"
         fi
@@ -1453,7 +1467,7 @@ run_preflight() {
     if echo "$cron_scope" | grep -q "artisan schedule:run"; then
         add_result OK "CRON" "artisan schedule:run present"
     else
-        add_result WARN "CRON" "artisan schedule missing; run: inm core cron install --jobs=scheduler"
+        add_result WARN "CRON" "artisan schedule missing; run: inm core cron install --jobs=artisan"
     fi
 
     extract_cron_time() {
