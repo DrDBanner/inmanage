@@ -467,8 +467,9 @@ dump_database() {
 
     # Sanitize dump for portability: strip hardcoded DEFINERs
     if command -v sed >/dev/null 2>&1; then
-        local tmp_sanitize
-        tmp_sanitize=$(mktemp) || true
+        local tmp_sanitize target_dir
+        target_dir="$(dirname "$target_file")"
+        tmp_sanitize=$(mktemp "${target_dir%/}/.inm_dump_sanitize.XXXXXX" 2>/dev/null) || true
         if [[ -n "$tmp_sanitize" ]]; then
             # shellcheck disable=SC2016
             if sed -E 's/DEFINER=`[^`]+`@`[^`]+`/DEFINER=CURRENT_USER/g' "$target_file" > "$tmp_sanitize"; then
