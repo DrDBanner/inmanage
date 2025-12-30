@@ -1925,17 +1925,17 @@ if ($fp) { fclose($fp); echo "OK"; } else { echo "ERR:" . $errstr; }' 2>/dev/nul
                     local status="${PF_STATUS[$idx]}"
                     if [[ "$include_ok" == true || "$status" != "OK" ]]; then
                         if [ "$printed" = false ]; then
-                            notify_summary+="== $(format_check_label "$g") ==" $'\n'
+                            printf -v notify_summary '%s== %s ==\n' "$notify_summary" "$(format_check_label "$g")"
                             printed=true
                         fi
                         local check_label
                         check_label="$(format_check_label "${PF_CHECK[$idx]}")"
-                        notify_summary+="${check_label} | ${status} | ${PF_DETAIL[$idx]}"$'\n'
+                        printf -v notify_summary '%s%s | %s | %s\n' "$notify_summary" "$check_label" "$status" "${PF_DETAIL[$idx]}"
                     fi
                 fi
             done
             if [ "$printed" = true ]; then
-                notify_summary+=$'\n'
+                printf -v notify_summary '%s\n' "$notify_summary"
             fi
         done
         notify_summary="${notify_summary%$'\n'}"
