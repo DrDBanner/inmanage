@@ -9,6 +9,7 @@ __SERVICE_PREFLIGHT_LOADED=1
 # Performs environment checks for inmanage/Invoice Ninja.
 # Flags via NAMED_ARGS:
 #   --checks=TAG1,TAG2  Only run selected check groups (e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,MAIL,APP,CRON,SNAPPDF)
+#   --exclude=TAG1,TAG2 Skip selected check groups.
 # ---------------------------------------------------------------------
 run_preflight() {
     local errexit_set=false
@@ -119,6 +120,9 @@ run_preflight() {
     local -A allowed_args=(
         [checks]=1
         [check]=1
+        [exclude]=1
+        [exclude_checks]=1
+        [exclude-checks]=1
         [fix_permissions]=1
         [debug]=1
         [dry_run]=1
@@ -150,7 +154,7 @@ run_preflight() {
             bad_args+=("--${arg_key//_/-}")
         done
         log err "[${pf_label}] Unknown arguments: ${bad_args[*]}"
-        log info "[${pf_label}] Allowed flags: --checks=TAG1,TAG2 --check=TAG1,TAG2 --fix-permissions --debug --dry-run --override-enforced-user --no-cli-clear --fast --skip-snappdf --skip-github"
+        log info "[${pf_label}] Allowed flags: --checks=TAG1,TAG2 --check=TAG1,TAG2 --exclude=TAG1,TAG2 --fix-permissions --debug --dry-run --override-enforced-user --no-cli-clear --fast --skip-snappdf --skip-github"
         $errexit_set && set -e
         return 1
     fi
@@ -158,12 +162,14 @@ run_preflight() {
     # prefer globally parsed NAMED_ARGS to survive re-exec user switches
     local fix_permissions="${NAMED_ARGS[fix_permissions]:-${NAMED_ARGS[fix-permissions]:-${ARGS[fix_permissions]:-${ARGS[fix-permissions]:-false}}}}"
     local checks_filter="${NAMED_ARGS[checks]:-${NAMED_ARGS[check]:-${ARGS[checks]:-${ARGS[check]:-}}}}"
+    local exclude_filter="${NAMED_ARGS[exclude]:-${NAMED_ARGS[exclude_checks]:-${NAMED_ARGS[exclude-checks]:-${ARGS[exclude]:-${ARGS[exclude_checks]:-${ARGS[exclude-checks]:-}}}}}}"
     if [ "$fix_permissions" = true ] && [ -z "$checks_filter" ]; then
         checks_filter="APP,PERM"
     fi
     declare -A PF_ALLOW=()
+    declare -A PF_DENY=()
+    local -a unknown_checks=()
     if [[ -n "$checks_filter" ]]; then
-        local -a unknown_checks=()
         IFS=',' read -ra tmp_checks <<<"$checks_filter"
         for c in "${tmp_checks[@]}"; do
             local norm
@@ -174,12 +180,6 @@ run_preflight() {
                 unknown_checks+=("$c")
             fi
         done
-        if [[ ${#unknown_checks[@]} -gt 0 ]]; then
-            log err "[${pf_label}] Unknown check tags: ${unknown_checks[*]}"
-            log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF,PERM"
-            $errexit_set && set -e
-            return 1
-        fi
         if [[ ${#PF_ALLOW[@]} -eq 0 ]]; then
             log err "[${pf_label}] No valid check tags in --checks=$checks_filter"
             log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF,PERM"
@@ -188,9 +188,31 @@ run_preflight() {
         fi
         log debug "[${pf_label}] Checks filter active: $checks_filter"
     fi
+    if [[ -n "$exclude_filter" ]]; then
+        IFS=',' read -ra tmp_exclude <<<"$exclude_filter"
+        for c in "${tmp_exclude[@]}"; do
+            local norm
+            norm="$(normalize_check_tag "$c")"
+            if [[ -n "$norm" ]]; then
+                PF_DENY["${norm}"]=1
+            else
+                unknown_checks+=("$c")
+            fi
+        done
+        log debug "[${pf_label}] Exclude filter active: $exclude_filter"
+    fi
+    if [[ ${#unknown_checks[@]} -gt 0 ]]; then
+        log err "[${pf_label}] Unknown check tags: ${unknown_checks[*]}"
+        log info "[${pf_label}] Valid tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF,PERM"
+        $errexit_set && set -e
+        return 1
+    fi
 
     should_run() {
         local tag="$1"
+        if [[ -n "${PF_DENY[$tag]:-}" ]]; then
+            return 1
+        fi
         if [[ -z "$checks_filter" ]]; then
             return 0
         fi
@@ -892,9 +914,18 @@ run_preflight() {
     if should_run "FS"; then
     # ---- Filesystem perms ----
     if [ -n "${INM_BASE_DIRECTORY:-}" ] && df -h "$INM_BASE_DIRECTORY" >/dev/null 2>&1; then
-        local diskline
-        diskline=$(df -hP "$INM_BASE_DIRECTORY" | awk 'NR==2{print "avail:"$4" used:"$3" mount:"$6}')
-        add_result INFO "FS" "$diskline (Disk @base)"
+        local diskline=""
+        local df_out="" used="" avail="" mount=""
+        df_out="$(df -hP "$INM_BASE_DIRECTORY" 2>/dev/null | awk 'NR==2{print $3" "$4" "$6}')" || true
+        read -r used avail mount <<<"$df_out"
+        if [[ "$used" =~ ^[0-9]+$ && "$avail" =~ ^[0-9]+$ ]]; then
+            df_out="$(df -h "$INM_BASE_DIRECTORY" 2>/dev/null | awk 'NR==2{print $3" "$4" "$6}')" || true
+            read -r used avail mount <<<"$df_out"
+        fi
+        if [[ -n "$used" && -n "$avail" && -n "$mount" ]]; then
+            diskline="avail:${avail} used:${used} mount:${mount}"
+            add_result INFO "FS" "$diskline (Disk @base)"
+        fi
     fi
     # Base, app, backup directories
     local fs_items=()
@@ -959,6 +990,7 @@ run_preflight() {
             fi
         fi
         local sz=""
+        local base_dir="${INM_BASE_DIRECTORY%/}"
         if [ -d "$dir" ] && command -v du >/dev/null 2>&1; then
             if command -v timeout >/dev/null 2>&1; then
                 local du_timeout du_out du_rc=0
@@ -976,6 +1008,18 @@ run_preflight() {
                 fi
             else
                 sz=$(du -sh "$dir" 2>/dev/null | awk '{print $1}')
+            fi
+        fi
+        if [[ -z "$sz" && -n "$base_dir" && "${dir%/}" == "$base_dir" ]] && command -v du >/dev/null 2>&1; then
+            local base_out base_rc=0
+            local errexit_set=false
+            [[ $- == *e* ]] && errexit_set=true
+            set +e
+            base_out=$(du -sh "$dir" 2>/dev/null)
+            base_rc=$?
+            $errexit_set && set -e
+            if [ "$base_rc" -eq 0 ]; then
+                sz=$(echo "$base_out" | awk '{print $1}')
             fi
         fi
         local created_note=""
@@ -1046,6 +1090,26 @@ run_preflight() {
             else
                 cache_global_detail="Writable: $gc_path (Cache global)"
             fi
+            local gc_size=""
+            if command -v du >/dev/null 2>&1; then
+                if command -v timeout >/dev/null 2>&1; then
+                    local du_out du_rc=0
+                    local errexit_set=false
+                    [[ $- == *e* ]] && errexit_set=true
+                    set +e
+                    du_out=$(timeout 5 du -sh "$gc_path" 2>/dev/null)
+                    du_rc=$?
+                    $errexit_set && set -e
+                    if [ "$du_rc" -eq 0 ]; then
+                        gc_size=$(echo "$du_out" | awk '{print $1}')
+                    elif [ "$du_rc" -eq 124 ]; then
+                        log debug "[FS] Cache global size check timed out; skipping size."
+                    fi
+                else
+                    gc_size=$(du -sh "$gc_path" 2>/dev/null | awk '{print $1}')
+                fi
+            fi
+            [[ -n "$gc_size" ]] && cache_global_detail+=" (Size: $gc_size)"
             cache_global_mode="$(_fs_get_mode "$gc_path")"
             if [[ -n "$cache_global_mode" ]]; then
                 local other=$((cache_global_mode % 10))
@@ -1093,6 +1157,26 @@ run_preflight() {
             else
                 cache_local_detail="Writable: $lc_path (Cache local)"
             fi
+            local lc_size=""
+            if command -v du >/dev/null 2>&1; then
+                if command -v timeout >/dev/null 2>&1; then
+                    local du_out du_rc=0
+                    local errexit_set=false
+                    [[ $- == *e* ]] && errexit_set=true
+                    set +e
+                    du_out=$(timeout 5 du -sh "$lc_path" 2>/dev/null)
+                    du_rc=$?
+                    $errexit_set && set -e
+                    if [ "$du_rc" -eq 0 ]; then
+                        lc_size=$(echo "$du_out" | awk '{print $1}')
+                    elif [ "$du_rc" -eq 124 ]; then
+                        log debug "[FS] Cache local size check timed out; skipping size."
+                    fi
+                else
+                    lc_size=$(du -sh "$lc_path" 2>/dev/null | awk '{print $1}')
+                fi
+            fi
+            [[ -n "$lc_size" ]] && cache_local_detail+=" (Size: $lc_size)"
             cache_local_mode="$(_fs_get_mode "$lc_path")"
             if [[ -n "$cache_local_mode" ]]; then
                 local other=$((cache_local_mode % 10))
@@ -1272,7 +1356,17 @@ run_preflight() {
 
     if should_run "CRON"; then
     # ---- Cron presence ----
+    local cron_running=false
     if pgrep -x cron >/dev/null 2>&1 || pgrep -x crond >/dev/null 2>&1 || pgrep -x systemd >/dev/null 2>&1; then
+        cron_running=true
+    elif [[ -f /var/run/cron.pid || -f /var/run/crond.pid ]]; then
+        cron_running=true
+    elif command -v service >/dev/null 2>&1; then
+        if service -e 2>/dev/null | grep -Eq '/cron$'; then
+            cron_running=true
+        fi
+    fi
+    if [[ "$cron_running" == true ]]; then
         add_result OK "CRON" "Scheduler service present"
     else
         add_result WARN "CRON" "No cron service detected"
@@ -1286,6 +1380,10 @@ run_preflight() {
     fi
     if [[ -r "$cron_file" ]]; then
         cron_lines+=$'\n'"$(cat "$cron_file")"
+    fi
+    local home_cronfile="${HOME:-}/cronfile"
+    if [[ -r "$home_cronfile" ]]; then
+        cron_lines+=$'\n'"$(cat "$home_cronfile")"
     fi
     local cron_scope="$cron_lines"
     local base_clean="${INM_BASE_DIRECTORY%/}"

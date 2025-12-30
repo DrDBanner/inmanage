@@ -67,6 +67,13 @@ install_cronjob() {
         local errexit_set=false
         [[ $- == *e* ]] && errexit_set=true
         set +e
+        local home_cronfile="${HOME:-}/cronfile"
+        if [[ -f "$home_cronfile" ]]; then
+            if grep -Eqi 'inmanage|invoiceninja|artisan schedule:run' "$home_cronfile" 2>/dev/null; then
+                log info "[CRON] Existing cronfile entries detected (${home_cronfile})."
+                found=true
+            fi
+        fi
         if command -v crontab >/dev/null 2>&1; then
             local crontab_out=""
             crontab_out="$(crontab -l 2>/dev/null || true)"
@@ -250,13 +257,25 @@ install_cronjob() {
         fi
 
         local tmpclean="${tmpfile}.clean"
-        if crontab -l >/dev/null 2>&1; then
-            if ! crontab -l > "$tmpfile" 2>/dev/null; then
-                log warn "[CRON] Failed to read existing user crontab; starting fresh."
+        local home_cronfile="${HOME:-}/cronfile"
+        local use_home_cronfile=false
+        if [[ -f "$home_cronfile" ]]; then
+            if cp "$home_cronfile" "$tmpfile" 2>/dev/null; then
+                use_home_cronfile=true
+                log info "[CRON] Using existing cronfile: $home_cronfile"
+            else
+                log warn "[CRON] Failed to read ${home_cronfile}; falling back to user crontab."
+            fi
+        fi
+        if [[ "$use_home_cronfile" != true ]]; then
+            if crontab -l >/dev/null 2>&1; then
+                if ! crontab -l > "$tmpfile" 2>/dev/null; then
+                    log warn "[CRON] Failed to read existing user crontab; starting fresh."
+                    : > "$tmpfile"
+                fi
+            else
                 : > "$tmpfile"
             fi
-        else
-            : > "$tmpfile"
         fi
         if ! awk 'BEGIN{skip=0} /^# INMANAGE CRON BEGIN/{skip=1; next} /^# INMANAGE CRON END/{skip=0; next} !skip{print}' \
             "$tmpfile" > "$tmpclean"; then
@@ -295,6 +314,10 @@ install_cronjob() {
             INM_CRON_INSTALLED_JOBS="$(detect_installed_jobs "$tmpfile")"
             INM_CRON_INSTALL_TARGET="crontab"
             log ok "[CRON] Installed cronjobs in user crontab"
+            if [[ "$use_home_cronfile" == true ]]; then
+                cp "$tmpfile" "$home_cronfile" 2>/dev/null || \
+                    log warn "[CRON] Failed to update ${home_cronfile} after install."
+            fi
         else
             log err "[CRON] Failed to write user crontab${crontab_out:+: $crontab_out}"
             rm -f "$tmpfile"
