@@ -1283,15 +1283,6 @@ run_preflight() {
     fi
 
     # ---- ENV (CLI / APP) ----
-    read_env_value() {
-        local file="$1" key="$2"
-        if declare -F read_env_value_safe >/dev/null 2>&1; then
-            read_env_value_safe "$file" "$key" || true
-            return 0
-        fi
-        grep -E "^${key}=" "$file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ' || true
-    }
-
     if should_run "ENVCLI"; then
         if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_SELF_ENV_FILE" ]; then
             local cli_keys=(INM_ENFORCED_USER INM_BASE_DIRECTORY INM_INSTALLATION_DIRECTORY INM_BACKUP_DIRECTORY INM_CACHE_GLOBAL_DIRECTORY INM_CACHE_LOCAL_DIRECTORY)

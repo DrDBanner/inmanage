@@ -81,7 +81,8 @@ run_backup() {
         src_real=$(realpath "$src" 2>/dev/null || echo "$src")
         [[ "$src_real" == "$install_real"/* ]]
     }
-    local ts="$(date +%Y-%m-%d_%H-%M)"
+    local ts
+    ts="$(date +%Y-%m-%d_%H-%M)"
     local base_name=""
     if [[ -z "$name" ]]; then
         base_name="${INM_PROGRAM_NAME:-invoiceninja}_${ts}"
@@ -142,16 +143,6 @@ run_backup() {
         else
             "$@"
         fi
-    }
-
-    read_env_value() {
-        local file="$1"
-        local key="$2"
-        if declare -F read_env_value_safe >/dev/null 2>&1; then
-            read_env_value_safe "$file" "$key" || true
-            return 0
-        fi
-        grep -E "^${key}=" "$file" 2>/dev/null | tail -n1 | cut -d= -f2-
     }
 
     set_env_value() {

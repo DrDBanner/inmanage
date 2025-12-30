@@ -4,19 +4,23 @@
 [[ -n ${__NOTIFY_EMAIL_HELPER_LOADED:-} ]] && return
 __NOTIFY_EMAIL_HELPER_LOADED=1
 
+notify_env_helper_path="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/helpers/env_read.sh"
+# shellcheck source=/dev/null
+[ -f "$notify_env_helper_path" ] && {
+    source "$notify_env_helper_path"
+    __INM_LOADED_FILES="${__INM_LOADED_FILES:+$__INM_LOADED_FILES:}$notify_env_helper_path"
+}
+
+if ! declare -F read_env_value >/dev/null 2>&1; then
+    read_env_value() {
+        log err "[NOTIFY] Env read helper missing; cannot read MAIL_* settings."
+        return 1
+    }
+fi
+
 # ---------------------------------------------------------------------
 # Email helpers
 # ---------------------------------------------------------------------
-notify_read_env_value() {
-    local file="$1"
-    local key="$2"
-    if declare -F read_env_value_safe >/dev/null 2>&1; then
-        read_env_value_safe "$file" "$key" || true
-        return 0
-    fi
-    grep -E "^${key}=" "$file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ' || true
-}
-
 notify_send_email() {
     local subject="$1"
     local body="$2"
@@ -31,17 +35,17 @@ notify_send_email() {
     fi
 
     local mailer host port user pass enc from from_name
-    mailer="$(notify_read_env_value "$INM_ENV_FILE" "MAIL_MAILER")"
+    mailer="$(read_env_value "$INM_ENV_FILE" "MAIL_MAILER")"
     if [ -z "$mailer" ]; then
-        mailer="$(notify_read_env_value "$INM_ENV_FILE" "MAIL_DRIVER")"
+        mailer="$(read_env_value "$INM_ENV_FILE" "MAIL_DRIVER")"
     fi
-    host="$(notify_read_env_value "$INM_ENV_FILE" "MAIL_HOST")"
-    port="$(notify_read_env_value "$INM_ENV_FILE" "MAIL_PORT")"
-    user="$(notify_read_env_value "$INM_ENV_FILE" "MAIL_USERNAME")"
-    pass="$(notify_read_env_value "$INM_ENV_FILE" "MAIL_PASSWORD")"
-    enc="$(notify_read_env_value "$INM_ENV_FILE" "MAIL_ENCRYPTION")"
-    from="$(notify_read_env_value "$INM_ENV_FILE" "MAIL_FROM_ADDRESS")"
-    from_name="$(notify_read_env_value "$INM_ENV_FILE" "MAIL_FROM_NAME")"
+    host="$(read_env_value "$INM_ENV_FILE" "MAIL_HOST")"
+    port="$(read_env_value "$INM_ENV_FILE" "MAIL_PORT")"
+    user="$(read_env_value "$INM_ENV_FILE" "MAIL_USERNAME")"
+    pass="$(read_env_value "$INM_ENV_FILE" "MAIL_PASSWORD")"
+    enc="$(read_env_value "$INM_ENV_FILE" "MAIL_ENCRYPTION")"
+    from="$(read_env_value "$INM_ENV_FILE" "MAIL_FROM_ADDRESS")"
+    from_name="$(read_env_value "$INM_ENV_FILE" "MAIL_FROM_NAME")"
 
     if [ -n "${INM_NOTIFY_EMAIL_FROM:-}" ]; then
         from="${INM_NOTIFY_EMAIL_FROM}"

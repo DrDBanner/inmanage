@@ -32,6 +32,14 @@ else
     exit 1
 fi
 
+if [ -f "${LIB_DIR}/helpers/env_read.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/env_read.sh"
+else
+    echo "[ERR] Missing env read helper: ${LIB_DIR}/helpers/env_read.sh" >&2
+    exit 1
+fi
+
 if [ -f "${LIB_DIR}/helpers/distro_compatibility.sh" ]; then
     # shellcheck source=/dev/null
     source "${LIB_DIR}/helpers/distro_compatibility.sh"
