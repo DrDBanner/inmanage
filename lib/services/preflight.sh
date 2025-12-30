@@ -1445,9 +1445,9 @@ run_preflight() {
             printf "%02d:%02d" "$hour" "$min"
         fi
     }
-    if echo "$cron_scope" | grep -Eq "(inmanage|inm) core backup"; then
+    if echo "$cron_scope" | grep -Eq "(inmanage(\.sh)?|inm(\.sh)?) core backup"; then
         local backup_line backup_time
-        backup_line="$(echo "$cron_scope" | grep -E "(inmanage|inm) core backup" | head -n1)"
+        backup_line="$(echo "$cron_scope" | grep -E "(inmanage(\.sh)?|inm(\.sh)?) core backup" | head -n1)"
         backup_time="$(extract_cron_time "$backup_line")"
         if [[ -n "$backup_time" ]]; then
             add_result OK "CRON" "backup cron present (${backup_time})"
