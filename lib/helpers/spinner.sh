@@ -184,3 +184,13 @@ spinner_run() {
     spinner_stop
     return $rc
 }
+
+spinner_run_optional() {
+    local msg="$1"
+    shift
+    if declare -F spinner_run >/dev/null 2>&1; then
+        spinner_run "$msg" "$@"
+    else
+        "$@"
+    fi
+}

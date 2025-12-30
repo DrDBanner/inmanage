@@ -40,3 +40,57 @@ parse_named_args() {
         done
     fi
 }
+
+# ---------------------------------------------------------------------
+# args_get()
+#
+# Returns the first matching key value from a local assoc array (if provided)
+# and then from global NAMED_ARGS. Keys can be passed with dashes or underscores.
+# If a key exists with an empty value, that empty value is returned.
+#
+# Usage:
+#   args_get ARGS "default" key1 key2 key3
+#   args_get - "default" key1 key2
+# ---------------------------------------------------------------------
+args_get() {
+    local arr_name="$1"
+    shift
+    local default="$1"
+    shift
+    local key=""
+    local has_local=false
+    local has_global=false
+    local -n arr_ref
+
+    if [[ -n "$arr_name" && "$arr_name" != "-" ]] && declare -p "$arr_name" >/dev/null 2>&1; then
+        has_local=true
+        declare -n arr_ref="$arr_name"
+    fi
+    if declare -p NAMED_ARGS >/dev/null 2>&1; then
+        has_global=true
+    fi
+
+    for key in "$@"; do
+        key="${key//-/_}"
+        if [[ "$has_local" == true && ${arr_ref[$key]+_} ]]; then
+            printf "%s" "${arr_ref[$key]}"
+            return 0
+        fi
+        if [[ "$has_global" == true && ${NAMED_ARGS[$key]+_} ]]; then
+            printf "%s" "${NAMED_ARGS[$key]}"
+            return 0
+        fi
+    done
+    printf "%s" "$default"
+}
+
+# ---------------------------------------------------------------------
+# args_is_true()
+# ---------------------------------------------------------------------
+args_is_true() {
+    local value="${1:-}"
+    case "${value,,}" in
+        1|true|yes|y|on) return 0 ;;
+    esac
+    return 1
+}

@@ -52,8 +52,9 @@ prompt_var() {
     if read "${read_opts[@]}" input; then
         echo "${input:-$default}"
     else
+        local read_rc=$?
         echo   # newline
-        if [[ $? -eq 142 ]]; then
+        if [[ "$read_rc" -eq 142 ]]; then
             log err "[PROMPT] Timeout after ${timeout}s – no input received"
         else
             log err "[PROMPT] Input aborted"
@@ -76,4 +77,33 @@ prompt_confirm() {
     local reply
     reply="$(prompt_var "$key" "$default" "$text" "$silent" "$timeout")" || return 1
     [[ "$reply" =~ ^([yY][eE][sS]|[yY])$ ]]
+}
+
+# ---------------------------------------------------------------------
+# prompt_secret_keep_current()
+# Keeps current value when input is empty; hides input.
+# ---------------------------------------------------------------------
+prompt_secret_keep_current() {
+    local prompt="$1"
+    local current="$2"
+    local timeout="${3:-60}"
+    local input=""
+    if [[ ! -t 0 ]]; then
+        log err "[PROMPT] No TTY available for secret input."
+        return 1
+    fi
+    printf "\n%s\n" "$prompt" >&2
+    printf "[leave blank to keep current] > " >&2
+    # shellcheck disable=SC2162
+    if ! read -r -s -t "$timeout" input; then
+        echo >&2
+        log err "[PROMPT] Input aborted"
+        return 1
+    fi
+    echo >&2
+    if [[ -z "$input" ]]; then
+        printf "%s" "$current"
+    else
+        printf "%s" "$input"
+    fi
 }

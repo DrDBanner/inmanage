@@ -40,6 +40,39 @@ resolve_script_path() {
     )
 }
 
+# ---------------------------------------------------------------------
+# resolve_cli_command_path()
+#
+# Resolves the inmanage CLI command path for cron usage.
+# ---------------------------------------------------------------------
+resolve_cli_command_path() {
+    local candidate
+    local resolved=""
+    local base_clean="${INM_BASE_DIRECTORY%/}"
+    local candidates=()
+    if [[ -n "${SCRIPT_PATH:-}" ]]; then
+        candidates+=("$SCRIPT_PATH")
+    fi
+    if command -v inm >/dev/null 2>&1; then
+        candidates+=("$(command -v inm)")
+    fi
+    if command -v inmanage >/dev/null 2>&1; then
+        candidates+=("$(command -v inmanage)")
+    fi
+    if [[ -n "$base_clean" ]]; then
+        candidates+=("${base_clean}/inmanage" "${base_clean}/inm")
+    fi
+    for candidate in "${candidates[@]}"; do
+        [[ -z "$candidate" ]] && continue
+        resolved="$(realpath "$candidate" 2>/dev/null || echo "$candidate")"
+        if [ -x "$resolved" ]; then
+            printf "%s" "$resolved"
+            return 0
+        fi
+    done
+    return 1
+}
+
 file_read_state() {
     local path="$1"
     if [ -r "$path" ]; then
