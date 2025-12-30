@@ -180,8 +180,8 @@ install_self() {
   log debug "[SELF] Installing to: $install_dir"
   mkdir -p "$install_dir" || { log err "[SELF] Cannot create $install_dir"; return 1; }
 
-  if declare -F spinner_run >/dev/null 2>&1; then
-      spinner_run "Installing inmanage..." safe_move_or_copy_and_clean "$(dirname "$source_script")" "$install_dir" copy || {
+  if declare -F spinner_run_optional >/dev/null 2>&1; then
+      spinner_run_optional "Installing inmanage..." safe_move_or_copy_and_clean "$(dirname "$source_script")" "$install_dir" copy || {
           log err "[SELF] Failed to copy files"; return 1;
       }
   else
@@ -317,8 +317,8 @@ install_self() {
           exit 1
       }
 
-      if declare -F spinner_run >/dev/null 2>&1; then
-          spinner_run "Installing inmanage..." safe_move_or_copy_and_clean "$(dirname "$source_path")" "$app_dir" || {
+      if declare -F spinner_run_optional >/dev/null 2>&1; then
+          spinner_run_optional "Installing inmanage..." safe_move_or_copy_and_clean "$(dirname "$source_path")" "$app_dir" || {
               log err "[INSTALL] Could not deploy to project directory."
               exit 1
           }

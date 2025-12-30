@@ -135,16 +135,6 @@ run_backup() {
         fi
     }
 
-    run_with_spinner() {
-        local msg="$1"
-        shift
-        if declare -F spinner_run >/dev/null 2>&1; then
-            spinner_run "$msg" "$@"
-        else
-            "$@"
-        fi
-    }
-
     set_env_value() {
         local file="$1"
         local key="$2"
@@ -157,26 +147,15 @@ run_backup() {
         fi
     }
 
-    prompt_secret_keep_current() {
-        local prompt="$1"
-        local current="$2"
-        local input=""
-        if [[ ! -t 0 ]]; then
-            log err "[BACKUP] No TTY available for migration export input."
-            return 1
-        fi
-        printf "\n%s\n" "$prompt" >&2
-        printf "[leave blank to keep current] > " >&2
-        if ! read -r -s input; then
-            echo >&2
-            log err "[BACKUP] Failed to read input."
-            return 1
-        fi
-        echo >&2
-        if [[ -z "$input" ]]; then
-            printf "%s" "$current"
+    run_with_spinner() {
+        local msg="$1"
+        shift
+        if declare -F spinner_run_optional >/dev/null 2>&1; then
+            spinner_run_optional "$msg" "$@"
+        elif declare -F spinner_run >/dev/null 2>&1; then
+            spinner_run "$msg" "$@"
         else
-            printf "%s" "$input"
+            "$@"
         fi
     }
 

@@ -47,7 +47,8 @@ write_config_setting() {
 # ---------------------------------------------------------------------
 write_config_defaults() {
     local key
-    if [ "${#default_settings_order[@]}" -gt 0 ]; then
+    # shellcheck disable=SC2154
+    if declare -p default_settings_order >/dev/null 2>&1 && [ "${#default_settings_order[@]}" -gt 0 ]; then
         for key in "${default_settings_order[@]}"; do
             if [ -n "${default_settings[$key]+_}" ]; then
                 write_config_setting "$key"
@@ -57,14 +58,15 @@ write_config_defaults() {
 
     local remaining_keys=()
     for key in "${!default_settings[@]}"; do
+        # shellcheck disable=SC2154
         if [[ " ${default_settings_order[*]} " != *" ${key} "* ]]; then
             remaining_keys+=("$key")
         fi
     done
     if [ "${#remaining_keys[@]}" -gt 0 ]; then
-        IFS=$'\n' remaining_keys=($(printf '%s\n' "${remaining_keys[@]}" | sort))
-        unset IFS
-        for key in "${remaining_keys[@]}"; do
+        local sorted_remaining=()
+        mapfile -t sorted_remaining < <(printf '%s\n' "${remaining_keys[@]}" | sort)
+        for key in "${sorted_remaining[@]}"; do
             write_config_setting "$key"
         done
     fi
@@ -215,7 +217,8 @@ create_own_config() {
         for key in "${prompt_order[@]}"; do
             local defval="${default_settings[$key]}"
             local prompt_text="${prompt_texts[$key]:-"Provide value for $key:"}"
-            read -r -p "$(echo -e "${GREEN}\n${prompt_text}\n${NC}${GRAY}[$defval]${NC}${RESET} > ")" input
+            local input=""
+            input="$(prompt_var "$key" "$defval" "$prompt_text" false 120)" || return 1
             # shellcheck disable=SC2004
             default_settings[$key]="${input:-$defval}"
         done
@@ -229,6 +232,7 @@ create_own_config() {
 
     for key in "${!default_settings[@]}"; do
         if [ -n "${NAMED_ARGS[$key]+_}" ]; then
+            # shellcheck disable=SC2004
             default_settings[$key]="${NAMED_ARGS[$key]}"
         fi
     done
