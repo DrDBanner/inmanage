@@ -121,10 +121,10 @@ notify_email_format_html() {
 
         if [ -n "$details" ]; then
             printf "<div style=\"margin-top:12px;\"></div>"
-            printf "<table class=\"table table-sm\" style=\"border-collapse: collapse; width:100%%;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" role=\"presentation\">"
+            printf "<table class=\"table table-sm\" style=\"border-collapse: collapse; width:100%%; table-layout:fixed;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" role=\"presentation\">"
             printf "<thead><tr><th align=\"left\" style=\"padding:6px 12px 6px 0; border-bottom:1px solid #e5e7eb; width:18%%; min-width:80px;\">Check</th>"
             printf "<th align=\"left\" style=\"padding:6px 12px; border-bottom:1px solid #e5e7eb; white-space:nowrap; width:12%%; min-width:70px;\">Status</th>"
-            printf "<th align=\"left\" style=\"padding:4px 0; border-bottom:1px solid #e5e7eb;\">Detail</th></tr></thead>"
+            printf "<th align=\"left\" style=\"padding:4px 0; border-bottom:1px solid #e5e7eb; width:70%%;\">Detail</th></tr></thead>"
             printf "<tbody>"
             local line status_text status_cell detail check
             local current=-1
@@ -188,7 +188,7 @@ notify_email_format_html() {
                 fi
                 printf "<tr><td style=\"padding:6px 12px 6px 0; border-bottom:1px solid #f3f4f6; vertical-align:top; width:18%%; min-width:80px;\">%s</td>" "$check"
                 printf "<td style=\"padding:6px 12px; border-bottom:1px solid #f3f4f6; vertical-align:top; white-space:nowrap; width:12%%; min-width:70px;\">%s</td>" "$status_cell"
-                printf "<td style=\"padding:4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top; word-break: normal; overflow-wrap: break-word;\">%s</td></tr>" "$detail"
+                printf "<td style=\"padding:4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top; white-space:normal; word-break: break-word; overflow-wrap:anywhere; max-width:0;\">%s</td></tr>" "$detail"
             done
             printf "</tbody></table>"
         fi
