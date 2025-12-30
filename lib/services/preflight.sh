@@ -1913,10 +1913,14 @@ if ($fp) { fclose($fp); echo "OK"; } else { echo "ERR:" . $errstr; }' 2>/dev/nul
 
     if [[ "$notify_heartbeat" == true || "$notify_test" == true ]]; then
         local notify_summary=""
+        local include_ok=false
+        if [[ "$notify_test" == true ]]; then
+            include_ok=true
+        fi
         local idx
         for idx in "${!PF_STATUS[@]}"; do
             local status="${PF_STATUS[$idx]}"
-            if [[ "$status" != "OK" ]]; then
+            if [[ "$include_ok" == true || "$status" != "OK" ]]; then
                 notify_summary+="${PF_CHECK[$idx]} | ${status} | ${PF_DETAIL[$idx]}"$'\n'
             fi
         done

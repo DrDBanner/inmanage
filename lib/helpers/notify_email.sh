@@ -23,6 +23,9 @@ fi
 # ---------------------------------------------------------------------
 notify_email_html_escape() {
     local value="$1"
+    value="${value//&gt;/>}"
+    value="${value//&lt;/<}"
+    value="${value//&amp;/&}"
     value="${value//&/&amp;}"
     value="${value//</&lt;}"
     value="${value//>/&gt;}"
@@ -53,61 +56,80 @@ notify_email_format_html() {
     local status_color
     status_color="$(notify_email_status_color "$status")"
     local base_dir="${INM_BASE_DIRECTORY%/}"
-    local app_url="${APP_URL%/}"
+    local app_url="${APP_URL:-}"
+    app_url="${app_url%/}"
 
     {
-        printf "<div style=\"font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 13px;\">"
-        printf "<table style=\"border-collapse: collapse;\">"
-        printf "<tr><td style=\"padding:2px 8px 2px 0;\">Event</td><td>%s</td></tr>" "$(notify_email_html_escape "$title")"
+        printf "<div>"
+        printf "<table style=\"border-collapse: collapse;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">"
+        printf "<tr><td style=\"padding:2px 10px 2px 0;\">Event</td><td>%s</td></tr>" "$(notify_email_html_escape "$title")"
         if [ -n "$status" ]; then
-            printf "<tr><td style=\"padding:2px 8px 2px 0;\">Status</td><td><span style=\"color:%s;font-weight:600;\">%s</span></td></tr>" \
+            printf "<tr><td style=\"padding:2px 10px 2px 0;\">Status</td><td><span style=\"color:%s;font-weight:600;\">%s</span></td></tr>" \
                 "$status_color" "$(notify_email_html_escape "$status")"
         fi
         if [ -n "$counts" ]; then
-            printf "<tr><td style=\"padding:2px 8px 2px 0;\">Counts</td><td>%s</td></tr>" "$(notify_email_html_escape "$counts")"
+            printf "<tr><td style=\"padding:2px 10px 2px 0;\">Counts</td><td>%s</td></tr>" "$(notify_email_html_escape "$counts")"
         fi
-        printf "<tr><td style=\"padding:2px 8px 2px 0;\">Host</td><td>%s</td></tr>" "$(notify_email_html_escape "$host")"
+        printf "<tr><td style=\"padding:2px 10px 2px 0;\">Host</td><td>%s</td></tr>" "$(notify_email_html_escape "$host")"
         if [ -n "$base_dir" ]; then
-            printf "<tr><td style=\"padding:2px 8px 2px 0;\">Base</td><td>%s</td></tr>" "$(notify_email_html_escape "$base_dir")"
+            printf "<tr><td style=\"padding:2px 10px 2px 0;\">Base</td><td>%s</td></tr>" "$(notify_email_html_escape "$base_dir")"
         fi
         if [ -n "$app_url" ]; then
-            printf "<tr><td style=\"padding:2px 8px 2px 0;\">APP_URL</td><td><a href=\"%s\" style=\"color:#1d4ed8;\">%s</a></td></tr>" \
+            printf "<tr><td style=\"padding:2px 10px 2px 0;\">APP_URL</td><td><a href=\"%s\" style=\"color:#1d4ed8;\">%s</a></td></tr>" \
                 "$(notify_email_html_escape "$app_url")" "$(notify_email_html_escape "$app_url")"
         fi
-        printf "<tr><td style=\"padding:2px 8px 2px 0;\">Timestamp</td><td>%s</td></tr>" "$(notify_email_html_escape "$ts")"
+        printf "<tr><td style=\"padding:2px 10px 2px 0;\">Timestamp</td><td>%s</td></tr>" "$(notify_email_html_escape "$ts")"
         printf "</table>"
 
         if [ -n "$details" ]; then
             printf "<div style=\"margin-top:12px;\"></div>"
-            printf "<table style=\"border-collapse: collapse; width: 100%%;\">"
-            printf "<tr><th align=\"left\" style=\"padding:4px 8px; border-bottom:1px solid #e5e7eb;\">Check</th>"
-            printf "<th align=\"left\" style=\"padding:4px 8px; border-bottom:1px solid #e5e7eb;\">Status</th>"
-            printf "<th align=\"left\" style=\"padding:4px 8px; border-bottom:1px solid #e5e7eb;\">Detail</th></tr>"
+            printf "<table style=\"border-collapse: collapse; width: 100%%;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">"
+            printf "<tr><th align=\"left\" style=\"padding:4px 10px 4px 0; border-bottom:1px solid #e5e7eb;\">Check</th>"
+            printf "<th align=\"left\" style=\"padding:4px 10px; border-bottom:1px solid #e5e7eb; white-space:nowrap; width:1%%;\">Status</th>"
+            printf "<th align=\"left\" style=\"padding:4px 0; border-bottom:1px solid #e5e7eb;\">Detail</th></tr>"
             local line status_text status_cell detail check
+            local current=-1
+            local row_checks=()
+            local row_status=()
+            local row_details=()
             while IFS= read -r line; do
                 [ -z "$line" ] && continue
-                check="${line%%|*}"
                 if [[ "$line" == *"|"* ]]; then
+                    check="${line%%|*}"
                     status_text="${line#*|}"
                     status_text="${status_text%%|*}"
                     detail="${line#*|}"
                     detail="${detail#*|}"
+                    current=$((current + 1))
+                    row_checks[current]="$(printf "%s" "$check" | sed 's/[[:space:]]*$//')"
+                    row_status[current]="$(printf "%s" "$status_text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+                    row_details[current]="$(printf "%s" "$detail" | sed 's/^[[:space:]]*//')"
                 else
-                    status_text=""
-                    detail="$line"
+                    if [ "$current" -ge 0 ]; then
+                        row_details[current]+=$'\n'"$line"
+                    else
+                        current=$((current + 1))
+                        row_checks[current]=""
+                        row_status[current]=""
+                        row_details[current]="$line"
+                    fi
                 fi
-                check="$(notify_email_html_escape "$(printf "%s" "$check" | sed 's/[[:space:]]*$//')")"
-                status_text="$(notify_email_html_escape "$(printf "%s" "$status_text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')")"
-                detail="$(notify_email_html_escape "$(printf "%s" "$detail" | sed 's/^[[:space:]]*//')")"
+            done <<< "$details"
+            local idx
+            for idx in "${!row_details[@]}"; do
+                check="$(notify_email_html_escape "${row_checks[$idx]}")"
+                status_text="$(notify_email_html_escape "${row_status[$idx]}")"
+                detail="$(notify_email_html_escape "${row_details[$idx]}")"
+                detail="${detail//$'\n'/<br>}"
                 status_cell="$status_text"
                 if [ -n "$status_text" ]; then
                     status_color="$(notify_email_status_color "$status_text")"
                     status_cell="<span style=\"color:${status_color};font-weight:600;\">${status_text}</span>"
                 fi
-                printf "<tr><td style=\"padding:4px 8px; border-bottom:1px solid #f3f4f6;\">%s</td>" "$check"
-                printf "<td style=\"padding:4px 8px; border-bottom:1px solid #f3f4f6;\">%s</td>" "$status_cell"
-                printf "<td style=\"padding:4px 8px; border-bottom:1px solid #f3f4f6;\">%s</td></tr>" "$detail"
-            done <<< "$details"
+                printf "<tr><td style=\"padding:4px 10px 4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top;\">%s</td>" "$check"
+                printf "<td style=\"padding:4px 10px; border-bottom:1px solid #f3f4f6; vertical-align:top; white-space:nowrap;\">%s</td>" "$status_cell"
+                printf "<td style=\"padding:4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top;\">%s</td></tr>" "$detail"
+            done
             printf "</table>"
         fi
         printf "</div>"
