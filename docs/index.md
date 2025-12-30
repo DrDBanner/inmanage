@@ -325,8 +325,11 @@ Shared steps (both provisioned and clean):
 - Resolve base/app paths and load CLI/app config.
 - Optional hooks: `pre-install`.
 - Archive existing app directory if present.
-- Download the Invoice Ninja release and unpack into a temp directory.
-- Deploy the new app into the install path.
+- Download the Invoice Ninja release into cache.
+- Fetch release digest and verify the tarball checksum (fails if missing, unless you explicitly bypass).
+- Extract into a temp directory.
+- Stage extracted files into `<install>_temp` and switch to the install path via move when possible, otherwise copy with cleanup (safe move/copy).
+- Deploy the new app into the install path and enforce ownership/permissions (if configured).
 - Run artisan tasks: `key:generate`, `optimize`, `up`, `ninja:translations`, snappdf setup.
 - Optional cron install (configurable).
 - Optional hooks: `post-install`.
@@ -335,9 +338,10 @@ Shared steps (both provisioned and clean):
 Provisioned‑only steps:
 
 - Place `.env` from `.env.provision` (remove the inm header block).
+- If tables exist, require confirmation (`--force` or prompt) because it is destructive.
 - Pre‑provision DB backup if tables exist (unless `--no-backup`).
 - Create DB/user if needed (`DB_ELEVATED_*`), then `migrate:fresh --seed`.
-- Language seeder + create admin user.
+- Language seeder + `ninja:post-update` + create admin user.
 - Optional migration restore if `INM_MIGRATION_BACKUP` is set.
 
 Clean‑only steps:
@@ -397,6 +401,21 @@ Update switches (`inm core update`):
 | `--preserve-paths=a,b` | unset | Extra paths to preserve from the previous install (comma‑separated, relative to app root). Env: `INM_PRESERVE_PATHS`. |
 | `--no-db-backup` | `false` | Skip the mandatory pre-update DB backup (not recommended). |
 | `--bypass-check-sha` | `false` | Skip release digest verification (not recommended). |
+
+Update flow (under the hood):
+
+- Read current version and resolve target version.
+- Create a pre‑update DB backup (unless `--no-db-backup`).
+- Download target release into cache.
+- Fetch release digest and verify the tarball checksum (fails if missing, unless you explicitly bypass).
+- Extract into a temp directory.
+- Prepare a new version directory and copy preserved paths.
+- Move current app to a rollback directory.
+- Activate the new version via move when possible, otherwise copy with cleanup (safe move/copy).
+- Enforce ownership/permissions (if configured).
+- Run artisan tasks: `migrate --force`, `optimize`, `ninja:post-update`, `ninja:check-data`, `ninja:translations`, `ninja:design-update`, `up`.
+- Snappdf setup (if enabled).
+- Cleanup cached versions and old rollbacks (per retention settings).
 
 Rollback:
 
@@ -564,6 +583,7 @@ Health switches (`inm core health`):
 | --- | --- | --- |
 | `--checks=TAG1,TAG2` | unset | Run only selected check groups. |
 | `--check=TAG1,TAG2` | unset | Alias for `--checks`. |
+| `--exclude=TAG1,TAG2` | unset | Run all checks except these groups. |
 | `--fix-permissions` | `false` | Repair ownership where possible. |
 | `--override-enforced-user` | `false` | Skip user switching for this run. |
 | `--no-cli-clear` | `false` | Keep terminal output (skip clear + logo). |
@@ -575,6 +595,15 @@ Filter tags:
 ```text
 CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,SNAPPDF
 ```
+
+Exclude example:
+
+```bash
+inm core health --exclude=FS,CRON
+```
+
+> [!TIP]
+> If you run `--fix-permissions` as root, add `--override-enforced-user` to avoid switching to the enforced user.
 
 ## Cron
 
@@ -595,10 +624,11 @@ Cron switches (`inm core cron install`):
 | Switch | Default | Description |
 | --- | --- | --- |
 | `--user=name` | enforced user | User for cron entries. |
-| `--jobs=scheduler / backup / both` | `scheduler` | Which jobs to install. |
+| `--jobs=scheduler / backup / both` | `both` | Which jobs to install. |
 | `--mode=auto / system / crontab` | `auto` | Force cron install mode. |
 | `--backup-time=HH:MM` | `03:24` | Backup cron schedule (24h). |
 | `--cron-file=path` | `/etc/cron.d/invoiceninja` | Target cron file (root mode only). |
+| `--create-test-job` | `false` | Add a test job that touches `crontestfile` every minute. |
 
 Cron uninstall:
 
@@ -611,6 +641,15 @@ Short form:
 ```bash
 inm cron uninstall
 ```
+
+Cron test job removal:
+
+```bash
+inm core cron uninstall --remove-test-job
+```
+
+> [!NOTE]
+> Some systems use `${HOME}/cronfile` for user cron entries. If it exists, inm will use it as the base and keep it updated.
 
 ## Environment helper
 

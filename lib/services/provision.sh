@@ -228,6 +228,11 @@ provision_post_install() {
             log warn "[PROV] Language seeder failed; language list may be incomplete."
         fi
     fi
+    if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
+        run_artisan ninja:post-update || log warn "[PROV] artisan post-update failed"
+    else
+        run_artisan ninja:post-update >/dev/null 2>&1 || log warn "[PROV] artisan post-update failed"
+    fi
         if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
             run_artisan ninja:create-account --email=admin@admin.com --password=admin || {
                 log err "[PROV] Failed to create default user"
