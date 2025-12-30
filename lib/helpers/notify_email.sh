@@ -69,8 +69,20 @@ notify_email_format_html() {
     local base_dir="${INM_BASE_DIRECTORY%/}"
     local app_url="${APP_URL:-}"
     app_url="${app_url%/}"
+    if [ -n "$details" ]; then
+        details="${details//$'\r'/}"
+        details="${details//\\n/$'\n'}"
+    fi
 
     {
+        printf "<!doctype html>"
+        printf "<html lang=\"en\" xmlns=\"http://www.w3.org/1999/xhtml\">"
+        printf "<head>"
+        printf "<meta charset=\"utf-8\">"
+        printf "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        printf "<title>Inmanage Notification</title>"
+        printf "</head>"
+        printf "<body style=\"margin:0; padding:0;\">"
         printf "<div style=\"max-width:680px; width:100%%;\">"
         printf "<table class=\"table table-sm\" style=\"width:100%%; border-collapse: collapse;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" role=\"presentation\">"
         printf "<tr><th align=\"left\" style=\"padding:2px 12px 2px 0; white-space:nowrap; vertical-align:top; min-width:96px;\">Event</th>"
@@ -106,9 +118,10 @@ notify_email_format_html() {
         if [ -n "$details" ]; then
             printf "<div style=\"margin-top:12px;\"></div>"
             printf "<table class=\"table table-sm\" style=\"border-collapse: collapse; width:100%%;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" role=\"presentation\">"
-            printf "<tr><th align=\"left\" style=\"padding:4px 12px 4px 0; border-bottom:1px solid #e5e7eb; min-width:72px;\">Check</th>"
+            printf "<thead><tr><th align=\"left\" style=\"padding:4px 12px 4px 0; border-bottom:1px solid #e5e7eb; min-width:72px;\">Check</th>"
             printf "<th align=\"left\" style=\"padding:4px 12px; border-bottom:1px solid #e5e7eb; white-space:nowrap; min-width:64px;\">Status</th>"
-            printf "<th align=\"left\" style=\"padding:4px 0; border-bottom:1px solid #e5e7eb;\">Detail</th></tr>"
+            printf "<th align=\"left\" style=\"padding:4px 0; border-bottom:1px solid #e5e7eb;\">Detail</th></tr></thead>"
+            printf "<tbody>"
             local line status_text status_cell detail check
             local current=-1
             local row_checks=()
@@ -162,7 +175,7 @@ notify_email_format_html() {
                     continue
                 fi
                 if [ "${row_checks[$idx]}" = "__SECTION__" ]; then
-                    printf "<tr><td colspan=\"3\" style=\"padding:10px 0 4px; font-weight:600; border-bottom:1px solid #e5e7eb;\">%s</td></tr>" "$detail"
+                    printf "<tr><th colspan=\"3\" align=\"left\" style=\"padding:10px 0 4px; font-weight:600; border-top:1px solid #e5e7eb; background:#f9fafb;\">%s</th></tr>" "$detail"
                     continue
                 fi
                 if [ -n "$status_text" ]; then
@@ -173,9 +186,10 @@ notify_email_format_html() {
                 printf "<td style=\"padding:4px 12px; border-bottom:1px solid #f3f4f6; vertical-align:top; white-space:nowrap; min-width:64px;\">%s</td>" "$status_cell"
                 printf "<td style=\"padding:4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top; word-break: normal; overflow-wrap: break-word;\">%s</td></tr>" "$detail"
             done
-            printf "</table>"
+            printf "</tbody></table>"
         fi
         printf "</div>"
+        printf "</body></html>"
     }
 }
 
