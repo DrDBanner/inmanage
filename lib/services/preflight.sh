@@ -1377,6 +1377,17 @@ run_preflight() {
         if crontab -l >/dev/null 2>&1; then
             cron_lines="$(crontab -l 2>/dev/null)"
         fi
+        if [[ -n "$enforced_user" && "$enforced_user" != "$current_user" ]]; then
+            local enforced_cron=""
+            if [[ $EUID -eq 0 ]]; then
+                enforced_cron="$(crontab -l -u "$enforced_user" 2>/dev/null || true)"
+            elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+                enforced_cron="$(sudo -n crontab -l -u "$enforced_user" 2>/dev/null || true)"
+            fi
+            if [[ -n "$enforced_cron" ]]; then
+                cron_lines+=$'\n'"$enforced_cron"
+            fi
+        fi
     fi
     if [[ -r "$cron_file" ]]; then
         cron_lines+=$'\n'"$(cat "$cron_file")"
@@ -1384,6 +1395,21 @@ run_preflight() {
     local home_cronfile="${HOME:-}/cronfile"
     if [[ -r "$home_cronfile" ]]; then
         cron_lines+=$'\n'"$(cat "$home_cronfile")"
+    fi
+    if [[ -n "$enforced_user" && "$enforced_user" != "$current_user" ]]; then
+        local enforced_home=""
+        if command -v getent >/dev/null 2>&1; then
+            enforced_home="$(getent passwd "$enforced_user" 2>/dev/null | cut -d: -f6)"
+        fi
+        if [[ -z "$enforced_home" ]]; then
+            enforced_home="$(eval echo "~$enforced_user" 2>/dev/null || true)"
+        fi
+        if [[ -n "$enforced_home" && "$enforced_home" != "~$enforced_user" ]]; then
+            local enforced_cronfile="${enforced_home%/}/cronfile"
+            if [[ -r "$enforced_cronfile" ]]; then
+                cron_lines+=$'\n'"$(cat "$enforced_cronfile")"
+            fi
+        fi
     fi
     local cron_scope="$cron_lines"
     local base_clean="${INM_BASE_DIRECTORY%/}"
