@@ -19,11 +19,108 @@ if ! declare -F read_env_value >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------
+# Email formatting helpers
+# ---------------------------------------------------------------------
+notify_email_html_escape() {
+    local value="$1"
+    value="${value//&/&amp;}"
+    value="${value//</&lt;}"
+    value="${value//>/&gt;}"
+    value="${value//\"/&quot;}"
+    printf "%s" "$value"
+}
+
+notify_email_status_color() {
+    local status="${1^^}"
+    case "$status" in
+        ERR) echo "#b91c1c" ;;
+        WARN) echo "#b45309" ;;
+        OK) echo "#15803d" ;;
+        INFO) echo "#1d4ed8" ;;
+        *) echo "#6b7280" ;;
+    esac
+}
+
+notify_email_format_html() {
+    local title="$1"
+    local status="${2:-}"
+    local counts="${3:-}"
+    local details="${4:-}"
+    local host
+    host="$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo "unknown")"
+    local ts
+    ts="$(date '+%Y-%m-%d %H:%M:%S')"
+    local status_color
+    status_color="$(notify_email_status_color "$status")"
+    local base_dir="${INM_BASE_DIRECTORY%/}"
+    local app_url="${APP_URL%/}"
+
+    {
+        printf "<div style=\"font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 13px;\">"
+        printf "<table style=\"border-collapse: collapse;\">"
+        printf "<tr><td style=\"padding:2px 8px 2px 0;\">Event</td><td>%s</td></tr>" "$(notify_email_html_escape "$title")"
+        if [ -n "$status" ]; then
+            printf "<tr><td style=\"padding:2px 8px 2px 0;\">Status</td><td><span style=\"color:%s;font-weight:600;\">%s</span></td></tr>" \
+                "$status_color" "$(notify_email_html_escape "$status")"
+        fi
+        if [ -n "$counts" ]; then
+            printf "<tr><td style=\"padding:2px 8px 2px 0;\">Counts</td><td>%s</td></tr>" "$(notify_email_html_escape "$counts")"
+        fi
+        printf "<tr><td style=\"padding:2px 8px 2px 0;\">Host</td><td>%s</td></tr>" "$(notify_email_html_escape "$host")"
+        if [ -n "$base_dir" ]; then
+            printf "<tr><td style=\"padding:2px 8px 2px 0;\">Base</td><td>%s</td></tr>" "$(notify_email_html_escape "$base_dir")"
+        fi
+        if [ -n "$app_url" ]; then
+            printf "<tr><td style=\"padding:2px 8px 2px 0;\">APP_URL</td><td><a href=\"%s\" style=\"color:#1d4ed8;\">%s</a></td></tr>" \
+                "$(notify_email_html_escape "$app_url")" "$(notify_email_html_escape "$app_url")"
+        fi
+        printf "<tr><td style=\"padding:2px 8px 2px 0;\">Timestamp</td><td>%s</td></tr>" "$(notify_email_html_escape "$ts")"
+        printf "</table>"
+
+        if [ -n "$details" ]; then
+            printf "<div style=\"margin-top:12px;\"></div>"
+            printf "<table style=\"border-collapse: collapse; width: 100%%;\">"
+            printf "<tr><th align=\"left\" style=\"padding:4px 8px; border-bottom:1px solid #e5e7eb;\">Check</th>"
+            printf "<th align=\"left\" style=\"padding:4px 8px; border-bottom:1px solid #e5e7eb;\">Status</th>"
+            printf "<th align=\"left\" style=\"padding:4px 8px; border-bottom:1px solid #e5e7eb;\">Detail</th></tr>"
+            local line status_text status_cell detail check
+            while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                check="${line%%|*}"
+                if [[ "$line" == *"|"* ]]; then
+                    status_text="${line#*|}"
+                    status_text="${status_text%%|*}"
+                    detail="${line#*|}"
+                    detail="${detail#*|}"
+                else
+                    status_text=""
+                    detail="$line"
+                fi
+                check="$(notify_email_html_escape "$(printf "%s" "$check" | sed 's/[[:space:]]*$//')")"
+                status_text="$(notify_email_html_escape "$(printf "%s" "$status_text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')")"
+                detail="$(notify_email_html_escape "$(printf "%s" "$detail" | sed 's/^[[:space:]]*//')")"
+                status_cell="$status_text"
+                if [ -n "$status_text" ]; then
+                    status_color="$(notify_email_status_color "$status_text")"
+                    status_cell="<span style=\"color:${status_color};font-weight:600;\">${status_text}</span>"
+                fi
+                printf "<tr><td style=\"padding:4px 8px; border-bottom:1px solid #f3f4f6;\">%s</td>" "$check"
+                printf "<td style=\"padding:4px 8px; border-bottom:1px solid #f3f4f6;\">%s</td>" "$status_cell"
+                printf "<td style=\"padding:4px 8px; border-bottom:1px solid #f3f4f6;\">%s</td></tr>" "$detail"
+            done <<< "$details"
+            printf "</table>"
+        fi
+        printf "</div>"
+    }
+}
+
+# ---------------------------------------------------------------------
 # Email helpers
 # ---------------------------------------------------------------------
 notify_send_email() {
     local subject="$1"
     local body="$2"
+    local body_html="${3:-}"
     local to="${INM_NOTIFY_EMAIL_TO:-}"
     if [ -z "$to" ]; then
         log warn "[NOTIFY] Email target missing (INM_NOTIFY_EMAIL_TO)."
@@ -87,6 +184,7 @@ notify_send_email() {
         INM_SMTP_USER="$user" INM_SMTP_PASS="$pass" INM_SMTP_ENCRYPTION="$enc" \
         INM_SMTP_FROM="$from" INM_SMTP_FROM_NAME="$from_name" INM_SMTP_TO="$to" \
         INM_SMTP_SUBJECT="$subject" INM_SMTP_TIMEOUT="${INM_NOTIFY_SMTP_TIMEOUT:-10}" \
+        INM_SMTP_BODY_HTML="$body_html" \
         "$php_exec" -r '
 $host = getenv("INM_SMTP_HOST");
 $port = (int) (getenv("INM_SMTP_PORT") ?: 587);
@@ -98,6 +196,7 @@ $fromName = getenv("INM_SMTP_FROM_NAME");
 $toRaw = getenv("INM_SMTP_TO");
 $subject = getenv("INM_SMTP_SUBJECT");
 $timeout = (int) (getenv("INM_SMTP_TIMEOUT") ?: 10);
+$bodyHtml = getenv("INM_SMTP_BODY_HTML");
 $body = stream_get_contents(STDIN);
 if (!$host || !$toRaw || !$from) { fwrite(STDERR, "ERR: missing smtp params"); exit(1); }
 $server = ($enc === "ssl") ? "ssl://{$host}:{$port}" : "{$host}:{$port}";
@@ -164,8 +263,26 @@ $headers .= "To: " . implode(", ", $toList) . "\r\n";
 $headers .= "Subject: " . $subject . "\r\n";
 $headers .= "Date: " . date("r") . "\r\n";
 $headers .= "MIME-Version: 1.0\r\n";
-$headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
-$msg = $headers . "\r\n" . $body;
+if ($bodyHtml !== false && $bodyHtml !== "") {
+    $boundary = "INM-";
+    if (function_exists("random_bytes")) {
+        $boundary .= bin2hex(random_bytes(6));
+    } else {
+        $boundary .= uniqid();
+    }
+    $headers .= "Content-Type: multipart/alternative; boundary=\"" . $boundary . "\"\r\n";
+    $msg = $headers . "\r\n";
+    $msg .= "--" . $boundary . "\r\n";
+    $msg .= "Content-Type: text/plain; charset=UTF-8\r\n\r\n";
+    $msg .= $body . "\r\n";
+    $msg .= "--" . $boundary . "\r\n";
+    $msg .= "Content-Type: text/html; charset=UTF-8\r\n\r\n";
+    $msg .= $bodyHtml . "\r\n";
+    $msg .= "--" . $boundary . "--\r\n";
+} else {
+    $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
+    $msg = $headers . "\r\n" . $body;
+}
 $resp = $send("MAIL FROM:<" . $from . ">");
 $expect($resp, "250");
 foreach ($toList as $rcpt) {

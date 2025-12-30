@@ -200,6 +200,7 @@ notify_transport_webhook() {
 notify_send_targets() {
     local subject="$1"
     local body="$2"
+    local body_html="${3:-}"
     local targets
     targets="$(notify_resolve_targets)"
     if [ -z "$targets" ]; then
@@ -216,7 +217,11 @@ notify_send_targets() {
             continue
         fi
         if declare -F "$handler" >/dev/null 2>&1; then
-            "$handler" "$subject" "$body" && sent_any=true
+            if [[ "$t" == "email" ]]; then
+                "$handler" "$subject" "$body" "$body_html" && sent_any=true
+            else
+                "$handler" "$subject" "$body" && sent_any=true
+            fi
         else
             log warn "[NOTIFY] Unknown target: $t"
         fi
@@ -240,10 +245,13 @@ notify_emit_event() {
     if ! notify_level_allows "$level" "$threshold" && [[ "$force" != "true" ]]; then
         return 0
     fi
-    local subject body
+    local subject body body_html=""
     subject="$(notify_format_subject "$title" "$level")"
     body="$(notify_format_body "$title" "$level" "" "$details")"
-    notify_send_targets "$subject" "$body"
+    if declare -F notify_email_format_html >/dev/null 2>&1; then
+        body_html="$(notify_email_format_html "$title" "$level" "" "$details")"
+    fi
+    notify_send_targets "$subject" "$body" "$body_html"
 }
 
 notify_emit_heartbeat() {
@@ -266,10 +274,13 @@ notify_emit_heartbeat() {
     local summary counts
     summary="$(notify_build_summary "$details")"
     counts="$(notify_counts_line "$ok" "$warn" "$err")"
-    local subject body
+    local subject body body_html=""
     subject="$(notify_format_subject "Heartbeat" "$aggregate")"
     body="$(notify_format_body "Heartbeat" "$aggregate" "$counts" "$summary")"
-    notify_send_targets "$subject" "$body"
+    if declare -F notify_email_format_html >/dev/null 2>&1; then
+        body_html="$(notify_email_format_html "Heartbeat" "$aggregate" "$counts" "$summary")"
+    fi
+    notify_send_targets "$subject" "$body" "$body_html"
 }
 
 notify_send_test() {
@@ -285,8 +296,11 @@ notify_send_test() {
     local summary counts
     summary="$(notify_build_summary "$details")"
     counts="$(notify_counts_line "$ok" "$warn" "$err")"
-    local subject body
+    local subject body body_html=""
     subject="$(notify_format_subject "Notification test" "$aggregate")"
     body="$(notify_format_body "Notification test" "$aggregate" "$counts" "$summary")"
-    notify_send_targets "$subject" "$body"
+    if declare -F notify_email_format_html >/dev/null 2>&1; then
+        body_html="$(notify_email_format_html "Notification test" "$aggregate" "$counts" "$summary")"
+    fi
+    notify_send_targets "$subject" "$body" "$body_html"
 }
