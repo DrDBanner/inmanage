@@ -133,16 +133,36 @@ provision_post_install() {
     log info "[PROV] Running provisioned post-install steps"
 
     local force="${NAMED_ARGS[force]:-${force_update:-false}}"
+    local can_prompt=false
+    [[ -t 0 && -t 1 ]] && declare -F prompt_confirm >/dev/null 2>&1 && can_prompt=true
+
     if [[ "$force" != true ]]; then
         local table_count=""
+        local reason=""
+        local prompt_msg=""
+
         if table_count=$(db_table_count 2>/dev/null); then
             if [[ "$table_count" -gt 0 ]]; then
-                log err "[PROV] Provisioning is destructive. Re-run with --force to proceed."
-                return 1
+                reason="existing tables: ${table_count}"
+                prompt_msg="Database has ${table_count} existing tables. Backup and replace? (yes/no):"
             fi
         elif [[ "${INM_PROVISION_FRESH_INSTALL:-false}" != true ]]; then
-            log err "[PROV] Provisioning is destructive. Re-run with --force to proceed."
-            return 1
+            reason="table count unknown"
+            prompt_msg="Database state is unknown (could not count tables). Backup and replace? (yes/no):"
+        fi
+
+        if [[ -n "$reason" ]]; then
+            if [[ "$can_prompt" == true ]]; then
+                if prompt_confirm "PROV_DESTRUCTIVE" "no" "$prompt_msg" false 120; then
+                    force=true
+                else
+                    log err "[PROV] Provisioning aborted: ${reason}."
+                    return 1
+                fi
+            else
+                log err "[PROV] Provisioning is destructive (${reason}). Re-run with --force to proceed."
+                return 1
+            fi
         fi
     fi
 

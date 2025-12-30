@@ -14,6 +14,12 @@ safe_move_or_copy_and_clean() {
     local src="$1"
     local dst="$2"
     local mode="${3:-move}"      # move or copy
+    local ok_level="${INM_SMO_LOG_LEVEL:-ok}"
+
+    case "$ok_level" in
+        ok|info|debug) ;;
+        *) ok_level="ok" ;;
+    esac
 
     if [ -z "$src" ] || [ -z "$dst" ]; then
         log err "[SMO] Source or destination missing."
@@ -26,12 +32,12 @@ safe_move_or_copy_and_clean() {
         fi
         if [ "$mode" = "move" ] || [ "$mode" = "new" ]; then
             if mv "$src" "$dst"; then
-                log ok "[SMO] Moved file $src to $dst"
+                log "$ok_level" "[SMO] Moved file $src to $dst"
                 return 0
             fi
         else
             if cp -a "$src" "$dst"; then
-                log ok "[SMO] Copied file $src to $dst"
+                log "$ok_level" "[SMO] Copied file $src to $dst"
                 return 0
             fi
         fi
@@ -49,7 +55,7 @@ safe_move_or_copy_and_clean() {
 
     if [ "$mode" = "move" ] || [ "$mode" = "new" ]; then
         if mv "$src" "$dst"; then
-            log ok "[SMO] Moved $src to $dst"
+            log "$ok_level" "[SMO] Moved $src to $dst"
             return 0
         fi
         log warn "[SMO] mv failed, trying rsync copy..."
@@ -70,7 +76,7 @@ safe_move_or_copy_and_clean() {
         safe_rm_rf "$src" "$(dirname "$src")" || log warn "[SMO] Failed to remove source $src after copy"
     fi
 
-    log ok "[SMO] Copied $src to $dst"
+    log "$ok_level" "[SMO] Copied $src to $dst"
     return 0
 }
 

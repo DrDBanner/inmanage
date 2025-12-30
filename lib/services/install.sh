@@ -13,6 +13,7 @@ run_installation() {
         return 0
     fi
     local mode="$1"
+    local smolog_prev=""
     if [[ -z "$mode" && "${NAMED_ARGS[provision]:-false}" == "true" ]]; then
         mode="Provisioned"
         log debug "[TAR] Provision mode enabled via --provision."
@@ -187,10 +188,18 @@ run_installation() {
             log debug "[TAR] Forced install – archiving current version"
         fi
 
+        local smolog_prev="${INM_SMO_LOG_LEVEL:-}"
+        INM_SMO_LOG_LEVEL="debug"
         safe_move_or_copy_and_clean "$src_path" "$rollback_dir" new || {
             log err "[TAR] Failed to archive old installation"
             return 1
         }
+        if [ -n "$smolog_prev" ]; then
+            INM_SMO_LOG_LEVEL="$smolog_prev"
+        else
+            unset INM_SMO_LOG_LEVEL
+        fi
+        log info "[TAR] Previous installation archived."
     fi
 
     log info "[TAR] Installation begins"
@@ -227,12 +236,19 @@ run_installation() {
         return 1
     }
     safe_rm_rf "$temp_dir" "$(dirname "$temp_dir")" || true
-    log debug "[TAR] Staging extracted files into: $temp_dir (from $source_dir/invoiceninja_v$latest_version.tar.gz)"
+    log debug "[TAR] Staging extracted files for atomic switch: $temp_dir (source: $source_dir/invoiceninja_v$latest_version.tar.gz)"
+    smolog_prev="${INM_SMO_LOG_LEVEL:-}"
+    INM_SMO_LOG_LEVEL="debug"
     safe_move_or_copy_and_clean "$source_root" "$temp_dir" move || {
         log err "[TAR] Failed to move/copy extracted files"
         safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
         return 1
     }
+    if [ -n "$smolog_prev" ]; then
+        INM_SMO_LOG_LEVEL="$smolog_prev"
+    else
+        unset INM_SMO_LOG_LEVEL
+    fi
     safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
 
     local archived_dir="${install_parent}/${install_name}_rollback_${timestamp}"
@@ -278,10 +294,18 @@ run_installation() {
         fi
     fi
 
+    smolog_prev="${INM_SMO_LOG_LEVEL:-}"
+    INM_SMO_LOG_LEVEL="debug"
     safe_move_or_copy_and_clean "${install_parent}/${install_name}_temp" "$install_path" || {
         log err "[TAR] Failed to deploy new installation"
         return 1
     }
+    if [ -n "$smolog_prev" ]; then
+        INM_SMO_LOG_LEVEL="$smolog_prev"
+    else
+        unset INM_SMO_LOG_LEVEL
+    fi
+    log info "[TAR] Installation files deployed successfully."
     if declare -F enforce_ownership >/dev/null 2>&1; then
         enforce_ownership "$install_path"
     fi
