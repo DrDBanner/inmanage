@@ -36,8 +36,25 @@ declare -A default_settings=(
     ["INM_ENV_MODE"]="600" # Strict mode for app .env when fixing perms.
     ["INM_KEEP_BACKUPS"]="2"
     ["INM_GH_API_CREDENTIALS"]="" # Format username:password or token:x-oauth.
+    ["INM_NOTIFY_ENABLED"]="false" # Enable notifications for non-interactive failures.
+    ["INM_NOTIFY_TARGETS"]="email,webhook" # Comma list: email,webhook.
+    ["INM_NOTIFY_EMAIL_TO"]="" # Comma-separated recipients.
+    ["INM_NOTIFY_EMAIL_FROM"]="" # Override sender address (defaults to app MAIL_FROM_ADDRESS).
+    ["INM_NOTIFY_EMAIL_FROM_NAME"]="" # Override sender name (defaults to app MAIL_FROM_NAME).
+    ["INM_NOTIFY_LEVEL"]="ERR" # Minimum severity: ERR|WARN|INFO.
+    ["INM_NOTIFY_NONINTERACTIVE_ONLY"]="true" # Only send when no TTY is attached.
+    ["INM_NOTIFY_SMTP_TIMEOUT"]="10" # SMTP connect timeout (seconds).
+    ["INM_NOTIFY_HOOKS_ENABLED"]="true" # Enable hook notifications.
+    ["INM_NOTIFY_HOOKS_FAILURE"]="true" # Notify when hooks fail.
+    ["INM_NOTIFY_HOOKS_SUCCESS"]="false" # Notify when hooks succeed.
+    ["INM_NOTIFY_HEARTBEAT_ENABLED"]="false" # Enable daily health heartbeat (requires heartbeat cron job).
+    ["INM_NOTIFY_HEARTBEAT_TIME"]="06:00" # Heartbeat cron time (HH:MM).
+    ["INM_NOTIFY_HEARTBEAT_LEVEL"]="ERR" # Minimum heartbeat severity.
+    ["INM_NOTIFY_HEARTBEAT_INCLUDE"]="" # Optional include filter for heartbeat checks.
+    ["INM_NOTIFY_HEARTBEAT_EXCLUDE"]="" # Optional exclude filter for heartbeat checks.
+    ["INM_NOTIFY_WEBHOOK_URL"]="" # Webhook target URL.
     ["INM_MIGRATION_BACKUP"]="" # Use LATEST or path to run restore after provision.
-    ["INM_CLI_COMPATIBILITY"]="new" # Missing => treat as legacy install.
+    ["INM_CLI_COMPATIBILITY"]="ultron" # Missing => treat as legacy install.
 )
 
 # shellcheck disable=SC2034
@@ -66,6 +83,23 @@ default_settings_order=(
     "INM_ENV_MODE"
     "INM_KEEP_BACKUPS"
     "INM_GH_API_CREDENTIALS"
+    "INM_NOTIFY_ENABLED"
+    "INM_NOTIFY_TARGETS"
+    "INM_NOTIFY_EMAIL_TO"
+    "INM_NOTIFY_EMAIL_FROM"
+    "INM_NOTIFY_EMAIL_FROM_NAME"
+    "INM_NOTIFY_LEVEL"
+    "INM_NOTIFY_NONINTERACTIVE_ONLY"
+    "INM_NOTIFY_SMTP_TIMEOUT"
+    "INM_NOTIFY_HOOKS_ENABLED"
+    "INM_NOTIFY_HOOKS_FAILURE"
+    "INM_NOTIFY_HOOKS_SUCCESS"
+    "INM_NOTIFY_HEARTBEAT_ENABLED"
+    "INM_NOTIFY_HEARTBEAT_TIME"
+    "INM_NOTIFY_HEARTBEAT_LEVEL"
+    "INM_NOTIFY_HEARTBEAT_INCLUDE"
+    "INM_NOTIFY_HEARTBEAT_EXCLUDE"
+    "INM_NOTIFY_WEBHOOK_URL"
     "INM_MIGRATION_BACKUP"
     "INM_CLI_COMPATIBILITY"
 )
@@ -106,6 +140,23 @@ declare -A default_inline_comments=(
     ["INM_FILE_MODE"]="Default file mode for app files when fixing perms."
     ["INM_ENV_MODE"]="Strict mode for app .env when fixing perms."
     ["INM_GH_API_CREDENTIALS"]="Format username:password or token:x-oauth."
+    ["INM_NOTIFY_ENABLED"]="Enable notifications for non-interactive failures."
+    ["INM_NOTIFY_TARGETS"]="Comma list: email,webhook."
+    ["INM_NOTIFY_EMAIL_TO"]="Comma-separated recipients."
+    ["INM_NOTIFY_EMAIL_FROM"]="Override sender address (defaults to app MAIL_FROM_ADDRESS)."
+    ["INM_NOTIFY_EMAIL_FROM_NAME"]="Override sender name (defaults to app MAIL_FROM_NAME)."
+    ["INM_NOTIFY_LEVEL"]="Minimum severity: ERR|WARN|INFO."
+    ["INM_NOTIFY_NONINTERACTIVE_ONLY"]="Only send when no TTY is attached."
+    ["INM_NOTIFY_SMTP_TIMEOUT"]="SMTP connect timeout (seconds)."
+    ["INM_NOTIFY_HOOKS_ENABLED"]="Enable hook notifications."
+    ["INM_NOTIFY_HOOKS_FAILURE"]="Notify when hooks fail."
+    ["INM_NOTIFY_HOOKS_SUCCESS"]="Notify when hooks succeed."
+    ["INM_NOTIFY_HEARTBEAT_ENABLED"]="Enable daily health heartbeat (requires heartbeat cron job)."
+    ["INM_NOTIFY_HEARTBEAT_TIME"]="Heartbeat cron time (HH:MM)."
+    ["INM_NOTIFY_HEARTBEAT_LEVEL"]="Minimum heartbeat severity."
+    ["INM_NOTIFY_HEARTBEAT_INCLUDE"]="Optional include filter for heartbeat checks."
+    ["INM_NOTIFY_HEARTBEAT_EXCLUDE"]="Optional exclude filter for heartbeat checks."
+    ["INM_NOTIFY_WEBHOOK_URL"]="Webhook target URL."
     ["INM_MIGRATION_BACKUP"]="Use LATEST or path to run restore after provision."
     ["INM_CLI_COMPATIBILITY"]="Missing => treat as legacy install."
 )

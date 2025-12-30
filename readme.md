@@ -143,3 +143,19 @@ inm core versions
 
 Full documentation:
 <https://github.com/DrDBanner/inmanage/blob/main/docs/index.md>
+
+## What you get
+
+Short list below; each item is explained in the extended docs.
+
+- Fast CLI install (system, user, or project) with self‑update and uninstall.
+- Guided install wizard (clean or provisioned), plus fully unattended provision flow.
+- Safe updates with rollback directories and optional DB backups.
+- Full backups (app + DB) and restore (bundle or DB‑only).
+- Health checks for system, app, PHP, DB, filesystem, cron, network, and more.
+- Cron management (artisan scheduler, backup, heartbeat, test job).
+- Notification system (email/webhook) for non‑interactive failures and heartbeats.
+- Hooks before/after install, update, and backup for custom automation.
+- Permission enforcement and fix‑permissions helper for shared hosting.
+- Cache management for downloads and release pruning.
+- Version discovery for installed/latest/cached releases.

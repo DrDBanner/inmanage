@@ -43,11 +43,28 @@ setup_environment() {
         /usr/local/mysql/bin
     )
     # FreeBSD iports PHP versions: prefer newest installed.
+    local mysql_iports_paths=()
+    local mysql_iports_entries=()
+    local mysql_dir=""
     local php_iports_paths=()
     local php_iports_entries=()
     local php_dir=""
     if [ "$is_freebsd" -eq 1 ] && [ -d /usr/iports ]; then
-        extra_paths+=(/usr/iports/bin /usr/iports/sbin /usr/iports/mysql84/bin)
+        extra_paths+=(/usr/iports/bin /usr/iports/sbin)
+        for mysql_dir in /usr/iports/mysql*/bin; do
+            [[ -d "$mysql_dir" ]] || continue
+            local mysql_base
+            mysql_base="$(basename "$(dirname "$mysql_dir")")"
+            local mysql_num="${mysql_base#mysql}"
+            if [[ "$mysql_num" =~ ^[0-9]+$ ]]; then
+                mysql_iports_entries+=("${mysql_num}|${mysql_dir}")
+            fi
+        done
+        if [ "${#mysql_iports_entries[@]}" -gt 0 ]; then
+            IFS=$'\n' mysql_iports_entries=($(printf '%s\n' "${mysql_iports_entries[@]}" | sort -rn))
+            unset IFS
+            mysql_iports_paths+=("${mysql_iports_entries[0]#*|}")
+        fi
         for php_dir in /usr/iports/php*/bin; do
             [[ -d "$php_dir" ]] || continue
             local php_base
@@ -64,7 +81,7 @@ setup_environment() {
         fi
     fi
 
-    for p in "${default_paths[@]}" "${extra_paths[@]}" "${php_iports_paths[@]}"; do
+    for p in "${default_paths[@]}" "${extra_paths[@]}" "${mysql_iports_paths[@]}" "${php_iports_paths[@]}"; do
         [[ -d "$p" ]] && case ":$clean_path:" in
             *":$p:"*) : ;;    # already present → skip
             *) clean_path="${clean_path:+$clean_path:}$p" ;;

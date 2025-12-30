@@ -18,7 +18,7 @@ core:
   install                     Install Invoice Ninja
                               --clean --provision --version=<v>
                               --cron-mode=auto|system|crontab --no-cron-install
-                              --cron-jobs=artisan|backup|both --no-backup-cron --backup-time=HH:MM
+                              --cron-jobs=artisan|backup|heartbeat|essential|both|all --no-backup-cron --backup-time=HH:MM --heartbeat-time=HH:MM
                               --bypass-check-sha
                               Provisioned install is recommended (uses .inmanage/.env.provision; create with core provision spawn)
 
@@ -37,7 +37,8 @@ core:
                               --latest --auto-select=true|false
 
   health (info)               Preflight/health check
-                              --checks=TAG1,TAG2 --check=TAG1,TAG2 --fix-permissions
+                              --checks=TAG1,TAG2 --check=TAG1,TAG2 --exclude=TAG1,TAG2 --fix-permissions
+                              --notify-test --notify-heartbeat
                               (e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
 
   versions                    Show installed/latest/cached app versions
@@ -128,10 +129,12 @@ core actions:
   restore --file=... [--force] [--include-app=true|false] [--target=...] [--latest] [--auto-select=true|false]
          # DB import requires --force.
   health | info [--checks=TAG1,TAG2] [--check=TAG1,TAG2] [--exclude=TAG1,TAG2] [--fix-permissions]
+         [--notify-test] [--notify-heartbeat]
   versions
   prune [--override-enforced-user] | prune_versions | prune_backups
   clear-cache
-  cron install|uninstall [--user=name] [--jobs=artisan|backup|both] [--mode=auto|system|crontab] [--backup-time=HH:MM]
+  cron install|uninstall [--user=name] [--jobs=artisan|backup|heartbeat|essential|both|all]
+                        [--mode=auto|system|crontab] [--backup-time=HH:MM] [--heartbeat-time=HH:MM]
                         [--create-test-job] [--remove-test-job]
   provision spawn [--provision-file=path] [--backup-file=path|--latest-backup]
 EOF
@@ -203,9 +206,10 @@ core install:
   - Optional: --no-backup to skip pre-provision DB backup
   - Optional: --no-cron-install to skip cron setup
   - Optional: --cron-mode=auto|system|crontab to force cron install mode
-  - Optional: --cron-jobs=artisan|backup|both to override installed cron jobs
+  - Optional: --cron-jobs=artisan|backup|heartbeat|essential|both|all to override installed cron jobs
   - Optional: --no-backup-cron to skip the backup cron job
   - Optional: --backup-time=HH:MM for the backup cron schedule (default 03:24)
+  - Optional: --heartbeat-time=HH:MM for the heartbeat cron schedule (default 06:00)
   - Optional: --bypass-check-sha to skip release digest verification (not recommended)
   - Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 EOF

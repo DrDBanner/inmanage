@@ -741,7 +741,7 @@ maybe_migrate_legacy_cli() {
     return 0
   fi
   local legacy_mode="${NAMED_ARGS[legacy_migration]:-${NAMED_ARGS[legacy-migration]:-${INM_LEGACY_MIGRATION:-}}}"
-  if [[ "$compat" == "new" ]]; then
+  if [[ "$compat" == "new" || "$compat" == "ultron" ]]; then
     return 0
   fi
   if [[ "$compat" == "legacy" || "$compat" == "old" ]] && [[ ! "${legacy_mode,,}" =~ ^(force|yes|y)$ ]]; then
@@ -822,9 +822,9 @@ maybe_migrate_legacy_cli() {
   legacy_create_symlinks "$base_dir" "$new_script"
 
   if declare -F env_set >/dev/null 2>&1 && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
-    env_set cli "INM_CLI_COMPATIBILITY=\"new\"" >/dev/null 2>&1 || true
+    env_set cli "INM_CLI_COMPATIBILITY=\"ultron\"" >/dev/null 2>&1 || true
   fi
-  export INM_CLI_COMPATIBILITY="new"
+  export INM_CLI_COMPATIBILITY="ultron"
   legacy_warn_shell_alias
 
   log ok "[SELF] Migration complete. Re-launching..."

@@ -123,6 +123,10 @@ run_preflight() {
         [exclude]=1
         [exclude_checks]=1
         [exclude-checks]=1
+        [notify_test]=1
+        [notify-test]=1
+        [notify_heartbeat]=1
+        [notify-heartbeat]=1
         [fix_permissions]=1
         [debug]=1
         [dry_run]=1
@@ -154,7 +158,7 @@ run_preflight() {
             bad_args+=("--${arg_key//_/-}")
         done
         log err "[${pf_label}] Unknown arguments: ${bad_args[*]}"
-        log info "[${pf_label}] Allowed flags: --checks=TAG1,TAG2 --check=TAG1,TAG2 --exclude=TAG1,TAG2 --fix-permissions --debug --dry-run --override-enforced-user --no-cli-clear --fast --skip-snappdf --skip-github"
+        log info "[${pf_label}] Allowed flags: --checks=TAG1,TAG2 --check=TAG1,TAG2 --exclude=TAG1,TAG2 --fix-permissions --notify-test --notify-heartbeat --debug --dry-run --override-enforced-user --no-cli-clear --fast --skip-snappdf --skip-github"
         $errexit_set && set -e
         return 1
     fi
@@ -163,6 +167,20 @@ run_preflight() {
     local fix_permissions="${NAMED_ARGS[fix_permissions]:-${NAMED_ARGS[fix-permissions]:-${ARGS[fix_permissions]:-${ARGS[fix-permissions]:-false}}}}"
     local checks_filter="${NAMED_ARGS[checks]:-${NAMED_ARGS[check]:-${ARGS[checks]:-${ARGS[check]:-}}}}"
     local exclude_filter="${NAMED_ARGS[exclude]:-${NAMED_ARGS[exclude_checks]:-${NAMED_ARGS[exclude-checks]:-${ARGS[exclude]:-${ARGS[exclude_checks]:-${ARGS[exclude-checks]:-}}}}}}"
+    local notify_test="${NAMED_ARGS[notify_test]:-${NAMED_ARGS[notify-test]:-${ARGS[notify_test]:-${ARGS[notify-test]:-false}}}}"
+    local notify_heartbeat="${NAMED_ARGS[notify_heartbeat]:-${NAMED_ARGS[notify-heartbeat]:-${ARGS[notify_heartbeat]:-${ARGS[notify-heartbeat]:-false}}}}"
+    if [[ "$notify_heartbeat" == true ]]; then
+        if [[ -n "${INM_NOTIFY_HEARTBEAT_INCLUDE:-}" && -z "$checks_filter" ]]; then
+            checks_filter="${INM_NOTIFY_HEARTBEAT_INCLUDE}"
+        fi
+        if [[ -n "${INM_NOTIFY_HEARTBEAT_EXCLUDE:-}" ]]; then
+            if [[ -z "$exclude_filter" ]]; then
+                exclude_filter="${INM_NOTIFY_HEARTBEAT_EXCLUDE}"
+            else
+                exclude_filter="${exclude_filter},${INM_NOTIFY_HEARTBEAT_EXCLUDE}"
+            fi
+        fi
+    fi
     if [ "$fix_permissions" = true ] && [ -z "$checks_filter" ]; then
         checks_filter="APP,PERM"
     fi
@@ -723,6 +741,24 @@ run_preflight() {
             fi
         fi
 
+        if [ -n "${APP_URL:-}" ] && command -v curl >/dev/null 2>&1; then
+            local app_url_trim status_code
+            app_url_trim="${APP_URL%/}"
+            status_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 "$app_url_trim")"
+            if [[ "$status_code" == "000" && "$app_url_trim" == https:* ]]; then
+                status_code="$(curl -s -k -o /dev/null -w '%{http_code}' --connect-timeout 5 "$app_url_trim")"
+            fi
+            if [[ "$status_code" == "200" ]]; then
+                add_result OK "APP" "APP_URL returns 200 OK (${app_url_trim})"
+            elif [[ "$status_code" =~ ^3 ]]; then
+                add_result WARN "APP" "APP_URL redirects (HTTP ${status_code}): ${app_url_trim}"
+            elif [[ "$status_code" == "000" ]]; then
+                add_result WARN "APP" "APP_URL not reachable (no HTTP response): ${app_url_trim}"
+            else
+                add_result ERR "APP" "APP_URL returned HTTP ${status_code}: ${app_url_trim}"
+            fi
+        fi
+
         if [ -n "$enforced_user" ]; then
             local expected_group="${INM_ENFORCED_GROUP:-}"
             if [ -z "$expected_group" ]; then
@@ -1265,16 +1301,30 @@ run_preflight() {
             done
             local notify_keys=(
                 INM_NOTIFY_ENABLED
+                INM_NOTIFY_TARGETS
                 INM_NOTIFY_EMAIL_TO
+                INM_NOTIFY_EMAIL_FROM
+                INM_NOTIFY_EMAIL_FROM_NAME
                 INM_NOTIFY_LEVEL
                 INM_NOTIFY_NONINTERACTIVE_ONLY
+                INM_NOTIFY_SMTP_TIMEOUT
+                INM_NOTIFY_HOOKS_ENABLED
+                INM_NOTIFY_HOOKS_FAILURE
+                INM_NOTIFY_HOOKS_SUCCESS
                 INM_NOTIFY_HEARTBEAT_ENABLED
                 INM_NOTIFY_HEARTBEAT_TIME
+                INM_NOTIFY_HEARTBEAT_LEVEL
                 INM_NOTIFY_HEARTBEAT_INCLUDE
                 INM_NOTIFY_HEARTBEAT_EXCLUDE
+                INM_NOTIFY_WEBHOOK_URL
             )
             for k in "${notify_keys[@]}"; do
                 local v="${!k}"
+                case "$k" in
+                    INM_NOTIFY_WEBHOOK_URL)
+                        v="${v:+<set>}"
+                        ;;
+                esac
                 add_result INFO "ENVCLI" "${k}=${v:-<unset>}"
             done
         else
@@ -1491,6 +1541,25 @@ run_preflight() {
     else
         local default_time="${INM_CRON_BACKUP_TIME:-03:24}"
         add_result WARN "CRON" "backup cron missing; run: inm core cron install --jobs=backup --backup-time=${default_time}"
+    fi
+    if echo "$cron_scope" | grep -qE "notify-heartbeat"; then
+        local heartbeat_line heartbeat_time
+        heartbeat_line="$(echo "$cron_scope" | grep -E "notify-heartbeat" | head -n1)"
+        heartbeat_time="$(extract_cron_time "$heartbeat_line")"
+        if [[ -n "$heartbeat_time" ]]; then
+            add_result OK "CRON" "heartbeat cron present (${heartbeat_time})"
+        else
+            add_result OK "CRON" "heartbeat cron present"
+        fi
+    else
+        local hb_default_time="${INM_NOTIFY_HEARTBEAT_TIME:-06:00}"
+        local hb_enabled="${INM_NOTIFY_HEARTBEAT_ENABLED:-false}"
+        hb_enabled="${hb_enabled,,}"
+        if [[ "$hb_enabled" =~ ^(1|true|yes|y|on)$ ]]; then
+            add_result WARN "CRON" "heartbeat cron missing; run: inm core cron install --jobs=heartbeat --heartbeat-time=${hb_default_time}"
+        else
+            add_result INFO "CRON" "heartbeat cron not enabled (set INM_NOTIFY_HEARTBEAT_ENABLED=true)"
+        fi
     fi
     fi
 
@@ -1829,6 +1898,32 @@ if ($fp) { fclose($fp); echo "OK"; } else { echo "ERR:" . $errstr; }' 2>/dev/nul
         aggregate_status="WARN"
     fi
     log info "[${pf_label}] Aggregate status: ${aggregate_status}"
+
+    if [[ "$notify_heartbeat" == true || "$notify_test" == true ]]; then
+        local notify_summary=""
+        local idx
+        for idx in "${!PF_STATUS[@]}"; do
+            local status="${PF_STATUS[$idx]}"
+            if [[ "$status" != "OK" ]]; then
+                notify_summary+="${PF_CHECK[$idx]} | ${status} | ${PF_DETAIL[$idx]}"$'\n'
+            fi
+        done
+        notify_summary="${notify_summary%$'\n'}"
+        if [[ "$notify_heartbeat" == true ]]; then
+            if declare -F notify_emit_heartbeat >/dev/null 2>&1; then
+                notify_emit_heartbeat "$aggregate_status" "$ok" "$warn" "$err" "$notify_summary"
+            else
+                log warn "[${pf_label}] Notification service missing; heartbeat skipped."
+            fi
+        fi
+        if [[ "$notify_test" == true ]]; then
+            if declare -F notify_send_test >/dev/null 2>&1; then
+                notify_send_test "$aggregate_status" "$ok" "$warn" "$err" "$notify_summary"
+            else
+                log warn "[${pf_label}] Notification service missing; notify-test skipped."
+            fi
+        fi
+    fi
 
     if [ "$err" -gt 0 ]; then
         $errexit_set && set -e

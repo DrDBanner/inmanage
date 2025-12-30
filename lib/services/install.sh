@@ -376,6 +376,7 @@ run_installation() {
         local no_cron="${NAMED_ARGS[no_cron_install]:-${NAMED_ARGS[no-cron-install]:-false}}"
         local no_backup_cron="${NAMED_ARGS[no_backup_cron]:-${NAMED_ARGS[no-backup-cron]:-false}}"
         local backup_time="${NAMED_ARGS[backup_time]:-${NAMED_ARGS[backup-time]:-03:24}}"
+        local heartbeat_time="${NAMED_ARGS[heartbeat_time]:-${NAMED_ARGS[heartbeat-time]:-${INM_NOTIFY_HEARTBEAT_TIME:-06:00}}}"
         if [[ "$no_backup_cron" == true ]]; then
             cron_jobs="artisan"
         fi
@@ -384,7 +385,7 @@ run_installation() {
             cron_ok=false
             cron_skipped=true
         else
-            if ! install_cronjob "user=$cron_user" "jobs=$cron_jobs" "mode=$cron_mode" "backup_time=$backup_time"; then
+            if ! install_cronjob "user=$cron_user" "jobs=$cron_jobs" "mode=$cron_mode" "backup_time=$backup_time" "heartbeat_time=$heartbeat_time"; then
                 cron_ok=false
             fi
         fi

@@ -283,9 +283,10 @@ Install switches (`inm core install`):
 | `--no-backup` | `false` | Skip pre-provision DB backup (provisioned install only). |
 | `--no-cron-install` | `false` | Skip cron installation (useful if you manage cron yourself). |
 | `--cron-mode=auto / system / crontab` | `auto` | Force cron install mode. `auto` chooses system cron if possible, otherwise user crontab. |
-| `--cron-jobs=artisan / backup / both` | `both` | Which cron jobs to install during setup. |
+| `--cron-jobs=artisan / backup / heartbeat / essential / both / all` | `both` | Which cron jobs to install during setup. |
 | `--no-backup-cron` | `false` | Skip the backup cron job during setup. |
 | `--backup-time=HH:MM` | `03:24` | Backup cron schedule (24h). |
+| `--heartbeat-time=HH:MM` | `06:00` | Heartbeat cron schedule (24h). |
 | `--bypass-check-sha` | `false` | Skip release digest verification (not recommended). |
 | `--version=v` | latest | Reserved: install currently uses latest release. |
 
@@ -587,6 +588,8 @@ Health switches (`inm core health`):
 | `--exclude=TAG1,TAG2` | unset | Run all checks except these groups. |
 | `--fix-permissions` | `false` | Repair ownership where possible. |
 | `--override-enforced-user` | `false` | Skip user switching for this run. |
+| `--notify-test` | `false` | Send a test notification immediately. |
+| `--notify-heartbeat` | `false` | Emit heartbeat notification based on results. |
 | `--no-cli-clear` | `false` | Keep terminal output (skip clear + logo). |
 | `--debug` | `false` | Verbose output. |
 | `--dry-run` | `false` | Log only; skip changes where applicable. |
@@ -612,7 +615,7 @@ inm core health --exclude=FS,CRON
 inm core cron install
 ```
 
-This installs artisan schedule + backup cron jobs.
+This installs artisan schedule + backup cron jobs (and heartbeat if selected).
 
 Short form (same behavior):
 
@@ -625,11 +628,15 @@ Cron switches (`inm core cron install`):
 | Switch | Default | Description |
 | --- | --- | --- |
 | `--user=name` | enforced user | User for cron entries. |
-| `--jobs=artisan / backup / both` | `both` | Which jobs to install. |
+| `--jobs=artisan / backup / heartbeat / essential / both / all` | `both` | Which jobs to install. |
 | `--mode=auto / system / crontab` | `auto` | Force cron install mode. |
 | `--backup-time=HH:MM` | `03:24` | Backup cron schedule (24h). |
+| `--heartbeat-time=HH:MM` | `06:00` | Heartbeat cron schedule (24h). |
 | `--cron-file=path` | `/etc/cron.d/invoiceninja` | Target cron file (root mode only). |
 | `--create-test-job` | `false` | Add a test job that touches `crontestfile` every minute. |
+
+> [!TIP]
+> `essential` (or legacy `both`) installs artisan + backup. `all` adds the heartbeat job.
 
 Cron uninstall:
 
@@ -654,28 +661,48 @@ inm core cron uninstall --remove-test-job
 
 ## Notification system (heartbeat)
 
-> [!NOTE]
-> Draft design: this section documents the intended interface and config. Implementation may follow.
-
 Goal: send notifications for **non‑interactive** failures (e.g., scheduled backups, missing cron jobs, or a failing daily health check).
 
-Planned config keys (add to `.inmanage/.env.inmanage`):
+Config keys (set in `.inmanage/.env.inmanage`):
 
 - `INM_NOTIFY_ENABLED=true|false` — master switch.
-- `INM_NOTIFY_EMAIL_TO=you@example.com` — primary target (v1: email only).
-- `INM_NOTIFY_LEVEL=ERR|WARN` — minimum severity to send.
+- `INM_NOTIFY_TARGETS=email,webhook` — comma list of targets.
+- `INM_NOTIFY_EMAIL_TO=you@example.com` — comma‑separated recipients.
+- `INM_NOTIFY_EMAIL_FROM=addr` / `INM_NOTIFY_EMAIL_FROM_NAME=name` — optional overrides.
+- `INM_NOTIFY_LEVEL=ERR|WARN|INFO` — minimum severity to send.
 - `INM_NOTIFY_NONINTERACTIVE_ONLY=true|false` — only send when no TTY is attached.
+- `INM_NOTIFY_SMTP_TIMEOUT=10` — SMTP timeout (seconds).
+- `INM_NOTIFY_HOOKS_ENABLED=true|false` — enable hook notifications.
+- `INM_NOTIFY_HOOKS_FAILURE=true|false` — notify when hooks fail.
+- `INM_NOTIFY_HOOKS_SUCCESS=true|false` — notify when hooks succeed.
 - `INM_NOTIFY_HEARTBEAT_ENABLED=true|false` — enable daily health heartbeat.
 - `INM_NOTIFY_HEARTBEAT_TIME=HH:MM` — cron schedule for the heartbeat.
+- `INM_NOTIFY_HEARTBEAT_LEVEL=ERR|WARN|INFO|OK` — minimum severity for heartbeat.
 - `INM_NOTIFY_HEARTBEAT_INCLUDE=TAG1,TAG2` — optional include filter.
 - `INM_NOTIFY_HEARTBEAT_EXCLUDE=TAG1,TAG2` — optional exclude filter.
+- `INM_NOTIFY_WEBHOOK_URL=https://...` — webhook target URL (https only).
 
-Planned commands:
+Commands:
 
 - `inm core health --notify-test` — send a test notification immediately.
-- `inm core cron install --create-heartbeat` — install a daily heartbeat cron job.
+- `inm core health --notify-heartbeat` — heartbeat run (used by cron).
+- `inm core cron install --jobs=heartbeat` — install the daily heartbeat cron job.
+- `inm core cron install --jobs=all` — artisan + backup + heartbeat.
 
-Email settings are read from the app `.env` (MAIL_*), with CLI config as fallback if present.
+Email settings are read from the app `.env` (`MAIL_*`).
+
+> [!NOTE]
+> For heartbeat alerts, set both `INM_NOTIFY_ENABLED=true` and `INM_NOTIFY_HEARTBEAT_ENABLED=true`.
+
+### Adding notification transports
+
+To add a new target, create a helper that defines:
+
+- `notify_send_<name>` (optional low‑level sender)
+- `notify_transport_<name>` (adapter used by the dispatcher)
+
+Place it under `lib/helpers/notify_<name>.sh` and ensure it is sourced by `lib/services/notify.sh`.
+Targets are activated by adding `<name>` to `INM_NOTIFY_TARGETS`.
 
 ## Environment helper
 

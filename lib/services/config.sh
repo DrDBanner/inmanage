@@ -104,7 +104,7 @@ persist_derived_config() {
 
     write_config_defaults
     if ! grep -q "^INM_CLI_COMPATIBILITY=" "$INM_SELF_ENV_FILE"; then
-        echo "INM_CLI_COMPATIBILITY=\"new\"" >> "$INM_SELF_ENV_FILE"
+        echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$INM_SELF_ENV_FILE"
     fi
 
     chmod 644 "$INM_SELF_ENV_FILE" 2>/dev/null
@@ -241,7 +241,7 @@ create_own_config() {
         fi
     done
     if ! grep -q "^INM_CLI_COMPATIBILITY=" "$INM_SELF_ENV_FILE"; then
-        echo "INM_CLI_COMPATIBILITY=\"new\"" >> "$INM_SELF_ENV_FILE"
+        echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$INM_SELF_ENV_FILE"
     fi
 
     chmod 644 "$INM_SELF_ENV_FILE" 2>/dev/null

@@ -16,6 +16,44 @@ resolve_hooks_dir() {
     printf "%s" "$hooks_dir"
 }
 
+hook_notify_bool() {
+    local val="${1:-}"
+    if declare -F notify_bool >/dev/null 2>&1; then
+        notify_bool "$val"
+        return $?
+    fi
+    val="${val,,}"
+    case "$val" in
+        1|true|yes|y|on) return 0 ;;
+    esac
+    return 1
+}
+
+hook_notify_enabled() {
+    hook_notify_bool "${INM_NOTIFY_HOOKS_ENABLED:-true}"
+}
+
+hook_notify_success_enabled() {
+    hook_notify_bool "${INM_NOTIFY_HOOKS_SUCCESS:-false}"
+}
+
+hook_notify_failure_enabled() {
+    hook_notify_bool "${INM_NOTIFY_HOOKS_FAILURE:-true}"
+}
+
+hook_notify_emit() {
+    local level="$1"
+    local title="$2"
+    local details="${3:-}"
+    if ! declare -F notify_emit_event >/dev/null 2>&1; then
+        return 0
+    fi
+    if ! hook_notify_enabled; then
+        return 0
+    fi
+    notify_emit_event "$level" "$title" "$details"
+}
+
 # ---------------------------------------------------------------------
 # run_hook()
 # Execute pre/post hooks with env or file-based configuration.
@@ -89,6 +127,15 @@ run_hook() {
         if [[ "$strict" == "true" ]]; then
             fail_on_error=true
         fi
+        if hook_notify_failure_enabled; then
+            local fail_level="WARN"
+            if [[ "$fail_on_error" == true ]]; then
+                fail_level="ERR"
+            fi
+            local fail_details
+            fail_details=$(printf "Hook: %s\nExit code: %s" "$hook_path" "$rc")
+            hook_notify_emit "$fail_level" "Hook failed: ${event}" "$fail_details"
+        fi
         if [[ "$fail_on_error" == true ]]; then
             log err "[HOOK] Hook failed ($event) with exit code $rc."
             return "$rc"
@@ -97,6 +144,11 @@ run_hook() {
         return 0
     fi
 
+    if hook_notify_success_enabled; then
+        local ok_details
+        ok_details=$(printf "Hook: %s" "$hook_path")
+        hook_notify_emit "OK" "Hook succeeded: ${event}" "$ok_details"
+    fi
     log ok "[HOOK] Completed: $event"
     return 0
 }

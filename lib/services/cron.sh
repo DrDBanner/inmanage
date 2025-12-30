@@ -16,18 +16,50 @@ install_cronjob() {
     parse_named_args args "$@"
 
     local user="${args[user]:-$INM_ENFORCED_USER}"
-    local jobs="${args[jobs]:-${args[cron_jobs]:-${args[cron-jobs]:-both}}}"
+    local jobs_raw="${args[jobs]:-${args[cron_jobs]:-${args[cron-jobs]:-both}}}"
     local create_test_job="${args[create_test_job]:-${args[create-test-job]:-false}}"
     local cron_file="/etc/cron.d/invoiceninja"
     local remove_test_job="${args[remove_test_job]:-${args[remove-test-job]:-false}}"
     local cron_mode="${args[cron_mode]:-${args[cron-mode]:-${args[mode]:-auto}}}"
     cron_mode="${cron_mode,,}"
-    jobs="${jobs,,}"
-    case "$jobs" in
-        scheduler|schedule|artisan|artisan:scheduler)
-            jobs="artisan"
-            ;;
-    esac
+    local jobs="${jobs_raw,,}"
+    local job_artisan=false
+    local job_backup=false
+    local job_heartbeat=false
+    IFS=',' read -ra job_tokens <<<"$jobs"
+    local token
+    for token in "${job_tokens[@]}"; do
+        token="${token,,}"
+        case "$token" in
+            scheduler|schedule|artisan|artisan:scheduler)
+                job_artisan=true
+                ;;
+            backup)
+                job_backup=true
+                ;;
+            heartbeat|notify|health|healthcheck)
+                job_heartbeat=true
+                ;;
+            both|essential)
+                job_artisan=true
+                job_backup=true
+                ;;
+            all)
+                job_artisan=true
+                job_backup=true
+                job_heartbeat=true
+                ;;
+            "")
+                ;;
+            *)
+                log warn "[CRON] Unknown job: ${token}"
+                ;;
+        esac
+    done
+    if [[ "$job_artisan" != true && "$job_backup" != true && "$job_heartbeat" != true ]]; then
+        job_artisan=true
+        job_backup=true
+    fi
     export INM_CRON_INSTALLED_JOBS=""
     export INM_CRON_INSTALL_TARGET=""
     local backup_time="${args[backup_time]:-${args[backup-time]:-${INM_CRON_BACKUP_TIME:-03:24}}}"
@@ -45,6 +77,19 @@ install_cronjob() {
         backup_min="24"
     fi
     local backup_cron_expr="${backup_min} ${backup_hour} * * *"
+    local heartbeat_time="${args[heartbeat_time]:-${args[heartbeat-time]:-${INM_NOTIFY_HEARTBEAT_TIME:-06:00}}}"
+    local heartbeat_hour=""
+    local heartbeat_min=""
+    if [[ "$heartbeat_time" =~ ^([01]?[0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+        heartbeat_hour="${heartbeat_time%:*}"
+        heartbeat_min="${heartbeat_time#*:}"
+    else
+        log warn "[CRON] Invalid --heartbeat-time '$heartbeat_time' (expected HH:MM); using 06:00."
+        heartbeat_time="06:00"
+        heartbeat_hour="06"
+        heartbeat_min="00"
+    fi
+    local heartbeat_cron_expr="${heartbeat_min} ${heartbeat_hour} * * *"
 
     if [[ -n "${args[cron_file]}" ]]; then
         cron_file="${args[cron_file]}"
@@ -158,21 +203,27 @@ install_cronjob() {
         log info "[CRON] Target: ${cron_file} (user=${user})"
     fi
     local job_summary=""
-    if [[ "$jobs" == "artisan" || "$jobs" == "both" ]]; then
+    if [[ "$job_artisan" == true ]]; then
         job_summary="artisan"
     fi
-    if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
+    if [[ "$job_backup" == true ]]; then
         job_summary="${job_summary:+${job_summary}, }backup@${backup_time}"
+    fi
+    if [[ "$job_heartbeat" == true ]]; then
+        job_summary="${job_summary:+${job_summary}, }heartbeat@${heartbeat_time}"
     fi
     if [[ "$create_test_job" == true ]]; then
         job_summary="${job_summary:+${job_summary}, }test"
     fi
     log info "[CRON] Jobs selected: ${job_summary:-none}"
-    if [[ "$jobs" == "artisan" || "$jobs" == "both" ]]; then
+    if [[ "$job_artisan" == true ]]; then
         log info "[CRON] Will set: schedule:run every minute"
     fi
-    if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
+    if [[ "$job_backup" == true ]]; then
         log info "[CRON] Will set: backup at ${backup_time}"
+    fi
+    if [[ "$job_heartbeat" == true ]]; then
+        log info "[CRON] Will set: heartbeat check at ${heartbeat_time}"
     fi
     if [[ "$create_test_job" == true ]]; then
         log info "[CRON] Will set: cron test file every minute"
@@ -236,20 +287,19 @@ install_cronjob() {
     touch_cmd_escaped="$(escape_squote "$touch_cmd")"
     detect_installed_jobs() {
         local file="$1"
-        local has_sched=false
-        local has_backup=false
+        local -a jobs=()
         if grep -qE 'schedule:run' "$file" 2>/dev/null; then
-            has_sched=true
+            jobs+=("artisan")
         fi
-        if grep -qE 'inmanage core backup' "$file" 2>/dev/null; then
-            has_backup=true
+        if grep -qE 'inmanage(\.sh)? core backup|inm core backup' "$file" 2>/dev/null; then
+            jobs+=("backup")
         fi
-        if [[ "$has_sched" == true && "$has_backup" == true ]]; then
-            printf "%s" "both"
-        elif [[ "$has_sched" == true ]]; then
-            printf "%s" "artisan"
-        elif [[ "$has_backup" == true ]]; then
-            printf "%s" "backup"
+        if grep -qE 'notify-heartbeat' "$file" 2>/dev/null; then
+            jobs+=("heartbeat")
+        fi
+        if [[ ${#jobs[@]} -gt 0 ]]; then
+            local IFS=,
+            printf "%s" "${jobs[*]}"
         else
             printf "%s" ""
         fi
@@ -297,11 +347,14 @@ install_cronjob() {
 
         {
             echo "# INMANAGE CRON BEGIN"
-            if [[ "$jobs" == "artisan" || "$jobs" == "both" ]]; then
+            if [[ "$job_artisan" == true ]]; then
                 echo "* * * * * $(artisan_cmd_string) schedule:run >> /dev/null 2>&1"
             fi
-            if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
+            if [[ "$job_backup" == true ]]; then
                 echo "${backup_cron_expr} $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core backup' >> /dev/null 2>&1"
+            fi
+            if [[ "$job_heartbeat" == true ]]; then
+                echo "${heartbeat_cron_expr} $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core health --notify-heartbeat' >> /dev/null 2>&1"
             fi
             if [[ "$create_test_job" == true ]]; then
                 echo "# INMANAGE CRON TEST"
@@ -335,11 +388,14 @@ install_cronjob() {
 
     if ! {
         echo "# Invoice Ninja cronjobs"
-        if [[ "$jobs" == "artisan" || "$jobs" == "both" ]]; then
+        if [[ "$job_artisan" == true ]]; then
             echo "* * * * * $user $(artisan_cmd_string) schedule:run >> /dev/null 2>&1"
         fi
-        if [[ "$jobs" == "backup" || "$jobs" == "both" ]]; then
+        if [[ "$job_backup" == true ]]; then
             echo "${backup_cron_expr} $user $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core backup' >> /dev/null 2>&1"
+        fi
+        if [[ "$job_heartbeat" == true ]]; then
+            echo "${heartbeat_cron_expr} $user $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core health --notify-heartbeat' >> /dev/null 2>&1"
         fi
         if [[ "$create_test_job" == true ]]; then
             echo "# INMANAGE CRON TEST"

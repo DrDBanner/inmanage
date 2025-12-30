@@ -219,6 +219,11 @@ else
     exit 1
 fi
 
+if [ -f "${LIB_DIR}/services/notify.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/services/notify.sh"
+fi
+
 if [ -f "${LIB_DIR}/services/preflight.sh" ]; then
     # shellcheck source=/dev/null
     source "${LIB_DIR}/services/preflight.sh"
