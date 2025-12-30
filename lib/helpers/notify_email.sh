@@ -26,10 +26,10 @@ notify_email_html_escape() {
     value="${value//&gt;/>}"
     value="${value//&lt;/<}"
     value="${value//&amp;/&}"
-    value="${value//&/&amp;}"
-    value="${value//</&lt;}"
-    value="${value//>/&gt;}"
-    value="${value//\"/&quot;}"
+    value="${value//&/\&amp;}"
+    value="${value//</\&lt;}"
+    value="${value//>/\&gt;}"
+    value="${value//\"/\&quot;}"
     printf "%s" "$value"
 }
 
@@ -115,7 +115,20 @@ notify_email_format_html() {
             local row_status=()
             local row_details=()
             while IFS= read -r line; do
-                [ -z "$line" ] && continue
+                if [ -z "$line" ]; then
+                    current=$((current + 1))
+                    row_checks[current]="__SPACER__"
+                    row_status[current]=""
+                    row_details[current]=""
+                    continue
+                fi
+                if [[ "$line" =~ ^==[[:space:]]*(.+)[[:space:]]*==[[:space:]]*$ ]]; then
+                    current=$((current + 1))
+                    row_checks[current]="__SECTION__"
+                    row_status[current]=""
+                    row_details[current]="${BASH_REMATCH[1]}"
+                    continue
+                fi
                 if [[ "$line" == *"|"* ]]; then
                     check="${line%%|*}"
                     status_text="${line#*|}"
@@ -144,13 +157,21 @@ notify_email_format_html() {
                 detail="$(notify_email_html_escape "${row_details[$idx]}")"
                 detail="${detail//$'\n'/<br>}"
                 status_cell="$status_text"
+                if [ "${row_checks[$idx]}" = "__SPACER__" ]; then
+                    printf "<tr><td colspan=\"3\" style=\"padding:6px 0;\"></td></tr>"
+                    continue
+                fi
+                if [ "${row_checks[$idx]}" = "__SECTION__" ]; then
+                    printf "<tr><td colspan=\"3\" style=\"padding:10px 0 4px; font-weight:600; border-bottom:1px solid #e5e7eb;\">%s</td></tr>" "$detail"
+                    continue
+                fi
                 if [ -n "$status_text" ]; then
                     status_color="$(notify_email_status_color "$status_text")"
                     status_cell="<span class=\"$(notify_email_status_badge_class "$status_text")\" style=\"color:${status_color};font-weight:600; white-space:nowrap;\">${status_text}</span>"
                 fi
                 printf "<tr><td style=\"padding:4px 12px 4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top; min-width:72px;\">%s</td>" "$check"
                 printf "<td style=\"padding:4px 12px; border-bottom:1px solid #f3f4f6; vertical-align:top; white-space:nowrap; min-width:64px;\">%s</td>" "$status_cell"
-                printf "<td style=\"padding:4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top; word-break: break-word; overflow-wrap:anywhere;\">%s</td></tr>" "$detail"
+                printf "<td style=\"padding:4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top; word-break: normal; overflow-wrap: break-word;\">%s</td></tr>" "$detail"
             done
             printf "</table>"
         fi

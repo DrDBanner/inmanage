@@ -1917,11 +1917,25 @@ if ($fp) { fclose($fp); echo "OK"; } else { echo "ERR:" . $errstr; }' 2>/dev/nul
         if [[ "$notify_test" == true ]]; then
             include_ok=true
         fi
-        local idx
-        for idx in "${!PF_STATUS[@]}"; do
-            local status="${PF_STATUS[$idx]}"
-            if [[ "$include_ok" == true || "$status" != "OK" ]]; then
-                notify_summary+="${PF_CHECK[$idx]} | ${status} | ${PF_DETAIL[$idx]}"$'\n'
+        local idx g
+        for g in "${groups[@]}"; do
+            local printed=false
+            for idx in "${!PF_STATUS[@]}"; do
+                if [[ "${PF_CHECK[$idx]}" == "$g" ]]; then
+                    local status="${PF_STATUS[$idx]}"
+                    if [[ "$include_ok" == true || "$status" != "OK" ]]; then
+                        if [ "$printed" = false ]; then
+                            notify_summary+="== $(format_check_label "$g") ==" $'\n'
+                            printed=true
+                        fi
+                        local check_label
+                        check_label="$(format_check_label "${PF_CHECK[$idx]}")"
+                        notify_summary+="${check_label} | ${status} | ${PF_DETAIL[$idx]}"$'\n'
+                    fi
+                fi
+            done
+            if [ "$printed" = true ]; then
+                notify_summary+=$'\n'
             fi
         done
         notify_summary="${notify_summary%$'\n'}"
