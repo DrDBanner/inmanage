@@ -753,9 +753,25 @@ run_preflight() {
                     add_result OK "PERM" "$p owned by ${owner:-unknown}"
                 fi
             }
-            check_owner_and_fix "${INM_INSTALLATION_PATH%/}"
-            check_owner_and_fix "${INM_INSTALLATION_PATH%/}/storage"
-            check_owner_and_fix "${INM_INSTALLATION_PATH%/}/public"
+            local perm_paths=()
+            if [ -n "${INM_BASE_DIRECTORY:-}" ]; then
+                perm_paths+=("${INM_BASE_DIRECTORY%/}")
+            fi
+            if [ -n "${INM_BACKUP_DIRECTORY:-}" ]; then
+                perm_paths+=("$(expand_path_vars "$INM_BACKUP_DIRECTORY")")
+            fi
+            if [ -n "${INM_CACHE_LOCAL_DIRECTORY:-}" ]; then
+                perm_paths+=("$(expand_path_vars "$INM_CACHE_LOCAL_DIRECTORY")")
+            fi
+            if [ -n "${INM_CACHE_GLOBAL_DIRECTORY:-}" ]; then
+                perm_paths+=("$(expand_path_vars "$INM_CACHE_GLOBAL_DIRECTORY")")
+            fi
+            perm_paths+=("${INM_INSTALLATION_PATH%/}")
+            perm_paths+=("${INM_INSTALLATION_PATH%/}/storage")
+            perm_paths+=("${INM_INSTALLATION_PATH%/}/public")
+            for p in "${perm_paths[@]}"; do
+                check_owner_and_fix "$p"
+            done
 
             check_mode_and_fix_dir() {
                 local p="$1"
