@@ -57,19 +57,180 @@ cleanup_old_backups() {
     fi
     log debug "[COB] Cleaning up old backups."
     local backup_path="$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY"
-    local backup_items
     local keep="${INM_KEEP_BACKUPS:-2}"
+    local -A type_items=()
+    local -A type_seen=()
+    local -A keep_set=()
+    local -A sidecars=()
+    local -a all_items=()
+    local stats=false
+    local fast=false
 
-    backup_items=$(find "$backup_path" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) | sort -r | tail -n +$((keep + 1)))
+    if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[stats]:-false}" == true || "${NAMED_ARGS[stats]:-}" == "true" ]]; then
+        stats=true
+    fi
+    if [[ "${NAMED_ARGS[fast]:-false}" == true || "${NAMED_ARGS[fast]:-}" == "true" ]]; then
+        fast=true
+    fi
 
-    if [ -n "$backup_items" ]; then
-        while IFS= read -r item; do
+    human_size_kb() {
+        local kb="$1"
+        local units=(K M G T P)
+        local idx=0
+        local val="$kb"
+        if [[ -z "$kb" || "$kb" -le 0 ]]; then
+            printf "0K"
+            return 0
+        fi
+        while [[ "$val" -ge 1024 && "$idx" -lt 4 ]]; do
+            val=$((val / 1024))
+            idx=$((idx + 1))
+        done
+        printf "%s%s" "$val" "${units[$idx]}"
+    }
+
+    backup_item_type() {
+        local name="$1"
+        local base="$name"
+        base="${base%.sha256}"
+        base="${base%.tar.gz}"
+        base="${base%.tgz}"
+        base="${base%.zip}"
+        base="${base%.sql}"
+        if [[ "$name" == restore_pre_* ]]; then
+            echo "restore_pre"
+        elif [[ "$base" == *_preimport_* ]]; then
+            echo "preimport"
+        elif [[ "$base" == *_preprovision_* ]]; then
+            echo "preprovision"
+        elif [[ "$base" == *_rollback_*_db ]]; then
+            echo "rollback_db"
+        elif [[ "$base" == *_db ]]; then
+            echo "db"
+        elif [[ "$base" == *_env ]]; then
+            echo "env"
+        elif [[ "$base" == *_storage ]]; then
+            echo "storage"
+        elif [[ "$base" == *_uploads ]]; then
+            echo "uploads"
+        elif [[ "$base" == *_app ]]; then
+            echo "app"
+        elif [[ "$base" == *_extra ]]; then
+            echo "extra"
+        elif [[ "$name" == *.tar.gz || "$name" == *.tgz || "$name" == *.zip ]]; then
+            echo "bundle"
+        else
+            echo "other"
+        fi
+    }
+
+    if [ -d "$backup_path" ]; then
+        local resolved_backup resolved_base resolved_install
+        resolved_backup="$(realpath "$backup_path" 2>/dev/null || echo "$backup_path")"
+        resolved_base="$(realpath "${INM_BASE_DIRECTORY:-}" 2>/dev/null || echo "${INM_BASE_DIRECTORY:-}")"
+        resolved_install="$(realpath "${INM_INSTALLATION_PATH:-}" 2>/dev/null || echo "${INM_INSTALLATION_PATH:-}")"
+        if [[ -z "$resolved_backup" || "$resolved_backup" == "/" || "$resolved_backup" == "." || "$resolved_backup" == ".." ]]; then
+            log err "[COB] Refusing to clean backups with unsafe path: ${backup_path:-<empty>}"
+            return 1
+        fi
+        if [[ -n "$resolved_base" && "$resolved_backup" == "$resolved_base" ]]; then
+            log err "[COB] Refusing to clean backups: backup dir equals base dir ($resolved_backup)."
+            return 1
+        fi
+        if [[ -n "$resolved_install" && "$resolved_backup" == "$resolved_install" ]]; then
+            log err "[COB] Refusing to clean backups: backup dir equals app dir ($resolved_backup)."
+            return 1
+        fi
+        while IFS= read -r -d '' item; do
+            local name
+            name="$(basename "$item")"
+            all_items+=("$item")
+            if [[ "$name" == *.sha256 ]]; then
+                local base_path="${item%.sha256}"
+                sidecars["$base_path"]="$item"
+                continue
+            fi
+            local item_type
+            item_type="$(backup_item_type "$name")"
+            type_items["$item_type"]+="${item}"$'\n'
+            type_seen["$item_type"]=1
+        done < <(find "$backup_path" -mindepth 1 -maxdepth 1 \( -type f -o -type d \) -print0 2>/dev/null)
+    fi
+
+    local t
+    for t in "${!type_seen[@]}"; do
+        local items="${type_items[$t]}"
+        [[ -z "$items" ]] && continue
+        mapfile -t sorted < <(printf '%s' "$items" | sort -r)
+        local count=0
+        local item
+        for item in "${sorted[@]}"; do
             [[ -z "$item" ]] && continue
-            safe_rm_rf "$item" "$backup_path" || {
-                log err "[COB] Failed to clean up old backup items."
-                exit 1
-            }
-        done <<< "$backup_items"
+            count=$((count + 1))
+            if [ "$count" -le "$keep" ]; then
+                keep_set["$item"]=1
+            fi
+        done
+    done
+
+    local kept
+    for kept in "${!keep_set[@]}"; do
+        if [[ -n "${sidecars[$kept]:-}" ]]; then
+            keep_set["${sidecars[$kept]}"]=1
+        fi
+    done
+
+    local item
+    local -a to_remove=()
+    for item in "${all_items[@]}"; do
+        [[ -z "$item" ]] && continue
+        if [[ -z "${keep_set[$item]:-}" ]]; then
+            to_remove+=("$item")
+        fi
+    done
+
+    if [[ ${#to_remove[@]} -eq 0 ]]; then
+        log debug "[COB] No backup items to clean."
+        return 0
+    fi
+
+    if [[ "$stats" == true ]]; then
+        local total_kb=0
+        local size_kb
+        for item in "${to_remove[@]}"; do
+            [[ -e "$item" ]] || continue
+            size_kb=$(du -sk "$item" 2>/dev/null | awk '{print $1}')
+            if [[ "$size_kb" =~ ^[0-9]+$ ]]; then
+                total_kb=$((total_kb + size_kb))
+            fi
+        done
+        log info "[COB] Cleaning ${#to_remove[@]} backup item(s) (~$(human_size_kb "$total_kb") freed)"
+    fi
+
+    local spinner_active=false
+    if [[ "$stats" != true && "${#to_remove[@]}" -gt 0 ]] && declare -F spinner_start >/dev/null 2>&1; then
+        spinner_start "Cleaning backups..."
+        spinner_active=true
+    fi
+
+    local empty_dir=""
+    for item in "${to_remove[@]}"; do
+        [[ -z "$item" ]] && continue
+        if [[ "$fast" == true && -d "$item" ]] && command -v rsync >/dev/null 2>&1; then
+            empty_dir="$(mktemp -d 2>/dev/null || mktemp -d -t inm-empty)"
+            if [[ -n "$empty_dir" && -d "$empty_dir" ]]; then
+                rsync -a --delete "${empty_dir}/" "${item%/}/" >/dev/null 2>&1 || \
+                    log warn "[COB] Fast delete (rsync) failed for $item; falling back."
+                safe_rm_rf "$empty_dir" "$(dirname "$empty_dir")" || true
+            fi
+        fi
+        safe_rm_rf "$item" "$backup_path" || {
+            log err "[COB] Failed to clean up old backup items."
+            exit 1
+        }
+    done
+    if [[ "$spinner_active" == true ]]; then
+        spinner_stop
     fi
     log debug "[COB] Cleaning up done."
 }
