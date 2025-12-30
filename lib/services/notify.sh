@@ -51,6 +51,7 @@ notify_level_rank() {
         WARN) echo 2 ;;
         INFO) echo 1 ;;
         OK) echo 0 ;;
+        ALL) echo 0 ;;
         *) echo 0 ;;
     esac
 }
@@ -112,44 +113,74 @@ notify_host_label() {
 
 notify_format_subject() {
     local title="$1"
+    local status="${2:-}"
     local host
     host="$(notify_host_label)"
-    printf "[inmanage][%s] %s" "$host" "$title"
+    local subject="[inmanage][${host}]"
+    if [ -n "$status" ]; then
+        subject="${subject}[${status}]"
+    fi
+    if [ -n "${APP_URL:-}" ]; then
+        subject="${subject}[${APP_URL%/}]"
+    fi
+    printf "%s %s" "$subject" "$title"
 }
 
 notify_format_body() {
     local title="$1"
-    local details="$2"
+    local status="${2:-}"
+    local counts="${3:-}"
+    local details="${4:-}"
     local host
     host="$(notify_host_label)"
-    {
-        printf "Event: %s\n" "$title"
-        printf "Host: %s\n" "$host"
-        if [ -n "${INM_BASE_DIRECTORY:-}" ]; then
-            printf "Base: %s\n" "${INM_BASE_DIRECTORY%/}"
+    local ts
+    ts="$(date '+%Y-%m-%d %H:%M:%S')"
+    local rows=()
+    rows+=("Event|$title")
+    if [ -n "$status" ]; then
+        rows+=("Status|$status")
+    fi
+    if [ -n "$counts" ]; then
+        rows+=("Counts|$counts")
+    fi
+    rows+=("Host|$host")
+    if [ -n "${INM_BASE_DIRECTORY:-}" ]; then
+        rows+=("Base|${INM_BASE_DIRECTORY%/}")
+    fi
+    if [ -n "${APP_URL:-}" ]; then
+        rows+=("APP_URL|${APP_URL%/}")
+    fi
+    rows+=("Timestamp|$ts")
+
+    local max_len=0 label
+    local row
+    for row in "${rows[@]}"; do
+        label="${row%%|*}"
+        if [ ${#label} -gt "$max_len" ]; then
+            max_len=${#label}
         fi
-        if [ -n "${APP_URL:-}" ]; then
-            printf "APP_URL: %s\n" "${APP_URL%/}"
-        fi
-        printf "Timestamp: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
-        if [ -n "$details" ]; then
-            printf "\n%s\n" "$details"
-        fi
-    }
+    done
+    for row in "${rows[@]}"; do
+        label="${row%%|*}"
+        printf "%-${max_len}s : %s\n" "$label" "${row#*|}"
+    done
+    if [ -n "$details" ]; then
+        printf "\n%s\n" "$details"
+    fi
 }
 
 notify_build_summary() {
-    local aggregate="$1"
-    local ok="$2"
-    local warn="$3"
-    local err="$4"
-    local details="$5"
-    local summary
-    summary=$(printf "Status: %s\nOK=%s WARN=%s ERR=%s" "$aggregate" "$ok" "$warn" "$err")
+    local details="${1:-}"
     if [ -n "$details" ]; then
-        summary="$summary"$'\n\n'"${details}"
+        printf "%s" "$details"
     fi
-    printf "%s" "$summary"
+}
+
+notify_counts_line() {
+    local ok="$1"
+    local warn="$2"
+    local err="$3"
+    printf "OK=%s WARN=%s ERR=%s" "$ok" "$warn" "$err"
 }
 
 # ---------------------------------------------------------------------
@@ -210,8 +241,8 @@ notify_emit_event() {
         return 0
     fi
     local subject body
-    subject="$(notify_format_subject "$title")"
-    body="$(notify_format_body "$title" "$details")"
+    subject="$(notify_format_subject "$title" "$level")"
+    body="$(notify_format_body "$title" "$level" "" "$details")"
     notify_send_targets "$subject" "$body"
 }
 
@@ -232,11 +263,12 @@ notify_emit_heartbeat() {
     if ! notify_level_allows "$aggregate" "$level"; then
         return 0
     fi
-    local summary
-    summary="$(notify_build_summary "$aggregate" "$ok" "$warn" "$err" "$details")"
+    local summary counts
+    summary="$(notify_build_summary "$details")"
+    counts="$(notify_counts_line "$ok" "$warn" "$err")"
     local subject body
-    subject="$(notify_format_subject "Heartbeat ${aggregate}")"
-    body="$(notify_format_body "Heartbeat ${aggregate}" "$summary")"
+    subject="$(notify_format_subject "Heartbeat" "$aggregate")"
+    body="$(notify_format_body "Heartbeat" "$aggregate" "$counts" "$summary")"
     notify_send_targets "$subject" "$body"
 }
 
@@ -250,7 +282,11 @@ notify_send_test() {
         log warn "[NOTIFY] Notifications disabled (set INM_NOTIFY_ENABLED=true)."
         return 1
     fi
-    local summary
-    summary="$(notify_build_summary "$aggregate" "$ok" "$warn" "$err" "$details")"
-    notify_emit_event "INFO" "Notification test" "$summary" true
+    local summary counts
+    summary="$(notify_build_summary "$details")"
+    counts="$(notify_counts_line "$ok" "$warn" "$err")"
+    local subject body
+    subject="$(notify_format_subject "Notification test" "$aggregate")"
+    body="$(notify_format_body "Notification test" "$aggregate" "$counts" "$summary")"
+    notify_send_targets "$subject" "$body"
 }
