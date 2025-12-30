@@ -44,6 +44,17 @@ notify_email_status_color() {
     esac
 }
 
+notify_email_status_badge_class() {
+    local status="${1^^}"
+    case "$status" in
+        ERR) echo "badge badge-danger" ;;
+        WARN) echo "badge badge-warning" ;;
+        OK) echo "badge badge-success" ;;
+        INFO) echo "badge badge-info" ;;
+        *) echo "badge badge-secondary" ;;
+    esac
+}
+
 notify_email_format_html() {
     local title="$1"
     local status="${2:-}"
@@ -60,32 +71,44 @@ notify_email_format_html() {
     app_url="${app_url%/}"
 
     {
-        printf "<div>"
-        printf "<table style=\"border-collapse: collapse;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">"
-        printf "<tr><td style=\"padding:2px 10px 2px 0;\">Event</td><td>%s</td></tr>" "$(notify_email_html_escape "$title")"
+        printf "<div style=\"max-width:680px; width:100%%;\">"
+        printf "<table class=\"table table-sm\" style=\"width:100%%; border-collapse: collapse;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" role=\"presentation\">"
+        printf "<tr><th align=\"left\" style=\"padding:2px 12px 2px 0; white-space:nowrap; vertical-align:top;\">Event</th>"
+        printf "<td style=\"padding:2px 0; vertical-align:top; word-break: break-word; overflow-wrap:anywhere;\">%s</td></tr>" \
+            "$(notify_email_html_escape "$title")"
         if [ -n "$status" ]; then
-            printf "<tr><td style=\"padding:2px 10px 2px 0;\">Status</td><td><span style=\"color:%s;font-weight:600;\">%s</span></td></tr>" \
-                "$status_color" "$(notify_email_html_escape "$status")"
+            local status_badge
+            status_badge="$(notify_email_status_badge_class "$status")"
+            printf "<tr><th align=\"left\" style=\"padding:2px 12px 2px 0; white-space:nowrap; vertical-align:top;\">Status</th>"
+            printf "<td style=\"padding:2px 0; vertical-align:top;\"><span class=\"%s\" style=\"color:%s;font-weight:600; white-space:nowrap;\">%s</span></td></tr>" \
+                "$status_badge" "$status_color" "$(notify_email_html_escape "$status")"
         fi
         if [ -n "$counts" ]; then
-            printf "<tr><td style=\"padding:2px 10px 2px 0;\">Counts</td><td>%s</td></tr>" "$(notify_email_html_escape "$counts")"
+            printf "<tr><th align=\"left\" style=\"padding:2px 12px 2px 0; white-space:nowrap; vertical-align:top;\">Counts</th>"
+            printf "<td style=\"padding:2px 0; vertical-align:top;\">%s</td></tr>" "$(notify_email_html_escape "$counts")"
         fi
-        printf "<tr><td style=\"padding:2px 10px 2px 0;\">Host</td><td>%s</td></tr>" "$(notify_email_html_escape "$host")"
+        printf "<tr><th align=\"left\" style=\"padding:2px 12px 2px 0; white-space:nowrap; vertical-align:top;\">Host</th>"
+        printf "<td style=\"padding:2px 0; vertical-align:top;\">%s</td></tr>" "$(notify_email_html_escape "$host")"
         if [ -n "$base_dir" ]; then
-            printf "<tr><td style=\"padding:2px 10px 2px 0;\">Base</td><td>%s</td></tr>" "$(notify_email_html_escape "$base_dir")"
+            printf "<tr><th align=\"left\" style=\"padding:2px 12px 2px 0; white-space:nowrap; vertical-align:top;\">Base</th>"
+            printf "<td style=\"padding:2px 0; vertical-align:top; word-break: break-word; overflow-wrap:anywhere;\">%s</td></tr>" \
+                "$(notify_email_html_escape "$base_dir")"
         fi
         if [ -n "$app_url" ]; then
-            printf "<tr><td style=\"padding:2px 10px 2px 0;\">APP_URL</td><td><a href=\"%s\" style=\"color:#1d4ed8;\">%s</a></td></tr>" \
+            printf "<tr><th align=\"left\" style=\"padding:2px 12px 2px 0; white-space:nowrap; vertical-align:top;\">APP_URL</th>"
+            printf "<td style=\"padding:2px 0; vertical-align:top; word-break: break-word; overflow-wrap:anywhere;\"><a href=\"%s\" style=\"color:#1d4ed8;\">%s</a></td></tr>" \
                 "$(notify_email_html_escape "$app_url")" "$(notify_email_html_escape "$app_url")"
         fi
-        printf "<tr><td style=\"padding:2px 10px 2px 0;\">Timestamp</td><td>%s</td></tr>" "$(notify_email_html_escape "$ts")"
+        printf "<tr><th align=\"left\" style=\"padding:2px 12px 2px 0; white-space:nowrap; vertical-align:top;\">Timestamp</th>"
+        printf "<td style=\"padding:2px 0; vertical-align:top;\">%s</td></tr>" "$(notify_email_html_escape "$ts")"
         printf "</table>"
 
         if [ -n "$details" ]; then
             printf "<div style=\"margin-top:12px;\"></div>"
-            printf "<table style=\"border-collapse: collapse; width: 100%%;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">"
-            printf "<tr><th align=\"left\" style=\"padding:4px 10px 4px 0; border-bottom:1px solid #e5e7eb;\">Check</th>"
-            printf "<th align=\"left\" style=\"padding:4px 10px; border-bottom:1px solid #e5e7eb; white-space:nowrap; width:1%%;\">Status</th>"
+            printf "<table class=\"table table-sm\" style=\"border-collapse: collapse; width:100%%; table-layout: fixed;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" role=\"presentation\">"
+            printf "<colgroup><col style=\"width:14%%;\"><col style=\"width:10%%;\"><col style=\"width:76%%;\"></colgroup>"
+            printf "<tr><th align=\"left\" style=\"padding:4px 12px 4px 0; border-bottom:1px solid #e5e7eb;\">Check</th>"
+            printf "<th align=\"left\" style=\"padding:4px 12px; border-bottom:1px solid #e5e7eb; white-space:nowrap;\">Status</th>"
             printf "<th align=\"left\" style=\"padding:4px 0; border-bottom:1px solid #e5e7eb;\">Detail</th></tr>"
             local line status_text status_cell detail check
             local current=-1
@@ -124,11 +147,11 @@ notify_email_format_html() {
                 status_cell="$status_text"
                 if [ -n "$status_text" ]; then
                     status_color="$(notify_email_status_color "$status_text")"
-                    status_cell="<span style=\"color:${status_color};font-weight:600;\">${status_text}</span>"
+                    status_cell="<span class=\"$(notify_email_status_badge_class "$status_text")\" style=\"color:${status_color};font-weight:600; white-space:nowrap;\">${status_text}</span>"
                 fi
-                printf "<tr><td style=\"padding:4px 10px 4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top;\">%s</td>" "$check"
-                printf "<td style=\"padding:4px 10px; border-bottom:1px solid #f3f4f6; vertical-align:top; white-space:nowrap;\">%s</td>" "$status_cell"
-                printf "<td style=\"padding:4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top;\">%s</td></tr>" "$detail"
+                printf "<tr><td style=\"padding:4px 12px 4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top;\">%s</td>" "$check"
+                printf "<td style=\"padding:4px 12px; border-bottom:1px solid #f3f4f6; vertical-align:top; white-space:nowrap;\">%s</td>" "$status_cell"
+                printf "<td style=\"padding:4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top; word-break: break-word; overflow-wrap:anywhere;\">%s</td></tr>" "$detail"
             done
             printf "</table>"
         fi
