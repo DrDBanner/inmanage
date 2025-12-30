@@ -740,8 +740,12 @@ run_preflight() {
                 owner=$(stat -c '%U:%G' "$p" 2>/dev/null || stat -f '%Su:%Sg' "$p" 2>/dev/null || echo "")
                 if [ -n "$owner" ] && [ "$owner" != "$expected_owner" ]; then
                     if [ "$fix_permissions" = true ]; then
-                        add_result WARN "PERM" "Fixing ownership for $p (was $owner -> $expected_owner)"
-                        enforce_ownership "$p"
+                        if [ "$can_enforce" = true ]; then
+                            add_result WARN "PERM" "Fixing ownership for $p (was $owner -> $expected_owner)"
+                            enforce_ownership "$p"
+                        else
+                            add_result WARN "PERM" "Ownership mismatch at $p (owner=$owner, expected=$expected_owner). Run: sudo chown -R ${expected_owner} \"$p\""
+                        fi
                     else
                         add_result WARN "PERM" "Ownership mismatch at $p (owner=$owner, expected=$expected_owner). Use --fix-permissions to repair."
                     fi
