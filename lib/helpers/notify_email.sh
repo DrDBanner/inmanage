@@ -87,7 +87,7 @@ notify_email_button_html() {
 notify_email_kv_row() {
     local label="$1"
     local value_html="$2"
-    printf "<tr><td align=\"left\" valign=\"top\" style=\"padding:4px 12px 4px 0;color:#6b7280;font-size:12px;line-height:18px;font-weight:600;text-transform:uppercase;letter-spacing:0.02em;white-space:nowrap;min-width:120px;\">%s</td>" \
+    printf "<tr><td align=\"left\" valign=\"top\" style=\"padding:4px 12px 4px 0;color:#6b7280;font-size:12px;line-height:18px;font-weight:600;text-transform:uppercase;letter-spacing:0.02em;white-space:nowrap;min-width:108px;\">%s</td>" \
         "$(notify_email_html_escape "$label")"
     printf "<td align=\"left\" valign=\"top\" style=\"padding:4px 0;color:#111827;font-size:15px;line-height:22px;word-break:break-word;overflow-wrap:anywhere;\">%s</td></tr>" \
         "$value_html"
@@ -158,9 +158,9 @@ notify_email_format_html() {
         printf "</td></tr>"
         printf "<tr><td align=\"left\" style=\"padding:0;\">"
         printf "<table role=\"presentation\" width=\"100%%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"background-color:#ffffff;border:1px solid #e5e7eb;border-radius:10px;\">"
-        printf "<tr><td style=\"padding:20px;font-family:%s;\">"
+        printf "<tr><td style=\"padding:20px;font-family:%s;\">" "$font_stack"
         printf "<div style=\"font-size:20px;line-height:28px;font-weight:700;color:#111827;padding:0 0 4px;\">%s</div>" \
-            "$font_stack" "$(notify_email_html_escape "$title")"
+            "$(notify_email_html_escape "$title")"
         printf "<div style=\"font-size:14px;line-height:20px;color:#6b7280;padding:0 0 12px;\">Host: %s &middot; %s</div>" \
             "$(notify_email_html_escape "$host")" "$(notify_email_html_escape "$ts")"
         printf "<table role=\"presentation\" width=\"100%%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">"
@@ -171,7 +171,7 @@ notify_email_format_html() {
         fi
         notify_email_kv_row "Host" "$(notify_email_html_escape "$host")"
         if [ -n "$base_dir" ]; then
-            notify_email_kv_row "Base" "$(notify_email_html_escape "$base_dir")"
+            notify_email_kv_row "Base dir" "$(notify_email_html_escape "$base_dir")"
         fi
         if [ -n "$app_url" ]; then
             local app_button
@@ -185,7 +185,7 @@ notify_email_format_html() {
             printf "<div style=\"height:12px;line-height:12px;\">&nbsp;</div>"
             printf "<div style=\"font-size:16px;line-height:24px;font-weight:700;color:#111827;padding:0 0 6px;\">Checks</div>"
             printf "<table role=\"presentation\" width=\"100%%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"border-collapse:collapse;\">"
-            printf "<thead><tr><th align=\"left\" style=\"padding:6px 12px 6px 0;border-bottom:1px solid #e5e7eb;white-space:nowrap;width:120px;min-width:120px;\">Status</th>"
+            printf "<thead><tr><th align=\"left\" style=\"padding:6px 12px 6px 6px;border-bottom:1px solid #e5e7eb;white-space:nowrap;width:108px;min-width:108px;\">Status</th>"
             printf "<th align=\"left\" style=\"padding:6px 0 6px 8px;border-bottom:1px solid #e5e7eb;\">Detail</th></tr></thead>"
             printf "<tbody>"
             local line status_text status_cell detail check
@@ -242,7 +242,7 @@ notify_email_format_html() {
                 fi
                 if [ "$check" = "__SECTION__" ]; then
                     current_section="$detail"
-                    printf "<tr><td colspan=\"2\" align=\"left\" style=\"padding:8px 0 4px;font-weight:600;font-size:13px;color:#111827;border-top:1px solid #e5e7eb;background-color:#f3f4f6;\">%s</td></tr>" \
+                    printf "<tr><td colspan=\"2\" align=\"left\" style=\"padding:8px 0 4px 6px;font-weight:600;font-size:14px;color:#111827;border-top:1px solid #e5e7eb;background-color:#f3f4f6;\">%s</td></tr>" \
                         "$(notify_email_html_escape "$detail")"
                     continue
                 fi
@@ -262,9 +262,9 @@ notify_email_format_html() {
                     row_bg="#f9fafb"
                 fi
                 zebra=$((zebra + 1))
-                printf "<tr><td bgcolor=\"%s\" style=\"background-color:%s;padding:6px 12px 6px 0;border-bottom:1px solid #f3f4f6;vertical-align:top;white-space:nowrap;width:120px;min-width:120px;\">%s</td>" \
+                printf "<tr><td bgcolor=\"%s\" style=\"background-color:%s;padding:6px 12px 6px 6px;border-bottom:1px solid #f3f4f6;vertical-align:top;white-space:nowrap;width:108px;min-width:108px;\">%s</td>" \
                     "$row_bg" "$row_bg" "$status_cell"
-                printf "<td bgcolor=\"%s\" style=\"background-color:%s;padding:6px 0 6px 8px;border-bottom:1px solid #f3f4f6;vertical-align:top;white-space:normal;word-break:break-word;overflow-wrap:anywhere;\">%s</td></tr>" \
+                printf "<td bgcolor=\"%s\" style=\"background-color:%s;padding:6px 0 6px 8px;border-bottom:1px solid #f3f4f6;vertical-align:top;white-space:normal;word-break:break-word;overflow-wrap:anywhere;font-size:14px;line-height:20px;\">%s</td></tr>" \
                     "$row_bg" "$row_bg" "$detail"
             done
             printf "</tbody></table>"
