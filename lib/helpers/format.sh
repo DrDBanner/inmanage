@@ -9,6 +9,7 @@ __FORMAT_HELPER_LOADED=1
 # Centralized color definitions for CLI output.
 # ---------------------------------------------------------------------
 setup_colors() {
+    # shellcheck disable=SC2034
     if [[ -t 1 ]]; then
         GREEN='\033[0;32m'
         RED='\033[0;31m'

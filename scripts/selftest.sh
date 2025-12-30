@@ -291,31 +291,31 @@ if [[ "$NO_DEFAULTS" != true ]]; then
     CHECKS=("${CHECKS[@]/}")
     CHECKS_CSV="$(IFS=,; echo "${CHECKS[*]}")"
 
-    run_cmd "core health" $INM_CLI core health --checks="$CHECKS_CSV" "${COMMON_ARGS[@]}"
+    run_cmd "core health" "$INM_CLI" core health --checks="$CHECKS_CSV" "${COMMON_ARGS[@]}"
 
     if [[ "$SKIP_NET" == true ]]; then
         skip_test "core version (no-net)"
     else
-        run_cmd "core version" $INM_CLI core version "${COMMON_ARGS[@]}"
+        run_cmd "core version" "$INM_CLI" core version "${COMMON_ARGS[@]}"
     fi
 
     if [[ "$MODE" == "full" ]]; then
-        run_cmd "env show cli" $INM_CLI env show cli "${COMMON_ARGS[@]}"
-        run_cmd "env show app" $INM_CLI env show app "${COMMON_ARGS[@]}"
-        run_cmd "core prune (dry-run)" $INM_CLI core prune --dry-run "${COMMON_ARGS[@]}"
-        run_cmd "core clear-cache (dry-run)" $INM_CLI core clear-cache --dry-run "${COMMON_ARGS[@]}"
-        run_cmd "core backup (dry-run)" $INM_CLI core backup --dry-run --compress=false --name=selftest "${COMMON_ARGS[@]}"
-        run_cmd "db backup (dry-run)" $INM_CLI db backup --dry-run --compress=false --name=selftest "${COMMON_ARGS[@]}"
-        run_cmd "files backup (dry-run)" $INM_CLI files backup --dry-run --compress=false --name=selftest "${COMMON_ARGS[@]}"
+        run_cmd "env show cli" "$INM_CLI" env show cli "${COMMON_ARGS[@]}"
+        run_cmd "env show app" "$INM_CLI" env show app "${COMMON_ARGS[@]}"
+        run_cmd "core prune (dry-run)" "$INM_CLI" core prune --dry-run "${COMMON_ARGS[@]}"
+        run_cmd "core clear-cache (dry-run)" "$INM_CLI" core clear-cache --dry-run "${COMMON_ARGS[@]}"
+        run_cmd "core backup (dry-run)" "$INM_CLI" core backup --dry-run --compress=false --name=selftest "${COMMON_ARGS[@]}"
+        run_cmd "db backup (dry-run)" "$INM_CLI" db backup --dry-run --compress=false --name=selftest "${COMMON_ARGS[@]}"
+        run_cmd "files backup (dry-run)" "$INM_CLI" files backup --dry-run --compress=false --name=selftest "${COMMON_ARGS[@]}"
 
         if [[ -n "$BUNDLE_PATH" ]]; then
-            run_cmd "core restore (dry-run)" $INM_CLI core restore --dry-run --file="$BUNDLE_PATH" "${COMMON_ARGS[@]}"
+            run_cmd "core restore (dry-run)" "$INM_CLI" core restore --dry-run --file="$BUNDLE_PATH" "${COMMON_ARGS[@]}"
         else
             skip_test "core restore (dry-run) --bundle not provided"
         fi
 
         if [[ -n "$DB_FILE" ]]; then
-            run_cmd "db restore (dry-run)" $INM_CLI db restore --dry-run --file="$DB_FILE" --force "${COMMON_ARGS[@]}"
+            run_cmd "db restore (dry-run)" "$INM_CLI" db restore --dry-run --file="$DB_FILE" --force "${COMMON_ARGS[@]}"
         else
             skip_test "db restore (dry-run) --db-file not provided"
         fi

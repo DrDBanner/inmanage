@@ -61,9 +61,9 @@ setup_environment() {
             fi
         done
         if [ "${#mysql_iports_entries[@]}" -gt 0 ]; then
-            IFS=$'\n' mysql_iports_entries=($(printf '%s\n' "${mysql_iports_entries[@]}" | sort -rn))
-            unset IFS
-            mysql_iports_paths+=("${mysql_iports_entries[0]#*|}")
+            local sorted_mysql=()
+            mapfile -t sorted_mysql < <(printf '%s\n' "${mysql_iports_entries[@]}" | sort -rn)
+            mysql_iports_paths+=("${sorted_mysql[0]#*|}")
         fi
         for php_dir in /usr/iports/php*/bin; do
             [[ -d "$php_dir" ]] || continue
@@ -75,9 +75,9 @@ setup_environment() {
             fi
         done
         if [ "${#php_iports_entries[@]}" -gt 0 ]; then
-            IFS=$'\n' php_iports_entries=($(printf '%s\n' "${php_iports_entries[@]}" | sort -rn))
-            unset IFS
-            php_iports_paths+=("${php_iports_entries[0]#*|}")
+            local sorted_php=()
+            mapfile -t sorted_php < <(printf '%s\n' "${php_iports_entries[@]}" | sort -rn)
+            php_iports_paths+=("${sorted_php[0]#*|}")
         fi
     fi
 

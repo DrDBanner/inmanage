@@ -75,12 +75,12 @@ print_cron_manual_instructions() {
     cli_cmd="$(install_cli_hint)"
     local base_clean="${INM_BASE_DIRECTORY%/}"
 
-    printf "${MAGENTA}Cron install failed.${RESET}\n"
+    printf "%sCron install failed.%s\n" "$MAGENTA" "$RESET"
     cron_jobs_flags "$jobs"
-    printf "Try: ${CYAN}%s core cron install --user=%s --jobs=%s${RESET}\n" "$cli_cmd" "$user" "$jobs"
-    printf "Or add to ${CYAN}/etc/cron.d/invoiceninja${RESET} (root):\n"
+    printf "Try: %s%s core cron install --user=%s --jobs=%s%s\n" "$CYAN" "$cli_cmd" "$user" "$jobs" "$RESET"
+    printf "Or add to %s/etc/cron.d/invoiceninja%s (root):\n" "$CYAN" "$RESET"
     if [[ "$CRON_JOB_ARTISAN" == true ]]; then
-        printf "  ${CYAN}* * * * * %s %s schedule:run >> /dev/null 2>&1${RESET}\n" "$user" "$(artisan_cmd_string)"
+        printf "  %s* * * * * %s %s schedule:run >> /dev/null 2>&1%s\n" "$CYAN" "$user" "$(artisan_cmd_string)" "$RESET"
     fi
     local backup_time="${INM_CRON_BACKUP_TIME:-03:24}"
     local backup_hour="03"
@@ -90,8 +90,8 @@ print_cron_manual_instructions() {
         backup_min="${backup_time#*:}"
     fi
     if [[ "$CRON_JOB_BACKUP" == true ]]; then
-        printf "  ${CYAN}%s %s * * * %s %s -c \"%s/inmanage core backup\" >> /dev/null 2>&1${RESET}\n" \
-            "$backup_min" "$backup_hour" "$user" "$INM_ENFORCED_SHELL" "$base_clean"
+        printf "  %s%s %s * * * %s %s -c \"%s/inmanage core backup\" >> /dev/null 2>&1%s\n" \
+            "$CYAN" "$backup_min" "$backup_hour" "$user" "$INM_ENFORCED_SHELL" "$base_clean" "$RESET"
     fi
     if [[ "$CRON_JOB_HEARTBEAT" == true ]]; then
         local heartbeat_time="${INM_NOTIFY_HEARTBEAT_TIME:-06:00}"
@@ -101,8 +101,8 @@ print_cron_manual_instructions() {
             heartbeat_hour="${heartbeat_time%:*}"
             heartbeat_min="${heartbeat_time#*:}"
         fi
-        printf "  ${CYAN}%s %s * * * %s %s -c \"%s/inmanage core health --notify-heartbeat\" >> /dev/null 2>&1${RESET}\n" \
-            "$heartbeat_min" "$heartbeat_hour" "$user" "$INM_ENFORCED_SHELL" "$base_clean"
+        printf "  %s%s %s * * * %s %s -c \"%s/inmanage core health --notify-heartbeat\" >> /dev/null 2>&1%s\n" \
+            "$CYAN" "$heartbeat_min" "$heartbeat_hour" "$user" "$INM_ENFORCED_SHELL" "$base_clean" "$RESET"
     fi
     printf "\n"
 }
@@ -121,34 +121,34 @@ print_provisioned_summary() {
         fi
     fi
 
-    printf "\n${BLUE}%s${RESET}\n" "========================================"
-    printf "${GREEN}${BOLD}Setup Complete!${RESET}\n\n"
-    printf "${BOLD}Login:${RESET} ${CYAN}%s${RESET}\n" "$app_url"
-    printf "${BOLD}Username:${RESET} admin@admin.com\n"
-    printf "${BOLD}Password:${RESET} admin [change that ;-) *you're not goofy]\n"
-    printf "${BLUE}%s${RESET}\n\n" "========================================"
-    printf "${WHITE}Open your browser at ${CYAN}%s${RESET} to access the application.${RESET}\n" "$app_url"
+    printf "\n%s%s%s\n" "$BLUE" "========================================" "$RESET"
+    printf "%s%sSetup Complete!%s\n\n" "$GREEN" "$BOLD" "$RESET"
+    printf "%sLogin:%s %s%s%s\n" "$BOLD" "$RESET" "$CYAN" "$app_url" "$RESET"
+    printf "%sUsername:%s admin@admin.com\n" "$BOLD" "$RESET"
+    printf "%sPassword:%s admin [change that ;-) *you're not goofy]\n" "$BOLD" "$RESET"
+    printf "%s%s%s\n\n" "$BLUE" "========================================" "$RESET"
+    printf "%sOpen your browser at %s%s%s to access the application.%s\n" "$WHITE" "$CYAN" "$app_url" "$RESET" "$RESET"
     printf "The database and user are configured.\n\n"
-    printf "${YELLOW}It's a good time to make your first backup now!${RESET}\n\n"
+    printf "%sIt's a good time to make your first backup now!%s\n\n" "$YELLOW" "$RESET"
     local installed_jobs="${INM_CRON_INSTALLED_JOBS:-$cron_jobs}"
     local cron_target="${INM_CRON_INSTALL_TARGET:-}"
 
     if [[ "$cron_skipped" == true ]]; then
-        printf "${YELLOW}Cron install skipped (--no-cron-install).${RESET}\n\n"
+        printf "%sCron install skipped (--no-cron-install).%s\n\n" "$YELLOW" "$RESET"
     elif [[ "$cron_ok" == true ]]; then
         local summary
         summary="$(cron_jobs_summary "$installed_jobs")"
-        printf "${GREEN}Cron installed (%s).${RESET}\n" "$summary"
+        printf "%sCron installed (%s).%s\n" "$GREEN" "$summary" "$RESET"
         if [[ -n "$cron_target" ]]; then
-            printf "${WHITE}Target:${RESET} %s\n\n" "$cron_target"
+            printf "%sTarget:%s %s\n\n" "$WHITE" "$RESET" "$cron_target"
         else
             printf "\n"
         fi
     else
         print_cron_manual_instructions "$cron_jobs" "${INM_ENFORCED_USER:-$(whoami)}"
     fi
-    printf "${MAGENTA}${BOLD}Your provision file must get removed manually once you are satisfied.${RESET}\n"
-    printf "Delete ${CYAN}%s${RESET} since it has sensitive data stored.\n\n" "$provision_file"
+    printf "%s%sYour provision file must get removed manually once you are satisfied.%s\n" "$MAGENTA" "$BOLD" "$RESET"
+    printf "Delete %s%s%s since it has sensitive data stored.\n\n" "$CYAN" "$provision_file" "$RESET"
 }
 
 print_wizard_summary() {
@@ -160,21 +160,21 @@ print_wizard_summary() {
         setup_url="${APP_URL%/}/setup"
     fi
 
-    printf "\n${BLUE}%s${RESET}\n" "========================================"
-    printf "${GREEN}${BOLD}Setup Complete!${RESET}\n\n"
-    printf "${WHITE}Open your browser at your configured address ${CYAN}%s${RESET} to complete database setup.${RESET}\n\n" "$setup_url"
-    printf "${YELLOW}It's a good time to make your first backup now!${RESET}\n\n"
+    printf "\n%s%s%s\n" "$BLUE" "========================================" "$RESET"
+    printf "%s%sSetup Complete!%s\n\n" "$GREEN" "$BOLD" "$RESET"
+    printf "%sOpen your browser at your configured address %s%s%s to complete database setup.%s\n\n" "$WHITE" "$CYAN" "$setup_url" "$RESET" "$RESET"
+    printf "%sIt's a good time to make your first backup now!%s\n\n" "$YELLOW" "$RESET"
     local installed_jobs="${INM_CRON_INSTALLED_JOBS:-$cron_jobs}"
     local cron_target="${INM_CRON_INSTALL_TARGET:-}"
 
     if [[ "$cron_skipped" == true ]]; then
-        printf "${YELLOW}Cron install skipped (--no-cron-install).${RESET}\n\n"
+        printf "%sCron install skipped (--no-cron-install).%s\n\n" "$YELLOW" "$RESET"
     elif [[ "$cron_ok" == true ]]; then
         local summary
         summary="$(cron_jobs_summary "$installed_jobs")"
-        printf "${GREEN}Cron installed (%s).${RESET}\n" "$summary"
+        printf "%sCron installed (%s).%s\n" "$GREEN" "$summary" "$RESET"
         if [[ -n "$cron_target" ]]; then
-            printf "${WHITE}Target:${RESET} %s\n\n" "$cron_target"
+            printf "%sTarget:%s %s\n\n" "$WHITE" "$RESET" "$cron_target"
         else
             printf "\n"
         fi

@@ -130,7 +130,8 @@ import_database() {
         local backup_dir="${INM_BACKUP_DIRECTORY:-./_backups}"
         mkdir -p "$backup_dir" 2>/dev/null || log warn "[import_db] Could not ensure backup dir $backup_dir"
         if [[ -d "$backup_dir" ]]; then
-            local shadow_dump="$backup_dir/${DB_DATABASE}_preimport_$(date +%Y%m%d-%H%M%S).sql"
+            local shadow_dump
+            shadow_dump="$backup_dir/${DB_DATABASE}_preimport_$(date +%Y%m%d-%H%M%S).sql"
             log info "[import_db] Creating pre-import backup: $shadow_dump"
             if ! dump_database "$shadow_dump"; then
                 log err "[import_db] Pre-import backup failed; aborting import. Use --pre-backup=false to skip (not recommended)."
@@ -469,6 +470,7 @@ dump_database() {
         local tmp_sanitize
         tmp_sanitize=$(mktemp) || true
         if [[ -n "$tmp_sanitize" ]]; then
+            # shellcheck disable=SC2016
             if sed -E 's/DEFINER=`[^`]+`@`[^`]+`/DEFINER=CURRENT_USER/g' "$target_file" > "$tmp_sanitize"; then
                 mv "$tmp_sanitize" "$target_file"
                 log debug "[dump_db] Sanitized dump (DEFINER replaced with CURRENT_USER)."

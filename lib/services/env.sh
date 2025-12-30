@@ -244,11 +244,11 @@ env_user_ini_apply() {
 
     cat > "$tmp_file" <<'EOF'
 ; Inmanage-managed .user.ini for Invoice Ninja
-memory_limit = 256M
-max_execution_time = 180
-max_input_time = 180
-post_max_size = 50M
-upload_max_filesize = 50M
+memory_limit = 512M
+max_execution_time = 300
+max_input_time = 300
+post_max_size = 128M
+upload_max_filesize = 128M
 max_input_vars = 5000
 display_errors = Off
 error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT

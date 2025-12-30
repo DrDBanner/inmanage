@@ -373,9 +373,9 @@ resolve_php_exec() {
             fi
         done
         if [ "${#candidates[@]}" -gt 0 ]; then
-            IFS=$'\n' candidates=($(printf '%s\n' "${candidates[@]}" | sort -rn))
-            unset IFS
-            php_exec="${candidates[0]#*|}"
+            local sorted_candidates=()
+            mapfile -t sorted_candidates < <(printf '%s\n' "${candidates[@]}" | sort -rn)
+            php_exec="${sorted_candidates[0]#*|}"
         fi
     fi
     printf "%s" "${php_exec:-php}"

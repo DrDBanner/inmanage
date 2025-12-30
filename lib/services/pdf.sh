@@ -54,7 +54,9 @@ do_snappdf() {
         return 1
     }
 
-    if [ -x "$snappdf_bin" ]; then
+    local snappdf_bin=""
+    snappdf_bin="$(find_snappdf_chromium "$snappdf_versions")"
+    if [ -n "$snappdf_bin" ] && [ -x "$snappdf_bin" ]; then
         log debug "[SNAP] Snappdf already present."
         return 0
     fi

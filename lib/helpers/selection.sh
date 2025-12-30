@@ -34,12 +34,12 @@ select_from_candidates() {
         fi
     fi
 
-    sel_print() {
-        local fmt="$1"; shift
+    sel_print_line() {
+        local line="$1"
         # Send prompts to stderr and tty (if available), keep stdout clean for selection output
-        printf "$fmt" "$@" 1>&2
+        printf '%s' "$line" 1>&2
         if [[ "$using_tty_fd" == true ]]; then
-            printf "$fmt" "$@" 1>&3
+            printf '%s' "$line" 1>&3
         fi
     }
 
@@ -56,16 +56,22 @@ select_from_candidates() {
     fi
 
     log info "[SEL] Awaiting interactive choice (${count} option(s))."
-    sel_print "\n%s\n" "${prompt}"
-    sel_print "  %-4s | %s\n" "No." "Backup"
-    sel_print "  %s\n" "-------------------------------------------"
+    local line=""
+    printf -v line "\n%s\n" "${prompt}"
+    sel_print_line "$line"
+    printf -v line "  %-4s | %s\n" "No." "Backup"
+    sel_print_line "$line"
+    printf -v line "  %s\n" "-------------------------------------------"
+    sel_print_line "$line"
     for i in "${!options[@]}"; do
-        sel_print "  %-4d | %s\n" "$((i + 1))" "${options[$i]}"
+        printf -v line "  %-4d | %s\n" "$((i + 1))" "${options[$i]}"
+        sel_print_line "$line"
     done
 
     local choice
     while true; do
-        sel_print "${YELLOW}Enter number [1-%s] or Ctrl+C to cancel: ${RESET}" "$count"
+        printf -v line "%sEnter number [1-%s] or Ctrl+C to cancel: %s" "$YELLOW" "$count" "$RESET"
+        sel_print_line "$line"
         if [[ "$using_tty_fd" == true ]]; then
             if ! read -u "$read_fd" -r -t "$timeout" choice; then
                 log err "[SEL] Failed to read selection from /dev/tty (timeout ${timeout}s?)."
