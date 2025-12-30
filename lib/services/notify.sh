@@ -116,7 +116,7 @@ notify_format_subject() {
     local status="${2:-}"
     local host
     host="$(notify_host_label)"
-    local subject="[inmanage][${host}]"
+    local subject="[${host}]"
     if [ -n "$status" ]; then
         subject="${subject}[${status}]"
     fi
