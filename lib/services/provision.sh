@@ -277,6 +277,9 @@ provision_prebackup_db() {
         return 1
     fi
     log debug "[PROV] Pre-provision backup saved: $target_file"
+    if declare -F enforce_ownership >/dev/null 2>&1; then
+        enforce_ownership "$backup_dir"
+    fi
     if declare -F cleanup_old_backups >/dev/null 2>&1; then
         cleanup_old_backups || log warn "[PROV] Backup cleanup failed."
     fi

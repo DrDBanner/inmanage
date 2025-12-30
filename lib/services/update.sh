@@ -116,6 +116,9 @@ run_update() {
             log err "[UPD] DB backup failed; aborting update. Use --no-db-backup to override (not recommended)."
             return 1
         fi
+        if declare -F enforce_ownership >/dev/null 2>&1; then
+            enforce_ownership "$backup_dir"
+        fi
     else
         log warn "[UPD] DB backup skipped by flag (--no-db-backup)."
     fi

@@ -486,13 +486,42 @@ run_preflight() {
     if should_run "WEB"; then
     # ---- Webserver detection ----
     local web_is_apache=false
-    if pgrep -x apache2 >/dev/null 2>&1 || pgrep -x apache24 >/dev/null 2>&1 || pgrep -x httpd >/dev/null 2>&1; then
-        local av
-        av=$(apache2 -v 2>/dev/null | awk -F: '/Server version/{print $2}' | xargs)
-        [ -z "$av" ] && av=$(httpd -v 2>/dev/null | awk -F: '/Server version/{print $2}' | xargs)
+    local apache_running=false
+    local nginx_running=false
+    local apache_bin=""
+    if pgrep -x apache2 >/dev/null 2>&1 || pgrep -x apache24 >/dev/null 2>&1 || pgrep -x httpd >/dev/null 2>&1 || pgrep -x apache >/dev/null 2>&1; then
+        apache_running=true
+    elif pgrep -f 'apache24|apache2|httpd' >/dev/null 2>&1; then
+        apache_running=true
+    fi
+    if pgrep -x nginx >/dev/null 2>&1; then
+        nginx_running=true
+    elif pgrep -f 'nginx' >/dev/null 2>&1; then
+        nginx_running=true
+    fi
+    if [[ "$apache_running" != true && "$nginx_running" != true ]] && command -v service >/dev/null 2>&1; then
+        if service -e 2>/dev/null | grep -q '/apache24$'; then
+            apache_running=true
+        elif service -e 2>/dev/null | grep -q '/nginx$'; then
+            nginx_running=true
+        fi
+    fi
+    if [[ "$apache_running" == true ]]; then
+        for bin in apache2 httpd apache /usr/local/sbin/httpd /usr/local/apache2/bin/httpd; do
+            if [[ "$bin" == /* ]]; then
+                [[ -x "$bin" ]] && apache_bin="$bin" && break
+            elif command -v "$bin" >/dev/null 2>&1; then
+                apache_bin="$bin"
+                break
+            fi
+        done
+        local av=""
+        if [ -n "$apache_bin" ]; then
+            av=$("$apache_bin" -v 2>/dev/null | awk -F: '/Server version/{print $2}' | xargs)
+        fi
         add_result INFO "WEB" "Apache${av:+ $av}"
         web_is_apache=true
-    elif pgrep -x nginx >/dev/null 2>&1; then
+    elif [[ "$nginx_running" == true ]]; then
         local nv
         nv=$(nginx -v 2>&1 | cut -d: -f2- | xargs)
         add_result INFO "WEB" "Nginx${nv:+ $nv}"
@@ -883,6 +912,17 @@ run_preflight() {
         local base=5
         local max=120
         local extra=0
+        local normalized_dir="${dir%/}"
+        local base_dir="${INM_BASE_DIRECTORY%/}"
+        if [ -n "$base_dir" ] && [ -n "$normalized_dir" ] && [ "$normalized_dir" = "$base_dir" ]; then
+            if [ -d "$dir" ]; then
+                local count_base
+                count_base=$(find "$dir" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')
+                if [[ "$count_base" =~ ^[0-9]+$ ]]; then
+                    extra="$count_base"
+                fi
+            fi
+        fi
         if [ -n "${INM_BACKUP_DIRECTORY:-}" ] && [ "$dir" = "$INM_BACKUP_DIRECTORY" ]; then
             if [ -d "$dir" ]; then
                 local count
