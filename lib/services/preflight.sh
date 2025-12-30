@@ -723,13 +723,13 @@ run_preflight() {
             fi
         fi
 
-        if [ -n "${ENFORCED_USER:-}" ]; then
+        if [ -n "$enforced_user" ]; then
             local expected_group="${INM_ENFORCED_GROUP:-}"
             if [ -z "$expected_group" ]; then
-                expected_group="$(id -gn "$ENFORCED_USER" 2>/dev/null || true)"
-                [[ -z "$expected_group" ]] && expected_group="$ENFORCED_USER"
+                expected_group="$(id -gn "$enforced_user" 2>/dev/null || true)"
+                [[ -z "$expected_group" ]] && expected_group="$enforced_user"
             fi
-            local expected_owner="${ENFORCED_USER}:${expected_group}"
+            local expected_owner="${enforced_user}:${expected_group}"
             local dir_mode="${INM_DIR_MODE:-750}"
             local file_mode="${INM_FILE_MODE:-640}"
             local env_mode="${INM_ENV_MODE:-600}"
@@ -740,7 +740,7 @@ run_preflight() {
                 owner=$(stat -c '%U:%G' "$p" 2>/dev/null || stat -f '%Su:%Sg' "$p" 2>/dev/null || echo "")
                 if [ -n "$owner" ] && [ "$owner" != "$expected_owner" ]; then
                     if [ "$fix_permissions" = true ]; then
-                        if [ "$can_enforce" = true ]; then
+                        if [ "$EUID" -eq 0 ]; then
                             add_result WARN "PERM" "Fixing ownership for $p (was $owner -> $expected_owner)"
                             enforce_ownership "$p"
                         else
