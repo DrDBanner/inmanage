@@ -355,8 +355,9 @@ if ($bodyHtml !== false && $bodyHtml !== "") {
     $msg .= "Content-Type: text/plain; charset=UTF-8\r\n\r\n";
     $msg .= $body . "\r\n";
     $msg .= "--" . $boundary . "\r\n";
-    $msg .= "Content-Type: text/html; charset=UTF-8\r\n\r\n";
-    $msg .= $bodyHtml . "\r\n";
+    $msg .= "Content-Type: text/html; charset=UTF-8\r\n";
+    $msg .= "Content-Transfer-Encoding: base64\r\n\r\n";
+    $msg .= chunk_split(base64_encode($bodyHtml)) . "\r\n";
     $msg .= "--" . $boundary . "--\r\n";
 } else {
     $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
