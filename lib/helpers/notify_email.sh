@@ -82,8 +82,12 @@ notify_email_format_html() {
         printf "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
         printf "<title>Inmanage Notification</title>"
         printf "</head>"
-        printf "<body style=\"margin:0; padding:0;\">"
-        printf "<div style=\"max-width:680px; width:100%%;\">"
+        printf "<body style=\"margin:0; padding:0; background-color:#f8fafc;\">"
+        printf "<table role=\"presentation\" style=\"width:100%%; border-collapse:collapse; background-color:#f8fafc;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">"
+        printf "<tr><td align=\"center\" style=\"padding:24px 12px;\">"
+        printf "<table role=\"presentation\" style=\"width:100%%; max-width:680px; border-collapse:collapse; background-color:#ffffff; border:1px solid #e5e7eb; border-radius:6px;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">"
+        printf "<tr><td style=\"padding:16px 18px;\">"
+        printf "<div style=\"width:100%%;\">"
         printf "<table class=\"table table-sm\" style=\"width:100%%; border-collapse: collapse;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" role=\"presentation\">"
         printf "<tr><th align=\"left\" style=\"padding:2px 12px 2px 0; white-space:nowrap; vertical-align:top; min-width:96px;\">Event</th>"
         printf "<td style=\"padding:2px 0; vertical-align:top; word-break: break-word; overflow-wrap:anywhere;\">%s</td></tr>" \
@@ -118,8 +122,8 @@ notify_email_format_html() {
         if [ -n "$details" ]; then
             printf "<div style=\"margin-top:12px;\"></div>"
             printf "<table class=\"table table-sm\" style=\"border-collapse: collapse; width:100%%;\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" role=\"presentation\">"
-            printf "<thead><tr><th align=\"left\" style=\"padding:4px 12px 4px 0; border-bottom:1px solid #e5e7eb; min-width:72px;\">Check</th>"
-            printf "<th align=\"left\" style=\"padding:4px 12px; border-bottom:1px solid #e5e7eb; white-space:nowrap; min-width:64px;\">Status</th>"
+            printf "<thead><tr><th align=\"left\" style=\"padding:6px 12px 6px 0; border-bottom:1px solid #e5e7eb; width:18%%; min-width:80px;\">Check</th>"
+            printf "<th align=\"left\" style=\"padding:6px 12px; border-bottom:1px solid #e5e7eb; white-space:nowrap; width:12%%; min-width:70px;\">Status</th>"
             printf "<th align=\"left\" style=\"padding:4px 0; border-bottom:1px solid #e5e7eb;\">Detail</th></tr></thead>"
             printf "<tbody>"
             local line status_text status_cell detail check
@@ -182,13 +186,15 @@ notify_email_format_html() {
                     status_color="$(notify_email_status_color "$status_text")"
                     status_cell="<span class=\"$(notify_email_status_badge_class "$status_text")\" style=\"color:${status_color};font-weight:600; white-space:nowrap;\">${status_text}</span>"
                 fi
-                printf "<tr><td style=\"padding:4px 12px 4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top; min-width:72px;\">%s</td>" "$check"
-                printf "<td style=\"padding:4px 12px; border-bottom:1px solid #f3f4f6; vertical-align:top; white-space:nowrap; min-width:64px;\">%s</td>" "$status_cell"
+                printf "<tr><td style=\"padding:6px 12px 6px 0; border-bottom:1px solid #f3f4f6; vertical-align:top; width:18%%; min-width:80px;\">%s</td>" "$check"
+                printf "<td style=\"padding:6px 12px; border-bottom:1px solid #f3f4f6; vertical-align:top; white-space:nowrap; width:12%%; min-width:70px;\">%s</td>" "$status_cell"
                 printf "<td style=\"padding:4px 0; border-bottom:1px solid #f3f4f6; vertical-align:top; word-break: normal; overflow-wrap: break-word;\">%s</td></tr>" "$detail"
             done
             printf "</tbody></table>"
         fi
         printf "</div>"
+        printf "</td></tr></table>"
+        printf "</td></tr></table>"
         printf "</body></html>"
     }
 }
