@@ -16,24 +16,26 @@ run_update() {
     local -A args=()
     parse_named_args args "$@"
 
-    local cache_only="${args[cache_only]:-${args[cache-only]:-false}}"
-    local no_db_backup="${args[no_db_backup]:-${args[no-db-backup]:-false}}"
-    local installed_version latest_version timestamp response source_dir
+    local cache_only
+    cache_only="$(args_get args "false" cache_only)"
+    local no_db_backup
+    no_db_backup="$(args_get args "false" no_db_backup)"
+    local installed_version latest_version timestamp source_dir
     timestamp="$(date +'%Y%m%d_%H%M%S')"
 
     installed_version=$(get_installed_version)
-    latest_version="${args[version]:-$(get_latest_version)}"
+    local version_arg
+    version_arg="$(args_get args "" version)"
+    latest_version="${version_arg:-$(get_latest_version)}"
     if [[ -z "$latest_version" || "$latest_version" == "null" ]]; then
         local cache_dir
         cache_dir="$(resolve_cache_directory)"
         local cached_ver
         cached_ver="$(find "$cache_dir" -maxdepth 1 -type f -name 'invoiceninja_v*.tar.gz' 2>/dev/null \
             | sed -n 's|.*invoiceninja_v\\(.*\\)\\.tar\\.gz|\\1|p' | sort -V | tail -n1)"
-        if [[ -n "$cached_ver" && -z "${args[version]:-}" ]]; then
+        if [[ -n "$cached_ver" && -z "$version_arg" ]]; then
             log warn "[UPD] Latest version could not be determined. Cached package found: $cached_ver"
-            log info "[UPD] Use cached version $cached_ver? (y/N):"
-            read -r -t 30 response || response=""
-            if [[ "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+            if prompt_confirm "UPD_CACHE" "no" "[UPD] Use cached version $cached_ver? (yes/no):" false 30; then
                 latest_version="$cached_ver"
             else
                 log err "[UPD] Aborting update (no latest version and cached version declined)."
@@ -47,7 +49,7 @@ run_update() {
     log info "[UPD] Installed: ${installed_version:-<unknown>} | Latest: ${latest_version:-<unknown>}"
 
     # Cache-only path: download + checksum, no install/extract
-    if [[ "$cache_only" == true ]]; then
+    if args_is_true "$cache_only"; then
         log info "[UPD] Cache-only requested; downloading package without install."
         local cache_dir
         cache_dir="$(download_ninja "$latest_version")" || {
@@ -59,8 +61,11 @@ run_update() {
     fi
 
     # expand any placeholders in INM_ENV_FILE before use (without eval)
-    if [[ "${INM_ENV_FILE:-}" == *\${* ]] && declare -F expand_placeholders >/dev/null; then
-        INM_ENV_FILE="$(expand_placeholders "$INM_ENV_FILE")"
+    if declare -F expand_placeholders >/dev/null 2>&1; then
+        # shellcheck disable=SC2016
+        if printf '%s' "${INM_ENV_FILE:-}" | grep -q '\${'; then
+            INM_ENV_FILE="$(expand_placeholders "$INM_ENV_FILE")"
+        fi
     fi
     if [ ! -f "$INM_ENV_FILE" ]; then
         log warn "[UPD] No .env file found – the system is not provisioned or broken."
@@ -72,33 +77,26 @@ run_update() {
     if version_compare "$installed_version" gt "$latest_version"; then
         log warn "[UPD] You are attempting a downgrade: $installed_version → $latest_version"
     # shellcheck disable=SC2154
-    if [ "$force_update" != true ]; then
-            log warn "[UPD] Proceed? Type 'yes' to continue:"
-            read -r confirm
-            [[ "$confirm" != "yes" ]] && {
+        if [ "$force_update" != true ]; then
+            if ! prompt_confirm "UPD_DOWNGRADE" "no" "[UPD] Proceed? Type 'yes' to continue:" false 60; then
                 log info "[UPD] Downgrade aborted."
                 return 1
-            }
+            fi
         else
             log debug "[UPD] Force flag set. Proceeding with downgrade."
         fi
     elif [[ "$installed_version" == "$latest_version" && "$force_update" != true ]]; then
-        log info "[UPD] Version $installed_version is already current. Proceed anyway? (yes/no):"
-        read -r -t 60 response || {
-            log warn "[UPD] No response. Update aborted."
-            return 0
-        }
-        [[ ! "$response" =~ ^([Yy]([Ee][Ss])?)$ ]] && {
+        if ! prompt_confirm "UPD_REPEAT" "no" "[UPD] Version $installed_version is already current. Proceed anyway? (yes/no):" false 60; then
             log info "[UPD] Update cancelled by user."
             return 0
-        }
+        fi
     fi
 
     if declare -F run_hook >/dev/null 2>&1; then
         run_hook "pre-update" || return 1
     fi
 
-    if [[ "$no_db_backup" != "true" ]]; then
+    if ! args_is_true "$no_db_backup"; then
         local backup_dir="${INM_BACKUP_DIRECTORY%/}"
         if [[ "$backup_dir" != /* ]]; then
             backup_dir="${INM_BASE_DIRECTORY%/}/${backup_dir#/}"
@@ -277,7 +275,8 @@ run_update_rollback() {
     fi
     local -A args=()
     parse_named_args args "$@"
-    local target="${args[target]:-${args[rollback]:-${args[dir]:-}}}"
+    local target
+    target="$(args_get args "" target rollback dir)"
     if [ -z "$target" ]; then
         for arg in "$@"; do
             if [[ "$arg" != --* ]]; then
@@ -323,7 +322,9 @@ run_update_rollback() {
     local rollback_name
     rollback_name="$(basename "$rollback_dir")"
 
-    if [ "${args[force]:-${NAMED_ARGS[force]:-false}}" != true ]; then
+    local force
+    force="$(args_get args "false" force)"
+    if ! args_is_true "$force"; then
         if ! prompt_confirm "UPD_ROLLBACK" "no" "Rollback to ${rollback_name}? (yes/no):" false 60; then
             log info "[UPD] Rollback cancelled."
             return 0

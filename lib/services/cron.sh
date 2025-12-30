@@ -15,14 +15,23 @@ install_cronjob() {
     declare -A args
     parse_named_args args "$@"
 
-    local user="${args[user]:-$INM_ENFORCED_USER}"
-    local jobs_raw="${args[jobs]:-${args[cron_jobs]:-${args[cron-jobs]:-both}}}"
-    local create_test_job="${args[create_test_job]:-${args[create-test-job]:-false}}"
+    local user
+    user="$(args_get args "${INM_ENFORCED_USER:-}" user)"
+    local jobs_raw
+    jobs_raw="$(args_get args "both" jobs cron_jobs)"
+    local create_test_job
+    create_test_job="$(args_get args "false" create_test_job)"
     local cron_file="/etc/cron.d/invoiceninja"
-    local remove_test_job="${args[remove_test_job]:-${args[remove-test-job]:-false}}"
-    local cron_mode="${args[cron_mode]:-${args[cron-mode]:-${args[mode]:-auto}}}"
+    local remove_test_job
+    remove_test_job="$(args_get args "false" remove_test_job)"
+    local cron_mode
+    cron_mode="$(args_get args "auto" cron_mode mode)"
     cron_mode="${cron_mode,,}"
     local jobs="${jobs_raw,,}"
+    local create_test_job_enabled=false
+    local remove_test_job_enabled=false
+    args_is_true "$create_test_job" && create_test_job_enabled=true
+    args_is_true "$remove_test_job" && remove_test_job_enabled=true
     local job_artisan=false
     local job_backup=false
     local job_heartbeat=false
@@ -62,7 +71,8 @@ install_cronjob() {
     fi
     export INM_CRON_INSTALLED_JOBS=""
     export INM_CRON_INSTALL_TARGET=""
-    local backup_time="${args[backup_time]:-${args[backup-time]:-${INM_CRON_BACKUP_TIME:-03:24}}}"
+    local backup_time
+    backup_time="$(args_get args "${INM_CRON_BACKUP_TIME:-03:24}" backup_time)"
     export INM_CRON_BACKUP_TIME="$backup_time"
     local backup_hour=""
     local backup_min=""
@@ -77,7 +87,8 @@ install_cronjob() {
         backup_min="24"
     fi
     local backup_cron_expr="${backup_min} ${backup_hour} * * *"
-    local heartbeat_time="${args[heartbeat_time]:-${args[heartbeat-time]:-${INM_NOTIFY_HEARTBEAT_TIME:-06:00}}}"
+    local heartbeat_time
+    heartbeat_time="$(args_get args "${INM_NOTIFY_HEARTBEAT_TIME:-06:00}" heartbeat_time)"
     local heartbeat_hour=""
     local heartbeat_min=""
     if [[ "$heartbeat_time" =~ ^([01]?[0-9]|2[0-3]):[0-5][0-9]$ ]]; then
@@ -91,8 +102,10 @@ install_cronjob() {
     fi
     local heartbeat_cron_expr="${heartbeat_min} ${heartbeat_hour} * * *"
 
-    if [[ -n "${args[cron_file]}" ]]; then
-        cron_file="${args[cron_file]}"
+    local cron_file_arg=""
+    cron_file_arg="$(args_get args "" cron_file)"
+    if [[ -n "$cron_file_arg" ]]; then
+        cron_file="$cron_file_arg"
     fi
 
     local use_user_crontab=false
@@ -212,7 +225,7 @@ install_cronjob() {
     if [[ "$job_heartbeat" == true ]]; then
         job_summary="${job_summary:+${job_summary}, }heartbeat@${heartbeat_time}"
     fi
-    if [[ "$create_test_job" == true ]]; then
+    if [[ "$create_test_job_enabled" == true ]]; then
         job_summary="${job_summary:+${job_summary}, }test"
     fi
     log info "[CRON] Jobs selected: ${job_summary:-none}"
@@ -225,7 +238,7 @@ install_cronjob() {
     if [[ "$job_heartbeat" == true ]]; then
         log info "[CRON] Will set: heartbeat check at ${heartbeat_time}"
     fi
-    if [[ "$create_test_job" == true ]]; then
+    if [[ "$create_test_job_enabled" == true ]]; then
         log info "[CRON] Will set: cron test file every minute"
     fi
 
@@ -237,38 +250,14 @@ install_cronjob() {
     escape_squote() {
         printf "%s" "${1//\'/\'\\\'\'}"
     }
-    resolve_cli_command() {
-        local candidate
-        local resolved=""
-        local base_clean="${INM_BASE_DIRECTORY%/}"
-        local candidates=()
-        if [[ -n "${SCRIPT_PATH:-}" ]]; then
-            candidates+=("$SCRIPT_PATH")
-        fi
-        if command -v inm >/dev/null 2>&1; then
-            candidates+=("$(command -v inm)")
-        fi
-        if command -v inmanage >/dev/null 2>&1; then
-            candidates+=("$(command -v inmanage)")
-        fi
-        if [[ -n "$base_clean" ]]; then
-            candidates+=("${base_clean}/inmanage" "${base_clean}/inm")
-        fi
-        for candidate in "${candidates[@]}"; do
-            [[ -z "$candidate" ]] && continue
-            resolved="$(realpath "$candidate" 2>/dev/null || echo "$candidate")"
-            if [ -x "$resolved" ]; then
-                printf "%s" "$resolved"
-                return 0
-            fi
-        done
-        return 1
-    }
     local cli_cmd=""
-    cli_cmd="$(resolve_cli_command)" || {
+    if declare -F resolve_cli_command_path >/dev/null 2>&1; then
+        cli_cmd="$(resolve_cli_command_path)" || cli_cmd=""
+    fi
+    if [[ -z "$cli_cmd" ]]; then
         cli_cmd="inmanage"
         log warn "[CRON] Could not resolve CLI path; falling back to '${cli_cmd}' (PATH-dependent)."
-    }
+    fi
     local cli_cmd_escaped
     cli_cmd_escaped="$(escape_squote "$cli_cmd")"
     local base_clean="${INM_BASE_DIRECTORY%/}"
@@ -356,7 +345,7 @@ install_cronjob() {
             if [[ "$job_heartbeat" == true ]]; then
                 echo "${heartbeat_cron_expr} $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core health --notify-heartbeat' >> /dev/null 2>&1"
             fi
-            if [[ "$create_test_job" == true ]]; then
+            if [[ "$create_test_job_enabled" == true ]]; then
                 echo "# INMANAGE CRON TEST"
                 echo "* * * * * $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${touch_cmd_escaped} crontestfile' >> /dev/null 2>&1"
             fi
@@ -397,7 +386,7 @@ install_cronjob() {
         if [[ "$job_heartbeat" == true ]]; then
             echo "${heartbeat_cron_expr} $user $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core health --notify-heartbeat' >> /dev/null 2>&1"
         fi
-        if [[ "$create_test_job" == true ]]; then
+        if [[ "$create_test_job_enabled" == true ]]; then
             echo "# INMANAGE CRON TEST"
             echo "* * * * * $user $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${touch_cmd_escaped} crontestfile' >> /dev/null 2>&1"
         fi
@@ -452,11 +441,18 @@ uninstall_cronjob() {
     parse_named_args args "$@"
 
     local cron_file="/etc/cron.d/invoiceninja"
-    local cron_mode="${args[cron_mode]:-${args[cron-mode]:-${args[mode]:-auto}}}"
+    local cron_mode
+    cron_mode="$(args_get args "auto" cron_mode mode)"
     cron_mode="${cron_mode,,}"
-    if [[ -n "${args[cron_file]}" ]]; then
-        cron_file="${args[cron_file]}"
+    local cron_file_arg=""
+    cron_file_arg="$(args_get args "" cron_file)"
+    if [[ -n "$cron_file_arg" ]]; then
+        cron_file="$cron_file_arg"
     fi
+    local remove_test_job
+    remove_test_job="$(args_get args "false" remove_test_job)"
+    local remove_test_job_enabled=false
+    args_is_true "$remove_test_job" && remove_test_job_enabled=true
 
     local can_sudo=false
     if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
@@ -490,7 +486,7 @@ uninstall_cronjob() {
             ;;
     esac
 
-    if [[ "$remove_test_job" == true ]]; then
+    if [[ "$remove_test_job_enabled" == true ]]; then
         log info "[CRON] Removing cron test job only."
         remove_test_lines() {
             awk '!/crontestfile/ && !/INMANAGE CRON TEST/' "$1" > "$2"
@@ -537,7 +533,7 @@ uninstall_cronjob() {
                     cat "$cron_file" > "$tmpfile"
                 elif [[ "$can_sudo" == true && $EUID -ne 0 ]]; then
                     if sudo -n test -f "$cron_file" 2>/dev/null; then
-                        sudo cat "$cron_file" > "$tmpfile"
+                        sudo cat "$cron_file" | tee "$tmpfile" >/dev/null
                     else
                         : > "$tmpfile"
                     fi

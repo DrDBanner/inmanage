@@ -243,22 +243,28 @@ provision_post_install() {
             return 1
         fi
         if true; then
-            local cron_jobs="${NAMED_ARGS[cron_jobs]:-${NAMED_ARGS[cron-jobs]:-both}}"
+            local cron_jobs
+            cron_jobs="$(args_get - "both" cron_jobs jobs)"
             local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
             local cron_ok=true
             local cron_skipped=false
-        local cron_mode="${NAMED_ARGS[cron_mode]:-${NAMED_ARGS[cron-mode]:-auto}}"
-        local no_cron="${NAMED_ARGS[no_cron_install]:-${NAMED_ARGS[no-cron-install]:-false}}"
-        local no_backup_cron="${NAMED_ARGS[no_backup_cron]:-${NAMED_ARGS[no-backup-cron]:-false}}"
-        local backup_time="${NAMED_ARGS[backup_time]:-${NAMED_ARGS[backup-time]:-03:24}}"
-        local heartbeat_time="${NAMED_ARGS[heartbeat_time]:-${NAMED_ARGS[heartbeat-time]:-${INM_NOTIFY_HEARTBEAT_TIME:-06:00}}}"
-            if [[ "$no_backup_cron" == true ]]; then
+            local cron_mode
+            cron_mode="$(args_get - "auto" cron_mode mode)"
+            local no_cron
+            no_cron="$(args_get - "false" no_cron_install no_cron)"
+            local no_backup_cron
+            no_backup_cron="$(args_get - "false" no_backup_cron)"
+            local backup_time
+            backup_time="$(args_get - "03:24" backup_time)"
+            local heartbeat_time
+            heartbeat_time="$(args_get - "${INM_NOTIFY_HEARTBEAT_TIME:-06:00}" heartbeat_time)"
+            if args_is_true "$no_backup_cron"; then
                 cron_jobs="artisan"
             fi
-        if [[ "$no_cron" == true ]]; then
-            log debug "[PROV] Cron install skipped by flag (--no-cron-install)."
-            cron_ok=false
-            cron_skipped=true
+            if args_is_true "$no_cron"; then
+                log debug "[PROV] Cron install skipped by flag (--no-cron-install)."
+                cron_ok=false
+                cron_skipped=true
             else
                 if ! install_cronjob "user=$cron_user" "jobs=$cron_jobs" "mode=$cron_mode" "backup_time=$backup_time" "heartbeat_time=$heartbeat_time"; then
                     cron_ok=false
@@ -296,7 +302,8 @@ provision_prebackup_db() {
         return 1
     }
 
-    local target_file="${backup_dir%/}/${DB_DATABASE}_preprovision_$(date +%Y%m%d-%H%M%S).sql"
+    local target_file
+    target_file="${backup_dir%/}/${DB_DATABASE}_preprovision_$(date +%Y%m%d-%H%M%S).sql"
     log debug "[PROV] Creating pre-provision DB backup: $target_file"
     if ! INM_QUIET_DUMP=true dump_database "$target_file"; then
         log err "[PROV] Pre-provision backup failed: $target_file"

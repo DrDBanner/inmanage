@@ -43,7 +43,7 @@ run_installation() {
             log debug "[TAR] Non-interactive install; use --provision for recommended provisioned install."
         fi
     fi
-    local env_file timestamp latest_version response source_dir
+    local env_file timestamp latest_version source_dir
     timestamp="$(date +'%Y%m%d_%H%M%S')"
     latest_version="$(get_latest_version)"
     local install_path="${INM_INSTALLATION_PATH%/}"
@@ -53,23 +53,20 @@ run_installation() {
     install_name="$(basename "$install_path")"
     local force="${NAMED_ARGS[force]:-${force_update:-false}}"
     if [ "$mode" = "Provisioned" ] && [ ! -e "$install_path" ]; then
+        # shellcheck disable=SC2034
         INM_PROVISION_FRESH_INSTALL=true
     fi
 
     if [ "$mode" = "Provisioned" ] && [[ "$force" != true ]] && [ -e "$install_path" ]; then
         if [[ -t 0 ]]; then
             log warn "[TAR] Provisioned install is destructive."
-            log info "[TAR] Continue? Type 'yes' to proceed:"
-            if ! read -r -t 60 response; then
-                log warn "[TAR] No response within 60 seconds. Installation aborted."
-                return 1
-            fi
-            if [[ ! "$response" =~ ^([Yy]([Ee][Ss])?)$ ]]; then
+            if prompt_confirm "PROV_DESTRUCTIVE" "no" "[TAR] Continue? Type 'yes' to proceed:" false 60; then
+                NAMED_ARGS[force]=true
+                force=true
+            else
                 log info "[TAR] Installation aborted by user."
                 return 1
             fi
-            NAMED_ARGS[force]=true
-            force=true
         else
             log err "[TAR] Provisioned install is destructive. Re-run with --force."
             return 1
@@ -175,12 +172,7 @@ run_installation() {
         # shellcheck disable=SC2154
         if [ "$force_update" != true ]; then
             log warn "[TAR] App directory already exists – archive current version?"
-            log info "[TAR] Proceed with installation and archive the current directory? (yes/no):"
-            if ! read -r -t 60 response; then
-                log warn "[TAR] No response within 60 seconds. Installation aborted."
-                return 0
-            fi
-            if [[ ! "$response" =~ ^([Yy]([Ee][Ss])?)$ ]]; then
+            if ! prompt_confirm "INSTALL_ARCHIVE" "no" "[TAR] Proceed with installation and archive the current directory? (yes/no):" false 60; then
                 log info "[TAR] Installation aborted by user."
                 return 0
             fi
@@ -347,6 +339,7 @@ run_installation() {
             local backup_path=""
             if [ "${INM_MIGRATION_BACKUP}" = "LATEST" ]; then
                 if [ -d "${INM_BACKUP_DIRECTORY:-./.backups}" ]; then
+                    # shellcheck disable=SC2012
                     backup_path=$(ls -1t "${INM_BACKUP_DIRECTORY:-./.backups}"/InvoiceNinja_* 2>/dev/null | head -n1)
                 fi
             else
@@ -356,8 +349,10 @@ run_installation() {
                 log debug "[PROV] Restoring migration backup: $backup_path"
                 local saved_named=("${NAMED_ARGS[@]}")
                 NAMED_ARGS[file]="$backup_path"
+                # shellcheck disable=SC2154
                 NAMED_ARGS[include_app]=true
                 NAMED_ARGS[force]=true
+                # shellcheck disable=SC2154
                 NAMED_ARGS[purge]=true
                 call_with_named_args run_restore || log warn "[PROV] Migration restore failed; continuing with fresh setup."
                 NAMED_ARGS=("${saved_named[@]}")
@@ -368,19 +363,25 @@ run_installation() {
         export INM_PROVISION_FILE_USED="$env_file"
         provision_post_install || return 1
     else
-        local cron_jobs="${NAMED_ARGS[cron_jobs]:-${NAMED_ARGS[cron-jobs]:-artisan}}"
+        local cron_jobs
+        cron_jobs="$(args_get - "artisan" cron_jobs jobs)"
         local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
         local cron_ok=true
         local cron_skipped=false
-        local cron_mode="${NAMED_ARGS[cron_mode]:-${NAMED_ARGS[cron-mode]:-auto}}"
-        local no_cron="${NAMED_ARGS[no_cron_install]:-${NAMED_ARGS[no-cron-install]:-false}}"
-        local no_backup_cron="${NAMED_ARGS[no_backup_cron]:-${NAMED_ARGS[no-backup-cron]:-false}}"
-        local backup_time="${NAMED_ARGS[backup_time]:-${NAMED_ARGS[backup-time]:-03:24}}"
-        local heartbeat_time="${NAMED_ARGS[heartbeat_time]:-${NAMED_ARGS[heartbeat-time]:-${INM_NOTIFY_HEARTBEAT_TIME:-06:00}}}"
-        if [[ "$no_backup_cron" == true ]]; then
+        local cron_mode
+        cron_mode="$(args_get - "auto" cron_mode mode)"
+        local no_cron
+        no_cron="$(args_get - "false" no_cron_install no_cron)"
+        local no_backup_cron
+        no_backup_cron="$(args_get - "false" no_backup_cron)"
+        local backup_time
+        backup_time="$(args_get - "03:24" backup_time)"
+        local heartbeat_time
+        heartbeat_time="$(args_get - "${INM_NOTIFY_HEARTBEAT_TIME:-06:00}" heartbeat_time)"
+        if args_is_true "$no_backup_cron"; then
             cron_jobs="artisan"
         fi
-        if [[ "$no_cron" == true ]]; then
+        if args_is_true "$no_cron"; then
             log debug "[TAR] Cron install skipped by flag (--no-cron-install)."
             cron_ok=false
             cron_skipped=true

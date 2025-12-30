@@ -57,7 +57,8 @@ run_preflight() {
         done
         preflight_created_dirs+=("$dir")
     }
-    preflight_cleanup_created_dirs() {
+# shellcheck disable=SC2329
+preflight_cleanup_created_dirs() {
         if [[ "$preflight_cleanup_enabled" != true ]]; then
             return 0
         fi
@@ -164,11 +165,31 @@ run_preflight() {
     fi
 
     # prefer globally parsed NAMED_ARGS to survive re-exec user switches
-    local fix_permissions="${NAMED_ARGS[fix_permissions]:-${NAMED_ARGS[fix-permissions]:-${ARGS[fix_permissions]:-${ARGS[fix-permissions]:-false}}}}"
-    local checks_filter="${NAMED_ARGS[checks]:-${NAMED_ARGS[check]:-${ARGS[checks]:-${ARGS[check]:-}}}}"
-    local exclude_filter="${NAMED_ARGS[exclude]:-${NAMED_ARGS[exclude_checks]:-${NAMED_ARGS[exclude-checks]:-${ARGS[exclude]:-${ARGS[exclude_checks]:-${ARGS[exclude-checks]:-}}}}}}"
-    local notify_test="${NAMED_ARGS[notify_test]:-${NAMED_ARGS[notify-test]:-${ARGS[notify_test]:-${ARGS[notify-test]:-false}}}}"
-    local notify_heartbeat="${NAMED_ARGS[notify_heartbeat]:-${NAMED_ARGS[notify-heartbeat]:-${ARGS[notify_heartbeat]:-${ARGS[notify-heartbeat]:-false}}}}"
+    local fix_permissions
+    fix_permissions="$(args_get ARGS "false" fix_permissions)"
+    local checks_filter
+    checks_filter="$(args_get ARGS "" checks check)"
+    local exclude_filter
+    exclude_filter="$(args_get ARGS "" exclude exclude_checks)"
+    local notify_test
+    notify_test="$(args_get ARGS "false" notify_test)"
+    local notify_heartbeat
+    notify_heartbeat="$(args_get ARGS "false" notify_heartbeat)"
+    if args_is_true "$fix_permissions"; then
+        fix_permissions=true
+    else
+        fix_permissions=false
+    fi
+    if args_is_true "$notify_test"; then
+        notify_test=true
+    else
+        notify_test=false
+    fi
+    if args_is_true "$notify_heartbeat"; then
+        notify_heartbeat=true
+    else
+        notify_heartbeat=false
+    fi
     if [[ "$notify_heartbeat" == true ]]; then
         if [[ -n "${INM_NOTIFY_HEARTBEAT_INCLUDE:-}" && -z "$checks_filter" ]]; then
             checks_filter="${INM_NOTIFY_HEARTBEAT_INCLUDE}"
@@ -950,7 +971,7 @@ run_preflight() {
                     saxon_path="${ext_dir%/}/saxon.so"
                 fi
                 if [[ -z "$saxon_path" ]]; then
-                    saxon_path="$(ls -1 /usr/lib*/php/*/saxon.so /usr/local/lib*/php/*/saxon.so 2>/dev/null | head -n1 || true)"
+                    saxon_path="$(find /usr/lib /usr/local/lib -type f -path "*/php/*/saxon.so" 2>/dev/null | head -n1 || true)"
                 fi
                 if [[ -n "$saxon_path" ]]; then
                     add_result INFO "EXT" "saxon present but not loaded: ${saxon_path}"
@@ -2127,8 +2148,6 @@ php_thresholds() {
         php_emit "$add_fn" ERR "$tag" "upload_max_filesize too low (${upload_max:-unset})"
     fi
 
-    local realpath_mb
-    realpath_mb="$(mem_to_mb "$realpath_cache")"
     if [ -n "$realpath_cache" ]; then
         php_emit "$add_fn" INFO "$tag" "realpath_cache_size ${realpath_cache}"
     fi

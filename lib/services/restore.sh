@@ -10,20 +10,50 @@ __SERVICE_RESTORE_LOADED=1
 # Detects new flat bundle layout (real folders/files, no nested archives).
 # ---------------------------------------------------------------------
 run_restore() {
+    # shellcheck disable=SC2034
     declare -A ARGS
     parse_named_args ARGS "$@"
 
-    local bundle="${ARGS[file]:-${ARGS[bundle]:-}}"
-    local force="${ARGS[force]:-${force_update:-false}}"
-    local include_app="${ARGS[include_app]:-${ARGS[include-app]:-true}}"
-    local target_arg="${ARGS[target]:-${ARGS[bundle_target]:-}}"
+    local bundle
+    bundle="$(args_get ARGS "" file bundle)"
+    local force
+    force="$(args_get ARGS "${force_update:-false}" force)"
+    if args_is_true "$force"; then
+        force=true
+    else
+        force=false
+    fi
+    local include_app
+    include_app="$(args_get ARGS "true" include_app)"
+    if args_is_true "$include_app"; then
+        include_app=true
+    else
+        include_app=false
+    fi
+    local target_arg
+    target_arg="$(args_get ARGS "" target bundle_target)"
     local target_default="${INM_INSTALLATION_PATH:-${INM_BASE_DIRECTORY%/}/${INM_INSTALLATION_DIRECTORY#/}}"
     local target="${target_arg:-$target_default}"
-    local prebackup="${ARGS[pre_backup]:-${ARGS[pre-backup]:-true}}"
-    local purge="${ARGS[purge_db]:-${ARGS[purge]:-true}}"
-    local autofill="${ARGS[autofill_missing]:-${ARGS[autofill-missing]:-${ARGS[autoheal]:-1}}}"
-    local autofill_app="${ARGS[autofill_missing_app]:-${ARGS[autofill-missing-app]:-${ARGS[autoheal_app]:-${ARGS[autoheal-app]:-$autofill}}}}"
-    local autofill_db="${ARGS[autofill_missing_db]:-${ARGS[autofill-missing-db]:-${ARGS[autoheal_db]:-${ARGS[autoheal-db]:-$autofill}}}}"
+    local prebackup
+    prebackup="$(args_get ARGS "true" pre_backup)"
+    if args_is_true "$prebackup"; then
+        prebackup=true
+    else
+        prebackup=false
+    fi
+    local purge
+    purge="$(args_get ARGS "true" purge_db purge)"
+    if args_is_true "$purge"; then
+        purge=true
+    else
+        purge=false
+    fi
+    local autofill
+    autofill="$(args_get ARGS "1" autofill_missing autoheal)"
+    local autofill_app
+    autofill_app="$(args_get ARGS "$autofill" autofill_missing_app autoheal_app)"
+    local autofill_db
+    autofill_db="$(args_get ARGS "$autofill" autofill_missing_db autoheal_db)"
     local simulate="${DRY_RUN:-false}"
 
     if [[ "$simulate" != true ]]; then
@@ -51,12 +81,16 @@ run_restore() {
             return 1
         fi
 
-        if [[ "${NAMED_ARGS[latest]:-${NAMED_ARGS[file_latest]:-${NAMED_ARGS[file-latest]:-false}}}" == "true" ]]; then
+        local latest
+        latest="$(args_get ARGS "false" latest file_latest)"
+        if args_is_true "$latest"; then
             bundle="${candidates[0]}"
             log info "[RESTORE] --latest requested; auto-selecting newest: $bundle"
         else
             log info "[RESTORE] Found ${#candidates[@]} backup item(s); prompting for selection."
-            if [[ ! -t 0 && "${NAMED_ARGS[auto_select]:-${NAMED_ARGS[auto-select]:-}}" != "true" ]]; then
+            local auto_select
+            auto_select="$(args_get ARGS "" auto_select)"
+            if [[ ! -t 0 ]] && ! args_is_true "$auto_select"; then
                 log err "[RESTORE] Cannot prompt without TTY. Re-run with --file=<path> or --auto-select=true to pick the newest automatically."
                 return 1
             fi
@@ -80,7 +114,7 @@ run_restore() {
         return 0
     fi
 
-    if [[ "$force" != true ]]; then
+    if ! args_is_true "$force"; then
         local bundle_has_db=false
         if [[ -d "$bundle" ]]; then
             if find "$bundle" -maxdepth 4 -type f \( -name "db.sql" -o -name "*_db.sql" \) -print -quit | grep -q .; then
@@ -88,7 +122,7 @@ run_restore() {
             fi
         else
             case "$bundle" in
-                *.sql|*_db.sql)
+                *.sql)
                     bundle_has_db=true
                     ;;
                 *.tar.gz|*.tgz)
@@ -111,6 +145,7 @@ run_restore() {
 
     local tmpdir
     tmpdir="$(mktemp -d)"
+    # shellcheck disable=SC2329
     cleanup_tmp_restore() {
         local dir="$1"
         [[ -n "$dir" ]] || return 0
@@ -171,14 +206,16 @@ run_restore() {
     extra_dir=$(find "$stage_root" -maxdepth 2 -type d -name "extra" | head -n1)
 
     local app_hint="${INM_INSTALLATION_DIRECTORY#/}"
-    local app_hint_base="$(basename "${INM_INSTALLATION_PATH:-$target_default}")"
+    local app_hint_base
+    app_hint_base="$(basename "${INM_INSTALLATION_PATH:-$target_default}")"
     if [[ -n "$app_hint" && -d "$stage_root/$app_hint" ]]; then
         app_dir="$stage_root/$app_hint"
     elif [[ -n "$app_hint_base" && -d "$stage_root/$app_hint_base" ]]; then
         app_dir="$stage_root/$app_hint_base"
     else
         while IFS= read -r d; do
-            local base="$(basename "$d")"
+            local base
+            base="$(basename "$d")"
             [[ "$base" == "storage" || "$base" == "public" || "$base" == "extra" ]] && continue
             app_dir="$d"
             break
@@ -197,10 +234,7 @@ run_restore() {
         else
             log warn "[RESTORE] No .env found in backup. Without APP_KEY, encrypted secrets (payment/mail/API/2FA) will be lost; users must re-enter them."
             if [[ "$force" != true ]]; then
-                log info "[RESTORE] Continue without .env? (yes/no): "
-                local cont_env=""
-                read -r cont_env
-                if [[ ! "$cont_env" =~ ^([Yy]([Ee][Ss])?)$ ]]; then
+                if ! prompt_confirm "RESTORE_NO_ENV" "no" "[RESTORE] Continue without .env? (yes/no):" false 60; then
                     log err "[RESTORE] Aborted due to missing .env."
                     return 1
                 fi
@@ -209,7 +243,8 @@ run_restore() {
     fi
 
     if [[ "$include_app" == true && -d "$target" ]]; then
-        local pre_restore_backup="${INM_BACKUP_DIRECTORY%/}/restore_pre_$(date +%Y%m%d-%H%M%S)"
+        local pre_restore_backup
+        pre_restore_backup="${INM_BACKUP_DIRECTORY%/}/restore_pre_$(date +%Y%m%d-%H%M%S)"
         if [[ "$simulate" == true ]]; then
             log info "[DRY-RUN] Would move existing app to $pre_restore_backup before restore."
         else
@@ -240,6 +275,7 @@ run_restore() {
             else
                 log warn "[RESTORE] No application directory found in backup. Attempting fresh install (autofill app)."
                 local saved_named=("${NAMED_ARGS[@]}")
+                # shellcheck disable=SC2154
                 NAMED_ARGS[clean]=true
                 call_with_named_args run_installation ""
                 NAMED_ARGS=("${saved_named[@]}")
@@ -334,10 +370,7 @@ run_restore() {
                 if ! grep -q '^APP_KEY=' "$restored_env"; then
                     log warn "[RESTORE] APP_KEY missing in restored .env ($restored_env). Encrypted secrets (payment/mail/API/2FA) will be unusable until replaced."
                     if [[ "$force" != true ]]; then
-                        log info "[RESTORE] Continue without APP_KEY? (yes/no): "
-                        local cont=""
-                        read -r cont
-                        if [[ ! "$cont" =~ ^([Yy]([Ee][Ss])?)$ ]]; then
+                        if ! prompt_confirm "RESTORE_NO_APP_KEY" "no" "[RESTORE] Continue without APP_KEY? (yes/no):" false 60; then
                             log err "[RESTORE] Aborted due to missing APP_KEY."
                             return 1
                         fi
@@ -352,9 +385,8 @@ run_restore() {
             log warn "[DRY-RUN] No DB dump in backup. Would prompt for alternative or fresh seed."
         else
             log warn "[RESTORE] No DB dump found. Provide a path to import, type 'fresh' to migrate/seed, or leave empty to abort."
-            printf "Enter SQL file path or 'fresh' (empty to abort): "
             local choice=""
-            read -r choice
+            choice="$(prompt_var "RESTORE_DB" "" "Enter SQL file path or 'fresh' (empty to abort):" false 120)" || return 1
             if [[ -z "$choice" ]]; then
                 log err "[RESTORE] Aborting. Rerun with --file=<backup> or use autofill-db=1 with --force to bypass prompts."
                 return 1
