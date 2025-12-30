@@ -161,7 +161,13 @@ check_missing_settings() {
             fi
             log warn "[CMS] $key not found in $INM_SELF_ENV_FILE. Adding with default value '${default_settings[$key]}'."
             local val="${default_settings[$key]}"
-            echo "$key=\"$val\"" >> "$INM_SELF_ENV_FILE"
+            local inline_comment=""
+            if declare -p default_inline_comments >/dev/null 2>&1; then
+                if [ -n "${default_inline_comments[$key]+_}" ] && [ -n "${default_inline_comments[$key]}" ]; then
+                    inline_comment=" # ${default_inline_comments[$key]}"
+                fi
+            fi
+            printf '%s="%s"%s\n' "$key" "$val" "$inline_comment" >> "$INM_SELF_ENV_FILE"
             updated=1
         fi
     done
