@@ -8,6 +8,7 @@ __CORE_CLI_LOADED=1
 # show_help()
 # Basic help overview with available commands.
 # ---------------------------------------------------------------------
+# TODO: AS/400-style shell interface for Invoice Ninja? Depends on community engagement; heavy lift.
 show_help() {
     cat <<EOF
 Usage:

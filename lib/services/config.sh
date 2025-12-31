@@ -25,6 +25,9 @@ write_config_setting() {
     if [ -n "${default_inline_comments[$key]+_}" ]; then
         inline_comment="${default_inline_comments[$key]}"
     fi
+    if [[ "$key" =~ (^|_)(PASS(WORD)?|TOKEN|SECRET|KEY|CREDENTIALS)$ ]]; then
+        inline_comment=""
+    fi
     if [[ "$key" == "INM_PHP_EXECUTABLE" && -z "$value" ]]; then
         value="php"
         if [ -n "$inline_comment" ]; then

@@ -36,6 +36,134 @@ _env_unescape_double_quoted() {
 }
 
 # ---------------------------------------------------------------------
+# _env_key_is_sensitive()
+# ---------------------------------------------------------------------
+_env_key_is_sensitive() {
+    local key="$1"
+    [[ "$key" =~ (^|_)(PASS(WORD)?|TOKEN|SECRET|KEY|CREDENTIALS)$ ]]
+}
+
+# ---------------------------------------------------------------------
+# _env_trim_left()
+# ---------------------------------------------------------------------
+_env_trim_left() {
+    local val="$1"
+    val="${val#"${val%%[![:space:]]*}"}"
+    printf "%s" "$val"
+}
+
+# ---------------------------------------------------------------------
+# _env_trim_right()
+# ---------------------------------------------------------------------
+_env_trim_right() {
+    local val="$1"
+    val="${val%"${val##*[![:space:]]}"}"
+    printf "%s" "$val"
+}
+
+# ---------------------------------------------------------------------
+# _env_strip_inline_comment_unquoted()
+# ---------------------------------------------------------------------
+_env_strip_inline_comment_unquoted() {
+    local val="$1"
+    local leading_space="${2:-false}"
+    local out=""
+    local i=0
+    local len=${#val}
+    local prev_space="$leading_space"
+    while [ $i -lt "$len" ]; do
+        local ch="${val:$i:1}"
+        if [[ "$ch" == "#" && "$prev_space" == true ]]; then
+            break
+        fi
+        out+="$ch"
+        if [[ "$ch" =~ [[:space:]] ]]; then
+            prev_space=true
+        else
+            prev_space=false
+        fi
+        i=$((i + 1))
+    done
+    printf "%s" "$out"
+}
+
+# ---------------------------------------------------------------------
+# _env_parse_env_value()
+# ---------------------------------------------------------------------
+_env_parse_env_value() {
+    local raw="$1"
+    local sensitive="${2:-false}"
+    raw="${raw%$'\r'}"
+    local val
+    val="$(_env_trim_left "$raw")"
+    local had_leading_space=false
+    if [[ "$raw" != "$val" ]]; then
+        had_leading_space=true
+    fi
+    if [[ "$val" =~ ^\"(.*)\"[[:space:]]*(#.*)?$ ]]; then
+        val="$(_env_unescape_double_quoted "${BASH_REMATCH[1]}")"
+        printf "%s" "$val"
+        return 0
+    fi
+    if [[ "$val" =~ ^\'(.*)\'[[:space:]]*(#.*)?$ ]]; then
+        printf "%s" "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    if [[ "$sensitive" == true ]]; then
+        val="$(_env_trim_right "$val")"
+        printf "%s" "$val"
+        return 0
+    fi
+    val="$(_env_strip_inline_comment_unquoted "$val" "$had_leading_space")"
+    val="$(_env_trim_right "$val")"
+    printf "%s" "$val"
+}
+
+# ---------------------------------------------------------------------
+# _env_extract_inline_comment()
+# ---------------------------------------------------------------------
+_env_extract_inline_comment() {
+    local raw="$1"
+    raw="${raw%$'\r'}"
+    if [[ "$raw" =~ ^[[:space:]]*\"(.*)\"([[:space:]]*#.*)?$ ]]; then
+        [[ -n "${BASH_REMATCH[2]}" ]] && printf "%s" "${BASH_REMATCH[2]}"
+        return 0
+    fi
+    if [[ "$raw" =~ ^[[:space:]]*\'(.*)\'([[:space:]]*#.*)?$ ]]; then
+        [[ -n "${BASH_REMATCH[2]}" ]] && printf "%s" "${BASH_REMATCH[2]}"
+        return 0
+    fi
+    local i=0
+    local len=${#raw}
+    local seen_nonspace=false
+    local prev_space=true
+    local space_run_start=0
+    while [ $i -lt "$len" ]; do
+        local ch="${raw:$i:1}"
+        if [[ "$ch" =~ [[:space:]] ]]; then
+            if [[ "$prev_space" == false ]]; then
+                space_run_start=$i
+            fi
+            prev_space=true
+        else
+            if [[ "$ch" == "#" && ( "$seen_nonspace" == false || "$prev_space" == true ) ]]; then
+                local start="$i"
+                if [[ "$prev_space" == true ]]; then
+                    start="$space_run_start"
+                fi
+                local comment="${raw:$start}"
+                [[ -n "$comment" ]] && printf "%s" "$comment"
+                return 0
+            fi
+            seen_nonspace=true
+            prev_space=false
+        fi
+        i=$((i + 1))
+    done
+    return 0
+}
+
+# ---------------------------------------------------------------------
 # load_env_file_raw()
 # Parses and exports selected variables from an env file safely.
 # ---------------------------------------------------------------------
@@ -55,42 +183,35 @@ load_env_file_raw() {
     # - Respect quotes: if quoted, do NOT strip inline #
     # - Unquoted values: strip inline comment and trim, then quote for export
     while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
         # skip empty
         [[ -z "${line//[[:space:]]/}" ]] && continue
         # skip full-line comments
         local trimmed="${line#"${line%%[![:space:]]*}"}"
         [[ "$trimmed" =~ ^# ]] && continue
 
-        if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+        if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
             local key val raw
-            key="${BASH_REMATCH[1]}"
-            raw="${BASH_REMATCH[2]}"
+            key="${BASH_REMATCH[2]}"
+            raw="${BASH_REMATCH[3]}"
             # filter relevant prefixes only
             if [[ ! "$key" =~ ^(APP_|DB_|ELEVATED_|MAIL_|NINJA_|PDF_|INM_)[A-Z_]*$ ]]; then
                 continue
             fi
-            # trim leading spaces from val
-            val="${raw#"${raw%%[![:space:]]*}"}"
-            # quoted values: strip outer quotes and allow inline comments
-            if [[ "$val" =~ ^\"(.*)\"[[:space:]]*(#.*)?$ ]]; then
-                val="$(_env_unescape_double_quoted "${BASH_REMATCH[1]}")"
-            elif [[ "$val" =~ ^\'(.*)\'[[:space:]]*(#.*)?$ ]]; then
-                val="${BASH_REMATCH[1]}"
-            else
-                # unquoted: drop inline comment, trim trailing spaces
-                val="${val%%#*}"
-                val="${val%"${val##*[![:space:]]}"}"
+            local sensitive=false
+            if _env_key_is_sensitive "$key"; then
+                sensitive=true
             fi
+            val="$(_env_parse_env_value "$raw" "$sensitive")"
             printf 'export %s=%q\n' "$key" "$val" >> "$tmpfile"
         fi
     done < "$file"
 
     local redacted_data=""
-    local sensitive_re='(^|_)(PASS(WORD)?|TOKEN|SECRET|KEY|CREDENTIALS)$'
     while IFS= read -r line; do
         local key="${line#export }"
         key="${key%%=*}"
-        if [[ "$key" =~ $sensitive_re ]]; then
+        if _env_key_is_sensitive "$key"; then
             redacted_data+="export ${key}=REDACTED "
         else
             redacted_data+="${line} "
@@ -118,18 +239,14 @@ read_env_value_safe() {
     local file="$1"
     local key="$2"
     local line val raw
-    line="$(grep -E "^${key}=" "$file" 2>/dev/null | tail -n1)"
+    line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=" "$file" 2>/dev/null | tail -n1)"
     [[ -z "$line" ]] && return 0
     raw="${line#*=}"
-    val="${raw#"${raw%%[![:space:]]*}"}"
-    if [[ "$val" =~ ^\"(.*)\"[[:space:]]*(#.*)?$ ]]; then
-        val="$(_env_unescape_double_quoted "${BASH_REMATCH[1]}")"
-    elif [[ "$val" =~ ^\'(.*)\'[[:space:]]*(#.*)?$ ]]; then
-        val="${BASH_REMATCH[1]}"
-    else
-        val="${val%%#*}"
-        val="${val%"${val##*[![:space:]]}"}"
+    local sensitive=false
+    if _env_key_is_sensitive "$key"; then
+        sensitive=true
     fi
+    val="$(_env_parse_env_value "$raw" "$sensitive")"
     printf "%s" "$val"
 }
 
@@ -166,6 +283,9 @@ check_missing_settings() {
                 if [ -n "${default_inline_comments[$key]+_}" ] && [ -n "${default_inline_comments[$key]}" ]; then
                     inline_comment=" # ${default_inline_comments[$key]}"
                 fi
+            fi
+            if _env_key_is_sensitive "$key"; then
+                inline_comment=""
             fi
             printf '%s="%s"%s\n' "$key" "$val" "$inline_comment" >> "$INM_SELF_ENV_FILE"
             updated=1

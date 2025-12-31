@@ -305,13 +305,24 @@ env_get() {
         log err "[ENV] Invalid key: $key"
         return 1
     fi
-    local val
-    val=$(_env_run "$access" "$owner" cat "$env_file" | grep -E "^${key}=" | tail -n1 | cut -d= -f2-)
-    if [[ -n "$val" ]]; then
-        echo "$val"
-    else
+    local line
+    line=$(_env_run "$access" "$owner" cat "$env_file" | grep -E "^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=" | tail -n1)
+    if [[ -z "$line" ]]; then
         log warn "[ENV] Key not found: $key"
+        return 0
     fi
+    local raw val
+    raw="${line#*=}"
+    if declare -F _env_parse_env_value >/dev/null 2>&1; then
+        local sensitive=false
+        if declare -F _env_key_is_sensitive >/dev/null 2>&1 && _env_key_is_sensitive "$key"; then
+            sensitive=true
+        fi
+        val="$(_env_parse_env_value "$raw" "$sensitive")"
+    else
+        val="${raw%$'\r'}"
+    fi
+    echo "$val"
 }
 
 env_unset() {
@@ -337,14 +348,14 @@ env_unset() {
         log info "[DRY-RUN] Would remove $key from $env_file"
         return 0
     fi
-    if grep -q -E "^${key}=" "$env_file"; then
+    if grep -q -E "^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=" "$env_file"; then
         local cmd tmp_file
         tmp_file="$(_env_run "$access" "$owner" mktemp)" || {
             log err "[ENV] Failed to create temp file for $env_file"
             return 1
         }
         # shellcheck disable=SC2016
-        cmd='grep -v -E "^${KEY}=" "$ENV_FILE" > "$TMP" 2>/dev/null || true'
+        cmd='grep -v -E "^[[:space:]]*(export[[:space:]]+)?${KEY}[[:space:]]*=" "$ENV_FILE" > "$TMP" 2>/dev/null || true'
         _env_run_shell "$access" "$owner" "$cmd" KEY="$key" ENV_FILE="$env_file" TMP="$tmp_file" || return 1
         _env_replace_file "$access" "$owner" "$env_file" "$tmp_file" || return 1
         if [[ "$target" == "app" && -n "${INM_ENV_MODE:-}" ]]; then
@@ -406,14 +417,68 @@ env_set() {
         log info "[DRY-RUN] Would set $key in $env_file"
         return 0
     fi
-    local cmd tmp_file
+    local cmd tmp_file comment=""
     tmp_file="$(_env_run "$access" "$owner" mktemp)" || {
         log err "[ENV] Failed to create temp file for $env_file"
         return 1
     }
+    local sensitive=false
+    if declare -F _env_key_is_sensitive >/dev/null 2>&1 && _env_key_is_sensitive "$key"; then
+        sensitive=true
+    fi
+    local file_content
+    file_content="$(_env_run "$access" "$owner" cat "$env_file")"
+    local -a lines=()
+    local idx=0
+    local last_idx=0
+    local last_line=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        idx=$((idx + 1))
+        lines+=("$line")
+        if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*= ]]; then
+            last_idx=$idx
+            last_line="$line"
+        fi
+    done <<< "$file_content"
+
+    local new_line=""
+    if [[ "$last_idx" -gt 0 ]]; then
+        if [[ "$sensitive" == false ]] && declare -F _env_extract_inline_comment >/dev/null 2>&1; then
+            local raw
+            raw="${last_line#*=}"
+            comment="$(_env_extract_inline_comment "$raw")"
+        fi
+        if [[ "$last_line" =~ ^([[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*)(=[[:space:]]*)(.*)$ ]]; then
+            local lhs="${BASH_REMATCH[1]}"
+            local sep="${BASH_REMATCH[3]}"
+            new_line="${lhs}${sep}\"${escaped_value}\"${comment}"
+        else
+            new_line="${key}=\"${escaped_value}\"${comment}"
+        fi
+        local -a updated=()
+        idx=0
+        for line in "${lines[@]}"; do
+            idx=$((idx + 1))
+            if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*= ]]; then
+                if [[ "$idx" -eq "$last_idx" ]]; then
+                    updated+=("$new_line")
+                fi
+                continue
+            fi
+            updated+=("$line")
+        done
+        lines=("${updated[@]}")
+    else
+        lines+=("${key}=\"${escaped_value}\"")
+    fi
+
+    local output=""
+    for line in "${lines[@]}"; do
+        output+="${line}"$'\n'
+    done
     # shellcheck disable=SC2016
-    cmd='grep -v -E "^${KEY}=" "$ENV_FILE" > "$TMP" 2>/dev/null || true; printf "%s\n" "${KEY}=\"${VALUE}\"" >> "$TMP"'
-    _env_run_shell "$access" "$owner" "$cmd" KEY="$key" VALUE="$escaped_value" ENV_FILE="$env_file" TMP="$tmp_file" || return 1
+    cmd='printf "%s" "$CONTENT" > "$TMP"'
+    _env_run_shell "$access" "$owner" "$cmd" CONTENT="$output" TMP="$tmp_file" || return 1
     _env_replace_file "$access" "$owner" "$env_file" "$tmp_file" || return 1
     if [[ "$target" == "app" && -n "${INM_ENV_MODE:-}" ]]; then
         _env_run "$access" "$owner" chmod "${INM_ENV_MODE}" "$env_file" 2>/dev/null || true
