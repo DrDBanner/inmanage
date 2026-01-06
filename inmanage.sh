@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -eE
 
 # Resolve script directory even when called via symlink.
 _resolve_self() {
@@ -32,11 +32,27 @@ else
     exit 1
 fi
 
+if [ -f "${LIB_DIR}/helpers/env_parse.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/env_parse.sh"
+else
+    echo "[ERR] Missing env parse helper: ${LIB_DIR}/helpers/env_parse.sh" >&2
+    exit 1
+fi
+
 if [ -f "${LIB_DIR}/helpers/env_read.sh" ]; then
     # shellcheck source=/dev/null
     source "${LIB_DIR}/helpers/env_read.sh"
 else
     echo "[ERR] Missing env read helper: ${LIB_DIR}/helpers/env_read.sh" >&2
+    exit 1
+fi
+
+if [ -f "${LIB_DIR}/helpers/php_utils.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/php_utils.sh"
+else
+    echo "[ERR] Missing PHP helper: ${LIB_DIR}/helpers/php_utils.sh" >&2
     exit 1
 fi
 
@@ -97,6 +113,10 @@ else
     exit 1
 fi
 
+if declare -F ops_log_on_error >/dev/null 2>&1; then
+    trap 'ops_log_on_error' ERR
+fi
+
 if [ -f "${LIB_DIR}/helpers/user.sh" ]; then
     # shellcheck source=/dev/null
     source "${LIB_DIR}/helpers/user.sh"
@@ -118,6 +138,45 @@ if [ -f "${LIB_DIR}/helpers/resolve.sh" ]; then
     source "${LIB_DIR}/helpers/resolve.sh"
 else
     echo "[ERR] Missing resolve helper: ${LIB_DIR}/helpers/resolve.sh" >&2
+    exit 1
+fi
+
+if [ -f "${LIB_DIR}/helpers/sys_utils.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/sys_utils.sh"
+else
+    echo "[ERR] Missing system helper: ${LIB_DIR}/helpers/sys_utils.sh" >&2
+    exit 1
+fi
+
+if [ -f "${LIB_DIR}/helpers/git_utils.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/git_utils.sh"
+else
+    echo "[ERR] Missing git helper: ${LIB_DIR}/helpers/git_utils.sh" >&2
+    exit 1
+fi
+
+if [ -f "${LIB_DIR}/helpers/cli_info.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/cli_info.sh"
+else
+    echo "[ERR] Missing CLI info helper: ${LIB_DIR}/helpers/cli_info.sh" >&2
+    exit 1
+fi
+
+if [ -f "${LIB_DIR}/helpers/http_utils.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/http_utils.sh"
+else
+    echo "[ERR] Missing http helper: ${LIB_DIR}/helpers/http_utils.sh" >&2
+    exit 1
+fi
+if [ -f "${LIB_DIR}/helpers/gh_utils.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/gh_utils.sh"
+else
+    echo "[ERR] Missing GitHub helper: ${LIB_DIR}/helpers/gh_utils.sh" >&2
     exit 1
 fi
 
@@ -239,6 +298,10 @@ else
     echo "[ERR] Missing preflight service module: ${LIB_DIR}/services/preflight.sh" >&2
     exit 1
 fi
+if [ -f "${LIB_DIR}/services/web.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/services/web.sh"
+fi
 if [ -f "${LIB_DIR}/services/pdf.sh" ]; then
     # shellcheck source=/dev/null
     source "${LIB_DIR}/services/pdf.sh"
@@ -250,10 +313,32 @@ fi
 
 # Call the environment setup before doing anything else
 setup_environment
+require_functions \
+    check_commands_list check_commands_missing \
+    spinner_start spinner_stop spinner_run spinner_run_optional spinner_run_quiet spinner_run_mode \
+    run_hook \
+    resolve_script_path resolve_cli_command_path ensure_trailing_slash resolve_env_paths compute_installation_path assert_file_path \
+    read_env_value_safe read_env_value env_set _env_key_is_sensitive _env_parse_env_value \
+    trace_can_guard trace_suspend trace_resume trace_suspend_if_sensitive_key \
+    enforce_ownership enforce_dir_permissions enforce_file_permissions fs_user_can_write fs_sync_dir fs_sync_path \
+    app_parse_rollback_target app_build_rollback_hint app_log_rollback_hint \
+    apply_cache_dir_mode \
+    get_installed_version get_latest_version version_compare get_app_release \
+    gh_release_list_versions gh_release_download gh_release_fetch_digest \
+    compat_compute_sha256 file_read_state \
+    notify_bool notify_emit_event notify_send_email notify_send_webhook notify_email_format_html \
+    web_emit_preflight webphp_emit_preflight \
+    snappdf_emit_preflight \
+    preflight_pick_probe_dir preflight_ensure_dir preflight_track_created_dir preflight_cleanup_created_dirs preflight_write_probe_file \
+    preflight_require_commands preflight_hydrate_app_url preflight_get_default_groups preflight_print_summary preflight_build_notify_summary \
+    prompt_confirm
+require_rc=$?
+if [ "$require_rc" -ne 0 ]; then
+    exit "$require_rc"
+fi
 if [ "$DEBUG" = true ]; then
     log debug "[BOOT] Loaded modules from $LIB_DIR (env,args,prompt,selection,fs,user,resolve,cli,config,checks,services)"
 fi
-# TODO: Align README command list with actual commands if they drift again.
 
 function_caller() {
     case "$1" in
@@ -289,9 +374,6 @@ function_caller() {
     install_cronjob)
         install_cronjob
         ;;
-    spawn_provision)
-        spawn_provision_file
-        ;;
     install_self)
         install_self
         ;;
@@ -306,12 +388,53 @@ function_caller() {
 
 force_update=false
 DEBUG=false
+DEBUG_LEVEL=0
 CMD_CONTEXT=""
 CMD_ACTION=""
 SHOW_FUNCTION_HELP=false
 DRY_RUN=false
+# TODO: Refactor globals (INM_*/DB_*/NAMED_ARGS) to a passed config/ctx object parameters to reduce side effects.
 
 parse_options "$@"
+
+debug_level="${DEBUG_LEVEL:-0}"
+trace_guard_dispatch=false
+if [[ "$debug_level" =~ ^[0-9]+$ && "$debug_level" -ge 2 ]]; then
+    if trace_can_guard && [[ "$CMD_CONTEXT" == "env" ]]; then
+        case "$CMD_ACTION" in
+            show)
+                trace_guard_dispatch=true
+                ;;
+            get|set)
+                trace_key="${CMD_EXTRA[0]:-}"
+                if [[ "$trace_key" == "app" || "$trace_key" == "cli" ]]; then
+                    trace_key="${CMD_EXTRA[1]:-}"
+                fi
+                trace_key="${trace_key%%=*}"
+                if [[ -n "$trace_key" ]] && _env_key_is_sensitive "$trace_key"; then
+                    trace_guard_dispatch=true
+                fi
+                ;;
+        esac
+    fi
+fi
+if [[ "$debug_level" =~ ^[0-9]+$ && "$debug_level" -ge 2 ]]; then
+    export PS4='+ ${BASH_SOURCE##*/}:${LINENO}:${FUNCNAME[0]:-main}: '
+    set -o xtrace
+fi
+
+# Compact output: default for self/-v unless explicitly overridden.
+if [[ -n "${NAMED_ARGS[compact]:-}" ]]; then
+    if args_is_true "${NAMED_ARGS[compact]}"; then
+        INM_COMPACT_OUTPUT=true
+    else
+        INM_COMPACT_OUTPUT=false
+    fi
+elif [[ -z "${INM_COMPACT_OUTPUT:-}" ]]; then
+    if [[ "$CMD_CONTEXT" == "self" || "${LEGACY_CMD:-}" == "version" ]]; then
+        INM_COMPACT_OUTPUT=true
+    fi
+fi
 
 if [ "$DEBUG" = true ]; then
     printf -v _args '%q ' "$@"
@@ -430,23 +553,39 @@ dispatch_command() {
     log debug "[DISPATCH] ctx=$ctx action=$action extra=${extra[*]}"
 
     case "$ctx" in
-    core)
-        case "$action" in
+        core)
+            case "$action" in
             install)
-                [[ "${NAMED_ARGS[clean]:-false}" == true ]] && force_update=true
-                local mode=""
-                    [[ "${NAMED_ARGS[provision]:-false}" == true ]] && mode="Provisioned"
-                    if skip_if_dry_run "core install"; then return 0; fi
-                    call_with_named_args run_installation "$mode"
+                local sub="${extra[0]:-}"
+                if [[ "$sub" == "rollback" ]]; then
+                    if skip_if_dry_run "core install rollback"; then return 0; fi
+                    ops_log_begin "install_rollback"
+                    call_with_named_args run_install_rollback "${extra[1]:-}"
+                    ops_log_end $?
+                else
+                    [[ "${NAMED_ARGS[clean]:-false}" == true ]] && force_update=true
+                    local mode=""
+                        [[ "${NAMED_ARGS[provision]:-false}" == true ]] && mode="Provisioned"
+                        if skip_if_dry_run "core install"; then return 0; fi
+                        export INM_HISTORY_LOG_VERBOSE="install"
+                        ops_log_begin "install"
+                        call_with_named_args run_installation "$mode"
+                        ops_log_end $?
+                        unset INM_HISTORY_LOG_VERBOSE
+                fi
                     ;;
             update)
                 local sub="${extra[0]:-}"
                 if [[ "$sub" == "rollback" ]]; then
                     if skip_if_dry_run "core update rollback"; then return 0; fi
+                    ops_log_begin "rollback"
                     call_with_named_args run_update_rollback "${extra[1]:-}"
+                    ops_log_end $?
                 else
                     if skip_if_dry_run "core update"; then return 0; fi
+                    ops_log_begin "update"
                     call_with_named_args run_update
+                    ops_log_end $?
                 fi
                 ;;
             info|health)
@@ -460,49 +599,73 @@ dispatch_command() {
             versions)
                 call_with_named_args show_versions_summary
                 ;;
+            get)
+                local sub="${extra[0]:-}"
+                case "$sub" in
+                    app|"")
+                        call_with_named_args get_app_release
+                        ;;
+                    *)
+                        log err "[core] Unknown get target: $sub"
+                        return 1
+                        ;;
+                esac
+                ;;
             backup)
                 NAMED_ARGS["fullbackup"]=true
                 if skip_if_dry_run "core backup"; then return 0; fi
+                ops_log_begin "backup"
                 call_with_named_args run_backup
+                ops_log_end $?
                 ;;
             restore)
-                if skip_if_dry_run "core restore"; then return 0; fi
-                call_with_named_args run_restore
-                ;;
+                local sub="${extra[0]:-}"
+                if [[ "$sub" == "rollback" ]]; then
+                    if skip_if_dry_run "core restore rollback"; then return 0; fi
+                    ops_log_begin "restore_rollback"
+                    call_with_named_args run_restore_rollback "${extra[1]:-}"
+                    ops_log_end $?
+                else
+                    if skip_if_dry_run "core restore"; then return 0; fi
+                    ops_log_begin "restore"
+                    call_with_named_args run_restore
+                    ops_log_end $?
+                fi
+                    ;;
             cron)
                 local sub="${extra[0]:-install}"
                 if [[ "$sub" == "install" ]]; then
                     if skip_if_dry_run "core cron install"; then return 0; fi
+                    ops_log_begin "cron_install"
                     call_with_named_args install_cronjob
+                    ops_log_end $?
                 elif [[ "$sub" == "uninstall" || "$sub" == "remove" ]]; then
                     if skip_if_dry_run "core cron uninstall"; then return 0; fi
+                    ops_log_begin "cron_uninstall"
                     call_with_named_args uninstall_cronjob
+                    ops_log_end $?
                 else
                     log err "[core] Unknown cron action: $sub"
                     return 1
                 fi
                 ;;
-            provision)
-                local sub="${extra[0]:-spawn}"
-                if [[ "$sub" == "spawn" ]]; then
-                    if skip_if_dry_run "core provision spawn"; then return 0; fi
-                    call_with_named_args spawn_provision_file
-                else
-                    log err "[core] Unknown provision action: $sub"
-                    return 1
-                fi
-                ;;
             prune)
                 if skip_if_dry_run "core cleanup"; then return 0; fi
+                ops_log_begin "prune"
                 call_with_named_args cleanup
+                ops_log_end $?
                 ;;
             prune_versions|prune-versions|clean_versions|clean-versions)
                     if skip_if_dry_run "core cleanup_versions"; then return 0; fi
+                    ops_log_begin "prune_versions"
                     call_with_named_args cleanup_old_versions
+                    ops_log_end $?
                     ;;
                 prune_backups|prune-backups|clean_backups|clean-backups)
                     if skip_if_dry_run "core cleanup_backups"; then return 0; fi
+                    ops_log_begin "prune_backups"
                     call_with_named_args cleanup_old_backups
+                    ops_log_end $?
                     ;;
                 clear-cache|clear_cache)
                     if declare -f clear_application_cache >/dev/null; then
@@ -518,6 +681,18 @@ dispatch_command() {
                     ;;
             esac
             ;;
+        spawn)
+            case "$action" in
+                provision-file|provision_file)
+                    if skip_if_dry_run "spawn provision-file"; then return 0; fi
+                    call_with_named_args spawn_provision_file
+                    ;;
+                *)
+                    log err "[spawn] Unknown action: $action"
+                    return 1
+                    ;;
+            esac
+            ;;
         db)
             case "$action" in
                 backup)
@@ -527,7 +702,9 @@ dispatch_command() {
                     NAMED_ARGS["storage"]=false
                     NAMED_ARGS["uploads"]=false
                     if skip_if_dry_run "db backup"; then return 0; fi
+                    ops_log_begin "backup"
                     call_with_named_args run_backup
+                    ops_log_end $?
                     ;;
                 restore)
                     if skip_if_dry_run "db restore"; then return 0; fi
@@ -543,7 +720,9 @@ dispatch_command() {
                     ;;
                 prune|cleanup)
                     if skip_if_dry_run "db prune"; then return 0; fi
+                    ops_log_begin "prune_backups"
                     call_with_named_args cleanup_old_backups
+                    ops_log_end $?
                     ;;
                 *)
                     log err "[db] Unknown action: $action"
@@ -559,11 +738,15 @@ dispatch_command() {
                     NAMED_ARGS["uploads"]=true
                     NAMED_ARGS["fullbackup"]=false
                     if skip_if_dry_run "files backup"; then return 0; fi
+                    ops_log_begin "backup"
                     call_with_named_args run_backup
+                    ops_log_end $?
                     ;;
                 prune|prune_backups|cleanup_backups)
                     if skip_if_dry_run "files prune_backups"; then return 0; fi
+                    ops_log_begin "prune_backups"
                     call_with_named_args cleanup_old_backups
+                    ops_log_end $?
                     ;;
                 *)
                     log err "[files] Unknown action: $action"
@@ -579,7 +762,13 @@ dispatch_command() {
                     ;;
                 update)
                     if skip_if_dry_run "self update"; then return 0; fi
+                    ops_log_begin "self_update"
                     call_with_named_args self_update
+                    ops_log_end $?
+                    ;;
+                config)
+                    if skip_if_dry_run "self config"; then return 0; fi
+                    call_with_named_args spawn_cli_config
                     ;;
                 version)
                     call_with_named_args self_version
@@ -631,10 +820,6 @@ dispatch_command() {
             # Legacy context routed to core cron
             dispatch_command core cron "$action" "${extra[@]}"
             ;;
-        provision)
-            # Legacy context routed to core provision
-            dispatch_command core provision "$action" "${extra[@]}"
-            ;;
         update)
             # Legacy context routed to core update
             dispatch_command core update "$action" "${extra[@]}"
@@ -657,8 +842,41 @@ dispatch_command() {
     esac
 }
 
+log_fallback_label() {
+    local label=""
+    if [[ -n "$CMD_CONTEXT" && -n "$CMD_ACTION" ]]; then
+        label="${CMD_CONTEXT}:${CMD_ACTION}"
+        if [[ ${#CMD_EXTRA[@]} -gt 0 && -n "${CMD_EXTRA[0]}" ]]; then
+            label+=":${CMD_EXTRA[0]}"
+        fi
+    elif [[ -n "$LEGACY_CMD" ]]; then
+        label="legacy:${LEGACY_CMD}"
+    else
+        label="noop"
+    fi
+    printf "%s" "$label"
+}
+
+# shellcheck disable=SC2034
+INM_OPS_LOG_WROTE=false
+
 if [[ -n "$CMD_CONTEXT" && -n "$CMD_ACTION" ]]; then
-    dispatch_command "$CMD_CONTEXT" "$CMD_ACTION" "${CMD_EXTRA[@]}"
+    if declare -F ops_log_fallback_begin >/dev/null 2>&1; then
+        ops_log_fallback_begin "$(log_fallback_label)"
+    fi
+    rc=0
+    trace_guarded=false
+    if [[ "$trace_guard_dispatch" == true ]]; then
+        trace_suspend && trace_guarded=true
+    fi
+    dispatch_command "$CMD_CONTEXT" "$CMD_ACTION" "${CMD_EXTRA[@]}" || rc=$?
+    if [[ "$trace_guarded" == true ]]; then
+        trace_resume
+    fi
+    if declare -F ops_log_fallback_end >/dev/null 2>&1; then
+        ops_log_fallback_end "$rc"
+    fi
+    exit "$rc"
 elif [[ -n "$LEGACY_CMD" ]]; then
     # Map known single-word legacy actions to contexts
     case "$LEGACY_CMD" in
@@ -672,11 +890,32 @@ elif [[ -n "$LEGACY_CMD" ]]; then
         cleanup_backups|prune_backups) CMD_CONTEXT="core"; CMD_ACTION="prune_backups";;
         *) ;;
     esac
-    if [[ -n "$CMD_CONTEXT" && -n "$CMD_ACTION" ]]; then
-        dispatch_command "$CMD_CONTEXT" "$CMD_ACTION" "${CMD_EXTRA[@]}"
-    else
-        dispatch_command "" ""
+    if declare -F ops_log_fallback_begin >/dev/null 2>&1; then
+        ops_log_fallback_begin "$(log_fallback_label)"
     fi
+    rc=0
+    if [[ -n "$CMD_CONTEXT" && -n "$CMD_ACTION" ]]; then
+        trace_guarded=false
+        if [[ "$trace_guard_dispatch" == true ]]; then
+            trace_suspend && trace_guarded=true
+        fi
+        dispatch_command "$CMD_CONTEXT" "$CMD_ACTION" "${CMD_EXTRA[@]}" || rc=$?
+        if [[ "$trace_guarded" == true ]]; then
+            trace_resume
+        fi
+    else
+        dispatch_command "" "" || rc=$?
+    fi
+    if declare -F ops_log_fallback_end >/dev/null 2>&1; then
+        ops_log_fallback_end "$rc"
+    fi
+    exit "$rc"
 else
+    if declare -F ops_log_fallback_begin >/dev/null 2>&1; then
+        ops_log_fallback_begin "$(log_fallback_label)"
+    fi
     log info "No command specified. Nothing executed. Use -h for help."
+    if declare -F ops_log_fallback_end >/dev/null 2>&1; then
+        ops_log_fallback_end 0
+    fi
 fi

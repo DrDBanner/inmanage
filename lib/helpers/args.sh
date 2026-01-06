@@ -6,16 +6,15 @@ __ARGS_HELPER_LOADED=1
 
 # ---------------------------------------------------------------------
 # parse_named_args()
-#
-# Parses --key=value pairs into an associative array for easy access.
-# Converts dashes to underscores in keys.
-#
-# Globals used:
-#   DEBUG (for verbose output)
+# Parse --key=value pairs into an assoc array.
+# Consumes: args: target array name, argv; env: DEBUG (optional); deps: log.
+# Computes: normalized keys and values.
+# Returns: 0 always.
 # ---------------------------------------------------------------------
 parse_named_args() {
     declare -n _target="$1"
     shift
+    local arg key value
     for arg in "$@"; do
         if [[ "$arg" == --* ]]; then
             key="${arg%%=*}"
@@ -43,14 +42,10 @@ parse_named_args() {
 
 # ---------------------------------------------------------------------
 # args_get()
-#
-# Returns the first matching key value from a local assoc array (if provided)
-# and then from global NAMED_ARGS. Keys can be passed with dashes or underscores.
-# If a key exists with an empty value, that empty value is returned.
-#
-# Usage:
-#   args_get ARGS "default" key1 key2 key3
-#   args_get - "default" key1 key2
+# Return the first matching value from local array or NAMED_ARGS.
+# Consumes: args: array name, default, keys; env: NAMED_ARGS.
+# Computes: key lookup with dash/underscore normalization.
+# Returns: value on stdout (default if none).
 # ---------------------------------------------------------------------
 args_get() {
     local arr_name="$1"
@@ -86,6 +81,10 @@ args_get() {
 
 # ---------------------------------------------------------------------
 # args_is_true()
+# Truthy check for CLI-style values.
+# Consumes: args: value.
+# Computes: boolean test.
+# Returns: 0 if true, 1 if false.
 # ---------------------------------------------------------------------
 args_is_true() {
     local value="${1:-}"

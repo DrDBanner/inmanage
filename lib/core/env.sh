@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+# ---------------------------------------------------------------------
+# Core module: env.sh
+# Scope: bootstrap environment defaults + core env vars (SCRIPT_*, PATH).
+# Avoid: app/db/fs side effects; use helpers/services for that.
+# Provides: setup_environment and core env helpers.
+# ---------------------------------------------------------------------
+
 # Prevent double sourcing
 [[ -n ${__CORE_ENV_LOADED:-} ]] && return
 __CORE_ENV_LOADED=1
@@ -154,7 +161,7 @@ setup_environment() {
     # shellcheck disable=SC2034
     INM_PROVISION_ENV_FILE="${INM_PROVISION_ENV_FILE:-${INM_CONFIG_ROOT%/}/${INM_PROVISION_ENV_BASENAME}}"
     # shellcheck disable=SC2034
-    CURL_AUTH_FLAG=""
+    CURL_AUTH_FLAG=()
 
     # Script identity (used in logs/help)
     SCRIPT_NAME="${SCRIPT_NAME:-$(basename "$0")}"
@@ -177,19 +184,87 @@ safe_clear() {
 # ---------------------------------------------------------------------
 # log()
 # ---------------------------------------------------------------------
+log_compact_message() {
+    local msg="$*"
+    local rest="$msg"
+    while [[ "$rest" =~ ^\[[^][]+\][[:space:]]*(.*)$ ]]; do
+        rest="${BASH_REMATCH[1]}"
+    done
+    if [[ -n "$rest" ]]; then
+        printf "%s" "$rest"
+    else
+        printf "%s" "$msg"
+    fi
+}
+
+log_redact_emails() {
+    local msg="$*"
+    if [[ "$msg" != *"@"* ]]; then
+        printf "%s" "$msg"
+        return 0
+    fi
+    if command -v sed >/dev/null 2>&1; then
+        printf "%s" "$msg" | sed -E 's/([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/\1@redacted/g'
+    else
+        printf "%s" "$msg"
+    fi
+}
+
 log() {
     local type="$1"; shift
     local timestamp
     timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+    local compact=false
+    case "${INM_COMPACT_OUTPUT,,}" in
+        1|true|yes|on) compact=true ;;
+    esac
+    local prefix=""
+    if [[ "$compact" != true ]]; then
+        prefix="${timestamp} "
+    fi
+    local msg="$*"
+    if [[ "$compact" == true ]]; then
+        msg="$(log_compact_message "$msg")"
+    fi
+    msg="$(log_redact_emails "$msg")"
+    local history_level=""
+    if [[ "${INM_HISTORY_LOG_VERBOSE:-}" == "install" && "${INM_OPS_LOG_ACTION:-}" == "install" ]]; then
+        case "$type" in
+            debug)
+                if [ "$DEBUG" = true ]; then
+                    history_level="DEBUG"
+                fi
+                ;;
+            info) history_level="INFO" ;;
+            note|docs|bold) history_level="INFO" ;;
+            ok) history_level="OK" ;;
+            warn|important) history_level="WARN" ;;
+            err) history_level="ERR" ;;
+            *) history_level="" ;;
+        esac
+        if [[ -n "$history_level" ]]; then
+            if declare -F history_log_append >/dev/null 2>&1; then
+                history_log_append "install:log" "$history_level" "$*"
+            fi
+        fi
+    fi
 
     case "$type" in
         debug)
             if [ "$DEBUG" = true ]; then
-                printf "${CYAN}%s [DEBUG] %s${RESET}\n" "$timestamp" "$*" >&2
+                if [[ "$compact" == true ]]; then
+                    printf "${CYAN}%s${RESET}\n" "$msg" >&2
+                else
+                    printf "${CYAN}%s[DEBUG] %s${RESET}\n" "$prefix" "$msg" >&2
+                fi
             fi
             ;;
         info)
-            printf "${WHITE}%s [INFO] %s${RESET}\n" "$timestamp" "$*" >&2
+            if [[ "$compact" == true ]]; then
+                printf "${WHITE}%s${RESET}\n" "$msg" >&2
+            else
+                printf "${WHITE}%s[INFO] %s${RESET}\n" "$prefix" "$msg" >&2
+            fi
             ;;
         note)
             local count=$#
@@ -207,26 +282,139 @@ log() {
             printf "${GREEN}%s %s${RESET}\n" "$*" >&2
             ;;
         ok)
-            printf "${GREEN}%s [OK] %s${RESET}\n" "$timestamp" "$*" >&2
+            if [[ "$compact" == true ]]; then
+                printf "${GREEN}%s${RESET}\n" "$msg" >&2
+            else
+                printf "${GREEN}%s[OK] %s${RESET}\n" "$prefix" "$msg" >&2
+            fi
             ;;
         warn)
-            printf "${MAGENTA}%s [WARN] %s${RESET}\n" "$timestamp" "$*" >&2
+            if [[ "$compact" == true ]]; then
+                printf "${MAGENTA}%s${RESET}\n" "$msg" >&2
+            else
+                printf "${MAGENTA}%s[WARN] %s${RESET}\n" "$prefix" "$msg" >&2
+            fi
             ;;
         important)
-            printf "${MAGENTA}%s [IMPORTANT] %s${RESET}\n" "$timestamp" "$*" >&2
+            if [[ "$compact" == true ]]; then
+                printf "${MAGENTA}%s${RESET}\n" "$msg" >&2
+            else
+                printf "${MAGENTA}%s[IMPORTANT] %s${RESET}\n" "$prefix" "$msg" >&2
+            fi
             ;;
         err)
             local log_user=""
             log_user="$(id -un 2>/dev/null || echo unknown)"
-            printf "${RED}%s [ERR] %s (user: %s)${RESET}\n" "$timestamp" "$*" "$log_user" >&2
+            if [[ "$compact" == true ]]; then
+                printf "${RED}%s (user: %s)${RESET}\n" "$msg" "$log_user" >&2
+            else
+                printf "${RED}%s[ERR] %s (user: %s)${RESET}\n" "$prefix" "$msg" "$log_user" >&2
+            fi
             ;;
         bold)
-            printf "${BOLD}%s [BOLD] %s${RESET}\n" "$timestamp" "$*" >&2
+            if [[ "$compact" == true ]]; then
+                printf "${BOLD}%s${RESET}\n" "$msg" >&2
+            else
+                printf "${BOLD}%s[BOLD] %s${RESET}\n" "$prefix" "$msg" >&2
+            fi
             ;;
         *)
             echo "$*" >&2
             ;;
     esac
+}
+
+# ---------------------------------------------------------------------
+# trace helpers
+# ---------------------------------------------------------------------
+trace_can_guard() {
+    if [[ "${DEBUG_LEVEL:-0}" -lt 2 ]]; then
+        return 1
+    fi
+    case "${INM_TRACE_SENSITIVE,,}" in
+        0|false|no|off) return 1 ;;
+    esac
+    return 0
+}
+
+trace_suspend() {
+    if [[ $- != *x* ]]; then
+        return 1
+    fi
+    local depth="${INM_TRACE_SUSPEND_DEPTH:-0}"
+    depth=$((depth + 1))
+    INM_TRACE_SUSPEND_DEPTH="$depth"
+    if [[ "$depth" -eq 1 ]]; then
+        set +o xtrace
+    fi
+    return 0
+}
+
+trace_resume() {
+    local depth="${INM_TRACE_SUSPEND_DEPTH:-0}"
+    if [[ "$depth" -le 0 ]]; then
+        return 0
+    fi
+    depth=$((depth - 1))
+    if [[ "$depth" -eq 0 ]]; then
+        unset INM_TRACE_SUSPEND_DEPTH
+        set -o xtrace
+    else
+        INM_TRACE_SUSPEND_DEPTH="$depth"
+    fi
+    return 0
+}
+
+trace_suspend_if_sensitive_key() {
+    local key="$1"
+    if ! trace_can_guard; then
+        return 1
+    fi
+    if declare -F _env_key_is_sensitive >/dev/null 2>&1 && _env_key_is_sensitive "$key"; then
+        trace_suspend
+        return 0
+    fi
+    return 1
+}
+
+# ---------------------------------------------------------------------
+# require_function()
+# Ensure a function is defined; log and return non-zero if missing.
+# Consumes: args: fn, context(optional); deps: log.
+# Computes: missing function list (optional via require_functions).
+# Returns: 0 if present, 1 if missing.
+# ---------------------------------------------------------------------
+require_function() {
+    local fn="$1"
+    local context="${2:-BOOT}"
+    if declare -F "$fn" >/dev/null 2>&1; then
+        return 0
+    fi
+    log err "[${context}] Required function missing: ${fn}"
+    return 1
+}
+
+# ---------------------------------------------------------------------
+# require_functions()
+# Ensure a list of functions are defined; logs once and returns non-zero if any missing.
+# Consumes: args: fn...; deps: require_function/log.
+# Computes: missing function list.
+# Returns: 0 if all present, 1 if any missing.
+# ---------------------------------------------------------------------
+require_functions() {
+    local context="BOOT"
+    local -a missing=()
+    local fn
+    for fn in "$@"; do
+        if ! declare -F "$fn" >/dev/null 2>&1; then
+            missing+=("$fn")
+        fi
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        log err "[${context}] Missing required functions: ${missing[*]}"
+        return 1
+    fi
+    return 0
 }
 
 # ---------------------------------------------------------------------

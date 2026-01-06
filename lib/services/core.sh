@@ -6,6 +6,10 @@ __SERVICE_CORE_LOADED=1
 
 # ---------------------------------------------------------------------
 # get_installed_version()
+# Read the installed Invoice Ninja version from VERSION.txt.
+# Consumes: env: INM_INSTALLATION_PATH.
+# Computes: installed version string.
+# Returns: prints version; 1 if missing, 2 on read failure.
 # ---------------------------------------------------------------------
 get_installed_version() {
     log debug "[GIV] Retrieving installed version from VERSION.txt"
@@ -28,19 +32,23 @@ get_installed_version() {
 
 # ---------------------------------------------------------------------
 # get_latest_version()
+# Resolve the latest Invoice Ninja release version from GitHub.
+# Consumes: deps: gh_release_latest_version/http_head_line; network access.
+# Computes: latest version string.
+# Returns: prints version; non-zero on failure.
 # ---------------------------------------------------------------------
 get_latest_version() {
     log debug "[GLV] Retrieving latest version from GitHub API"
 
     local version
-    version=$(curl -sL ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} "https://api.github.com/repos/invoiceninja/invoiceninja/releases/latest" | jq -r '.tag_name' | sed 's/^v//') || {
+    version="$(gh_release_latest_version "invoiceninja/invoiceninja" "v")" || {
         log err "[GLV] Failed to fetch latest version."
         return 1
     }
 
     if [[ -z "$version" || "$version" == "null" ]]; then
         local head_resp
-        head_resp=$(curl -sI https://api.github.com/repos/invoiceninja/invoiceninja/releases/latest | head -n1)
+        head_resp="$(http_head_line "https://api.github.com/repos/invoiceninja/invoiceninja/releases/latest")"
         log err "[GLV] Could not determine latest version. API response empty."
         log err "[GLV] GitHub reachable? HEAD returned: ${head_resp:-<no response>}"
         return 1
@@ -52,42 +60,36 @@ get_latest_version() {
 
 # ---------------------------------------------------------------------
 # fetch_release_digest()
-# Fetches the sha256 digest for a given asset from the GitHub release API.
-# Returns empty string if not found/available.
+# Fetch the SHA256 digest for a release asset.
+# Consumes: args: version, asset_name; deps: gh_release_fetch_digest.
+# Computes: digest string.
+# Returns: prints digest or empty string.
 # ---------------------------------------------------------------------
 fetch_release_digest() {
     local version="$1"
     local asset_name="$2"
-    local api_url="https://api.github.com/repos/invoiceninja/invoiceninja/releases/tags/v${version}"
-    local digest
-    digest=$(curl -s "$api_url" | jq -r --arg name "$asset_name" '.assets[]? | select(.name==$name) | .digest // empty' 2>/dev/null | head -n1)
-    # Try fallback asset name if nothing found
-    if [[ -z "$digest" && "$asset_name" != "invoiceninja.tar" ]]; then
-        digest=$(curl -s "$api_url" | jq -r '.assets[]? | select(.name=="invoiceninja.tar") | .digest // empty' 2>/dev/null | head -n1)
-        asset_name="invoiceninja.tar"
-    fi
-    # Strip prefix if present (sha256:...)
-    if [[ "$digest" == sha256:* ]]; then
-        digest="${digest#sha256:}"
-    fi
-    if [ -n "$digest" ]; then
-        log debug "[DN] Release digest found for $asset_name: $digest"
-        echo "$digest"
-    fi
+    gh_release_fetch_digest "invoiceninja/invoiceninja" "v${version}" "$asset_name" "invoiceninja.tar"
 }
 
 # ---------------------------------------------------------------------
 # compute_sha256()
+# Compute the SHA256 checksum of a file.
+# Consumes: args: file; deps: compat_compute_sha256.
+# Computes: checksum string.
+# Returns: prints checksum or non-zero on failure.
 # ---------------------------------------------------------------------
 compute_sha256() {
     local file="$1"
-    if declare -F compat_compute_sha256 >/dev/null 2>&1; then
-        compat_compute_sha256 "$file" || return 1
-        return 0
-    fi
-    sha256sum "$file" | awk '{print $1}'
+    compat_compute_sha256 "$file"
 }
 
+# ---------------------------------------------------------------------
+# apply_cache_file_mode()
+# Apply cache file mode to given paths.
+# Consumes: args: paths...; deps: cache_file_mode.
+# Computes: chmod call for cache files.
+# Returns: 0 (best effort).
+# ---------------------------------------------------------------------
 apply_cache_file_mode() {
     local mode
     mode="$(cache_file_mode)"
@@ -96,234 +98,53 @@ apply_cache_file_mode() {
 
 # ---------------------------------------------------------------------
 # download_ninja()
+# Download an Invoice Ninja release tarball (cached).
+# Consumes: args: version (optional); deps: gh_release_download.
+# Computes: cached release path.
+# Returns: prints cache directory or non-zero on failure.
 # ---------------------------------------------------------------------
 download_ninja() {
     local version="$1"
+    gh_release_download "invoiceninja/invoiceninja" "$version" "invoiceninja.tar.gz" "invoiceninja" "v" "invoiceninja.tar" "DN" 1048576
+}
+
+# ---------------------------------------------------------------------
+# get_app_release()
+# Cache a specific Invoice Ninja release without installing.
+# Consumes: args: version(optional); deps: get_latest_version/download_ninja.
+# Computes: cached release tarball in cache directory.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
+get_app_release() {
+    if [[ "${DRY_RUN:-false}" == true ]]; then
+        log info "[DRY-RUN] Would download app release to cache."
+        return 0
+    fi
+    local -A args=()
+    parse_named_args args "$@"
+
+    local version
+    version="$(args_get args "" version)"
+    if [[ -z "$version" ]]; then
+        version="$(get_latest_version)" || return 1
+    fi
+
+    log info "[GET] Fetching Invoice Ninja ${version}"
     local cache_dir
-    local target_file
-    local temp_file
-
-    cache_dir=$(resolve_cache_directory)
-    target_file="$cache_dir/invoiceninja_v$version.tar.gz"
-    temp_file="${target_file}.part"
-    log debug "[DN] Cache directory: $cache_dir"
-    # ensure cache dir exists and writable (prefer restricted perms; no sudo)
-    if ! mkdir -p "$cache_dir" 2>/dev/null; then
-        log err "[DN] Cannot create cache directory: $cache_dir"
-        exit 1
-    fi
-    apply_cache_dir_mode "$cache_dir"
-    if [ ! -w "$cache_dir" ]; then
-        # fallback to local cache within PWD if global not writable
-        local fallback="${PWD}/.cache/inmanage"
-        log warn "[DN] Cache directory not writable: $cache_dir. Falling back to local cache: $fallback"
-        if ! mkdir -p "$fallback" 2>/dev/null; then
-            log err "[DN] Cannot create local fallback cache: $fallback"
-            exit 1
-        fi
-        apply_cache_dir_mode "$fallback"
-        if [ ! -w "$fallback" ]; then
-            log err "[DN] Neither global nor local cache is writable."
-            exit 1
-        fi
-        cache_dir="$fallback"
-        target_file="$cache_dir/invoiceninja_v$version.tar.gz"
-        temp_file="${target_file}.part"
-    fi
-    local force="${NAMED_ARGS[force]:-false}"
-    local debug_keep_tmp="${NAMED_ARGS[debug_keep_tmp]:-false}"
-    local checksum_file="${target_file}.sha256"
-    local expected_digest=""
-    if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" != true ]]; then
-        if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
-            log info "[DN] Retrieving release digest for v${version}..."
-        else
-            log debug "[DN] Retrieving release digest for v${version}..."
-        fi
-        expected_digest="$(fetch_release_digest "$version" "$(basename "$target_file")")"
-        if [ -n "$expected_digest" ]; then
-            if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
-                log ok "[DN] Release digest retrieved."
-            else
-                log debug "[DN] Release digest retrieved."
-            fi
-        else
-            log warn "[DN] Release digest missing for v${version}."
-        fi
-    else
-        log warn "[DN] SHA check bypassed via --bypass-check-sha."
-    fi
-    if declare -f check_github_rate_limit >/dev/null; then
-        check_github_rate_limit
-    fi
-
-    # Quick write test to cache dir
-    if ! touch "$cache_dir/.inm_cache_test" 2>/dev/null; then
-        log err "[DN] Cache directory not writable (touch failed): $cache_dir"
-        exit 1
-    fi
-    rm -f "$cache_dir/.inm_cache_test" >/dev/null 2>&1
-
-    if [ -f "$target_file" ]; then
-        log debug "[DN] Using cached version for $version at $target_file"
-        if [ -f "$checksum_file" ]; then
-            local stored sum
-            stored="$(cut -d' ' -f1 "$checksum_file" 2>/dev/null)"
-            sum="$(compute_sha256 "$target_file")"
-            # Prefer expected_digest if available
-            local reference=""
-            if [ -n "$expected_digest" ]; then
-                reference="$expected_digest"
-            elif [ -n "$stored" ]; then
-                reference="$stored"
-                log warn "[DN] Release digest missing for v${version}; using cached checksum file."
-            fi
-            if [[ -n "$reference" && "$reference" != "$sum" ]]; then
-                if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" == true ]]; then
-                    log warn "[DN] Cached checksum mismatch but bypass enabled; using cached file."
-                    dirname "$target_file"
-                    return 0
-                fi
-                log warn "[DN] Cached file checksum mismatch; re-downloading."
-                rm -f "$target_file" "$checksum_file"
-            else
-                log debug "[DN] Cached checksum verified."
-                dirname "$target_file"
-                return 0
-            fi
-        else
-            log debug "[DN] No checksum file; verifying cache now."
-            local sum
-            sum="$(compute_sha256 "$target_file")"
-            if [[ -z "$expected_digest" && "${NAMED_ARGS[bypass_check_sha]:-false}" != true ]]; then
-                log err "[DN] Release digest missing for v${version}; refusing to use cache without checksum."
-                log_hint "DN" "Override with --bypass-check-sha if you accept the risk."
-                return 1
-            fi
-            if [[ -n "$expected_digest" && "$expected_digest" != "$sum" ]]; then
-                if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" == true ]]; then
-                    log warn "[DN] Cached file does not match release digest but bypass enabled; using cached file."
-                    echo "$sum  $target_file" > "$checksum_file"
-                    apply_cache_file_mode "$checksum_file"
-                    dirname "$target_file"
-                    return 0
-                fi
-                log warn "[DN] Cached file does not match release digest; re-downloading."
-                rm -f "$target_file"
-            else
-                echo "$sum  $target_file" > "$checksum_file"
-                apply_cache_file_mode "$checksum_file"
-                dirname "$target_file"
-                return 0
-            fi
-        fi
-    fi
-
-    if [[ -z "$expected_digest" && "${NAMED_ARGS[bypass_check_sha]:-false}" != true ]]; then
-        log err "[DN] Release digest missing for v${version}; refusing to download."
-        log_hint "DN" "Override with --bypass-check-sha if you accept the risk."
+    cache_dir="$(download_ninja "$version")" || {
+        log err "[GET] Download failed."
         return 1
-    fi
-
-    log debug "[DN] Downloading Invoice Ninja $version..."
-
-    local CURL_AUTH_FLAG=()
-    local USERNAME_PASSWORD=""
-    case "${INM_GH_API_CREDENTIALS:-}" in
-        ""|"0"|"false"|"no"|"none")
-            CURL_AUTH_FLAG=()
-            log debug "[DN] No GitHub credentials provided; continuing unauthenticated."
-            ;;
-        token:*)
-            log debug "[DN] Using GitHub token for download."
-            CURL_AUTH_FLAG=("-H" "Authorization: token ${INM_GH_API_CREDENTIALS#token:}")
-            ;;
-        *:*)
-            log debug "[DN] Using GitHub user/password for download."
-            USERNAME_PASSWORD="${INM_GH_API_CREDENTIALS//:/ }"
-            CURL_AUTH_FLAG=("-u" "$USERNAME_PASSWORD")
-            ;;
-        *)
-            log warn "[DN] Invalid INM_GH_API_CREDENTIALS format, skipping authentication"
-            CURL_AUTH_FLAG=()
-            ;;
-    esac
-
-    local download_url="https://github.com/invoiceninja/invoiceninja/releases/download/v$version/invoiceninja.tar.gz"
-    # Use spinner when not in debug; show progress bar for debug only.
-    local curl_opts=(--fail --location --connect-timeout 20 --max-time 600 --show-error)
-    local use_spinner=false
-    if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
-        curl_opts+=(--progress-bar)
-    else
-        curl_opts+=(--silent)
-        use_spinner=true
-    fi
-    if [[ -n "${CURL_AUTH_FLAG[*]}" ]]; then
-        curl_opts+=("${CURL_AUTH_FLAG[@]}")
-    fi
-
-    log debug "[DN] Downloading from: $download_url"
-    # Resume partial download if .part exists
-    local resume_flag=()
-    if [ -f "$temp_file" ]; then
-        resume_flag=(--continue-at -)
-        log debug "[DN] Resuming download (partial file found)."
-    fi
-    local curl_rc=0
-    if [ "$use_spinner" = true ]; then
-        spinner_start "Fetching release archive..."
-        curl "${curl_opts[@]}" "${resume_flag[@]}" "$download_url" -o "$temp_file"
-        curl_rc=$?
-        spinner_stop
-    else
-        curl "${curl_opts[@]}" "${resume_flag[@]}" "$download_url" -o "$temp_file"
-        curl_rc=$?
-    fi
-    if [ "$curl_rc" -eq 0 ]; then
-        if [ "$(wc -c < "$temp_file")" -gt 1048576 ]; then
-            if ! safe_move_or_copy_and_clean "$temp_file" "$target_file" move; then
-                log err "[DN] Failed to finalize download: $temp_file -> $target_file"
-                rm -f "$temp_file"
-                exit 1
-            fi
-            # Store checksum for future verification
-            local sum_dl
-            sum_dl="$(compute_sha256 "$target_file")"
-            if [[ -n "$expected_digest" && "$expected_digest" != "$sum_dl" ]]; then
-                if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" == true ]]; then
-                    log warn "[DN] Downloaded file digest mismatch but bypass enabled; continuing."
-                else
-                    log err "[DN] Downloaded file digest mismatch (expected $expected_digest, got $sum_dl)."
-                    rm -f "$target_file" "$checksum_file"
-                    exit 1
-                fi
-            fi
-            echo "$sum_dl  $target_file" > "$checksum_file" 2>/dev/null || true
-            apply_cache_file_mode "$target_file" "$checksum_file"
-        else
-            log err "[DN] Download failed: File is too small. Please check network."
-            rm -f "$temp_file"
-            exit 1
-        fi
-    else
-        if [ "$curl_rc" -eq 28 ]; then
-            log err "[DN] Download timed out (curl exit 28). Re-run to resume from partial."
-        else
-            log err "[DN] Download failed via curl (exit $curl_rc). Please check network. Maybe you need GitHub credentials or --ipv4/--proxy."
-        fi
-        if [ -f "$temp_file" ]; then
-            log warn "[DN] Partial file kept for resume: $temp_file"
-        fi
-        exit 1
-    fi
-
-    log debug "[DN] Invoice Ninja $version downloaded and cached at $target_file"
-    dirname "$target_file"
+    }
+    log ok "[GET] Cached Invoice Ninja ${version} at $cache_dir"
+    return 0
 }
 
 # ---------------------------------------------------------------------
 # cleanup_cache()
+# Remove old cached Invoice Ninja versions.
+# Consumes: env: INM_CACHE_GLOBAL_RETENTION; deps: resolve_cache_directory.
+# Computes: cache cleanup actions.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 cleanup_cache() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
@@ -353,6 +174,14 @@ cleanup_cache() {
 # ---------------------------------------------------------------------
 # artisan helpers
 # ---------------------------------------------------------------------
+
+# ---------------------------------------------------------------------
+# resolve_php_exec()
+# Resolve a usable PHP CLI binary.
+# Consumes: env: INM_PHP_EXECUTABLE; system PATH and /usr/iports.
+# Computes: PHP executable path.
+# Returns: prints php path to stdout.
+# ---------------------------------------------------------------------
 resolve_php_exec() {
     local php_exec="${INM_PHP_EXECUTABLE:-}"
     if [[ -n "$php_exec" && -x "$php_exec" ]]; then
@@ -381,11 +210,25 @@ resolve_php_exec() {
     printf "%s" "${php_exec:-php}"
 }
 
+# ---------------------------------------------------------------------
+# artisan_cmd_string()
+# Build the artisan command string for a given app dir.
+# Consumes: args: app_dir; deps: resolve_php_exec.
+# Computes: "php /path/to/artisan".
+# Returns: prints command string.
+# ---------------------------------------------------------------------
 artisan_cmd_string() {
     local app_dir="${1:-${INM_INSTALLATION_PATH%/}}"
     printf "%s %s" "$(resolve_php_exec)" "${app_dir%/}/artisan"
 }
 
+# ---------------------------------------------------------------------
+# run_artisan_in()
+# Run artisan in a specific app directory.
+# Consumes: args: app_dir, artisan args...; deps: resolve_php_exec.
+# Computes: command execution with working directory.
+# Returns: artisan exit code.
+# ---------------------------------------------------------------------
 run_artisan_in() {
     local app_dir="${1%/}"
     shift
@@ -405,13 +248,23 @@ run_artisan_in() {
     )
 }
 
+# ---------------------------------------------------------------------
+# run_artisan()
+# Run artisan using INM_INSTALLATION_PATH.
+# Consumes: args: artisan args...; env: INM_INSTALLATION_PATH; deps: run_artisan_in.
+# Computes: command execution.
+# Returns: artisan exit code.
+# ---------------------------------------------------------------------
 run_artisan() {
     run_artisan_in "${INM_INSTALLATION_PATH%/}" "$@"
 }
 
 # ---------------------------------------------------------------------
 # show_versions_summary()
-# Displays installed, cached, and upstream versions.
+# Display installed, cached, and upstream versions.
+# Consumes: env: INM_CACHE_GLOBAL_DIRECTORY, INM_CACHE_LOCAL_DIRECTORY.
+# Computes: version summary.
+# Returns: 0 after logging.
 # ---------------------------------------------------------------------
 show_versions_summary() {
     local installed latest cache_dir cached_versions=()
@@ -448,7 +301,10 @@ show_versions_summary() {
 
 # ---------------------------------------------------------------------
 # clear_application_cache()
-# Wrapper to clear caches via artisan.
+# Clear application caches via artisan optimize:clear.
+# Consumes: env: DRY_RUN; deps: run_artisan.
+# Computes: cache clear command.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 clear_application_cache() {
     if [[ "${DRY_RUN:-false}" == true ]]; then

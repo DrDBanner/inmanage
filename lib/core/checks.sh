@@ -1,254 +1,28 @@
 #!/usr/bin/env bash
 
+# ---------------------------------------------------------------------
+# Core module: checks.sh
+# Scope: environment/CLI dependency checks + config sanity helpers.
+# Avoid: app/db/web operations; those live in services/helpers.
+# Provides: core checks used by multiple commands.
+# ---------------------------------------------------------------------
+
 # Prevent double sourcing
 [[ -n ${__CORE_CHECKS_LOADED:-} ]] && return
 __CORE_CHECKS_LOADED=1
+
+# shellcheck disable=SC1090,SC1091
+if [[ -f "${LIB_DIR}/helpers/env_parse.sh" ]]; then
+    source "${LIB_DIR}/helpers/env_parse.sh"
+else
+    log err "[ENV] Missing env parse helper: ${LIB_DIR}/helpers/env_parse.sh"
+    return 1
+fi
 
 # ---------------------------------------------------------------------
 # Environment and dependency checks
 # Groups self-check helpers (env loading, required binaries, GH creds).
 # ---------------------------------------------------------------------
-
-# ---------------------------------------------------------------------
-# _env_unescape_double_quoted()
-# ---------------------------------------------------------------------
-_env_unescape_double_quoted() {
-    local val="$1"
-    local unescaped=""
-    local i=0
-    local len=${#val}
-    while [ $i -lt "$len" ]; do
-        local ch="${val:$i:1}"
-        if [ "$ch" = "\\" ] && [ $((i + 1)) -lt "$len" ]; then
-            local next="${val:$((i + 1)):1}"
-            case "$next" in
-                "\\"|"\""|'$'|'`')
-                    unescaped+="$next"
-                    i=$((i + 2))
-                    continue
-                    ;;
-            esac
-        fi
-        unescaped+="$ch"
-        i=$((i + 1))
-    done
-    printf "%s" "$unescaped"
-}
-
-# ---------------------------------------------------------------------
-# _env_key_is_sensitive()
-# ---------------------------------------------------------------------
-_env_key_is_sensitive() {
-    local key="$1"
-    [[ "$key" =~ (^|_)(PASS(WORD)?|TOKEN|SECRET|KEY|CREDENTIALS)$ ]]
-}
-
-# ---------------------------------------------------------------------
-# _env_trim_left()
-# ---------------------------------------------------------------------
-_env_trim_left() {
-    local val="$1"
-    val="${val#"${val%%[![:space:]]*}"}"
-    printf "%s" "$val"
-}
-
-# ---------------------------------------------------------------------
-# _env_trim_right()
-# ---------------------------------------------------------------------
-_env_trim_right() {
-    local val="$1"
-    val="${val%"${val##*[![:space:]]}"}"
-    printf "%s" "$val"
-}
-
-# ---------------------------------------------------------------------
-# _env_strip_inline_comment_unquoted()
-# ---------------------------------------------------------------------
-_env_strip_inline_comment_unquoted() {
-    local val="$1"
-    local leading_space="${2:-false}"
-    local out=""
-    local i=0
-    local len=${#val}
-    local prev_space="$leading_space"
-    while [ $i -lt "$len" ]; do
-        local ch="${val:$i:1}"
-        if [[ "$ch" == "#" && "$prev_space" == true ]]; then
-            break
-        fi
-        out+="$ch"
-        if [[ "$ch" =~ [[:space:]] ]]; then
-            prev_space=true
-        else
-            prev_space=false
-        fi
-        i=$((i + 1))
-    done
-    printf "%s" "$out"
-}
-
-# ---------------------------------------------------------------------
-# _env_parse_env_value()
-# ---------------------------------------------------------------------
-_env_parse_env_value() {
-    local raw="$1"
-    local sensitive="${2:-false}"
-    raw="${raw%$'\r'}"
-    local val
-    val="$(_env_trim_left "$raw")"
-    local had_leading_space=false
-    if [[ "$raw" != "$val" ]]; then
-        had_leading_space=true
-    fi
-    if [[ "$val" =~ ^\"(.*)\"[[:space:]]*(#.*)?$ ]]; then
-        val="$(_env_unescape_double_quoted "${BASH_REMATCH[1]}")"
-        printf "%s" "$val"
-        return 0
-    fi
-    if [[ "$val" =~ ^\'(.*)\'[[:space:]]*(#.*)?$ ]]; then
-        printf "%s" "${BASH_REMATCH[1]}"
-        return 0
-    fi
-    if [[ "$sensitive" == true ]]; then
-        val="$(_env_trim_right "$val")"
-        printf "%s" "$val"
-        return 0
-    fi
-    val="$(_env_strip_inline_comment_unquoted "$val" "$had_leading_space")"
-    val="$(_env_trim_right "$val")"
-    printf "%s" "$val"
-}
-
-# ---------------------------------------------------------------------
-# _env_extract_inline_comment()
-# ---------------------------------------------------------------------
-_env_extract_inline_comment() {
-    local raw="$1"
-    raw="${raw%$'\r'}"
-    if [[ "$raw" =~ ^[[:space:]]*\"(.*)\"([[:space:]]*#.*)?$ ]]; then
-        [[ -n "${BASH_REMATCH[2]}" ]] && printf "%s" "${BASH_REMATCH[2]}"
-        return 0
-    fi
-    if [[ "$raw" =~ ^[[:space:]]*\'(.*)\'([[:space:]]*#.*)?$ ]]; then
-        [[ -n "${BASH_REMATCH[2]}" ]] && printf "%s" "${BASH_REMATCH[2]}"
-        return 0
-    fi
-    local i=0
-    local len=${#raw}
-    local seen_nonspace=false
-    local prev_space=true
-    local space_run_start=0
-    while [ $i -lt "$len" ]; do
-        local ch="${raw:$i:1}"
-        if [[ "$ch" =~ [[:space:]] ]]; then
-            if [[ "$prev_space" == false ]]; then
-                space_run_start=$i
-            fi
-            prev_space=true
-        else
-            if [[ "$ch" == "#" && ( "$seen_nonspace" == false || "$prev_space" == true ) ]]; then
-                local start="$i"
-                if [[ "$prev_space" == true ]]; then
-                    start="$space_run_start"
-                fi
-                local comment="${raw:$start}"
-                [[ -n "$comment" ]] && printf "%s" "$comment"
-                return 0
-            fi
-            seen_nonspace=true
-            prev_space=false
-        fi
-        i=$((i + 1))
-    done
-    return 0
-}
-
-# ---------------------------------------------------------------------
-# load_env_file_raw()
-# Parses and exports selected variables from an env file safely.
-# ---------------------------------------------------------------------
-load_env_file_raw() {
-    local file="$1"
-    log debug "[ENV] Loading relevant vars from: $file"
-
-    local tmpfile
-    tmpfile=$(mktemp /tmp/.inm_env_XXXXXX) || {
-        log err "[ENV] Failed to create temp file"
-        return 1
-    }
-    chmod 600 "$tmpfile"
-
-    # Parse line by line to keep complex passwords/characters intact.
-    # - Skip blank and full-line comments
-    # - Respect quotes: if quoted, do NOT strip inline #
-    # - Unquoted values: strip inline comment and trim, then quote for export
-    while IFS= read -r line || [ -n "$line" ]; do
-        line="${line%$'\r'}"
-        # skip empty
-        [[ -z "${line//[[:space:]]/}" ]] && continue
-        # skip full-line comments
-        local trimmed="${line#"${line%%[![:space:]]*}"}"
-        [[ "$trimmed" =~ ^# ]] && continue
-
-        if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
-            local key val raw
-            key="${BASH_REMATCH[2]}"
-            raw="${BASH_REMATCH[3]}"
-            # filter relevant prefixes only
-            if [[ ! "$key" =~ ^(APP_|DB_|ELEVATED_|MAIL_|NINJA_|PDF_|INM_)[A-Z_]*$ ]]; then
-                continue
-            fi
-            local sensitive=false
-            if _env_key_is_sensitive "$key"; then
-                sensitive=true
-            fi
-            val="$(_env_parse_env_value "$raw" "$sensitive")"
-            printf 'export %s=%q\n' "$key" "$val" >> "$tmpfile"
-        fi
-    done < "$file"
-
-    local redacted_data=""
-    while IFS= read -r line; do
-        local key="${line#export }"
-        key="${key%%=*}"
-        if _env_key_is_sensitive "$key"; then
-            redacted_data+="export ${key}=REDACTED "
-        else
-            redacted_data+="${line} "
-        fi
-    done < "$tmpfile"
-    log debug "[ENV] Parsed data: ${redacted_data% }"
-
-    # shellcheck disable=SC1091
-    # shellcheck disable=SC1090
-    if ! . "$tmpfile"; then
-        log err "[ENV] Failed to source vars from $tmpfile"
-        rm -f "$tmpfile"
-        return 1
-    fi
-
-    rm -f "$tmpfile"
-    log debug "[ENV] Successfully loaded vars from: $file"
-}
-
-# ---------------------------------------------------------------------
-# read_env_value_safe()
-# Reads a key from an env file with quote/comment handling.
-# ---------------------------------------------------------------------
-read_env_value_safe() {
-    local file="$1"
-    local key="$2"
-    local line val raw
-    line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=" "$file" 2>/dev/null | tail -n1)"
-    [[ -z "$line" ]] && return 0
-    raw="${line#*=}"
-    local sensitive=false
-    if _env_key_is_sensitive "$key"; then
-        sensitive=true
-    fi
-    val="$(_env_parse_env_value "$raw" "$sensitive")"
-    printf "%s" "$val"
-}
 
 # ---------------------------------------------------------------------
 # check_missing_settings()
@@ -303,25 +77,58 @@ check_missing_settings() {
 # check_commands()
 # Verifies required external tools and shell builtins are available.
 # ---------------------------------------------------------------------
-check_commands() {
+# check_commands_list()
+# List required external tools for a given mode.
+# Consumes: args: mode.
+# Computes: command list.
+# Returns: list on stdout (one per line).
+# ---------------------------------------------------------------------
+check_commands_list() {
     local mode="${1:-full}"
-    local commands=("curl" "wc" "tar" "cp" "mv" "mkdir" "chown" "find" "rm" "grep" "xargs" "php" "touch" "sed" "sudo" "tee" "rsync" "awk" "jq" "git" "composer" "zip" "unzip")
-    if [ "$mode" = "self" ]; then
-        local filtered=()
-        local cmd=""
-        for cmd in "${commands[@]}"; do
-            case "$cmd" in
-                php|jq|composer|sudo) continue ;;
-            esac
-            filtered+=("$cmd")
-        done
-        commands=("${filtered[@]}")
-    elif [ "$mode" = "self_update" ]; then
-        commands=("git")
-    fi
-    local missing_commands=()
+    local commands=()
+    case "$mode" in
+        preflight)
+            commands=(php git curl tar rsync zip unzip composer jq awk sed find xargs touch tee sha256sum)
+            ;;
+        self)
+            commands=(curl wc tar cp mv mkdir chown find rm grep xargs touch sed tee rsync awk git zip unzip)
+            ;;
+        self_update)
+            commands=(git)
+            ;;
+        *)
+            commands=(curl wc tar cp mv mkdir chown find rm grep xargs php touch sed sudo tee rsync awk jq git composer zip unzip)
+            ;;
+    esac
+    printf "%s\n" "${commands[@]}"
+}
 
+# ---------------------------------------------------------------------
+# check_commands_missing()
+# Return missing commands for a given mode.
+# Consumes: args: mode; deps: check_commands_list, select_db_client, select_db_dump.
+# Computes: missing command list.
+# Returns: list on stdout (one per line).
+# ---------------------------------------------------------------------
+check_commands_missing() {
+    local mode="${1:-full}"
+    local include_db=true
+    case "$mode" in
+        preflight|self|self_update) include_db=false ;;
+    esac
+
+    local missing_commands=()
+    local -a commands=()
+    mapfile -t commands < <(check_commands_list "$mode")
+
+    local cmd=""
     for cmd in "${commands[@]}"; do
+        if [[ "$cmd" == "sha256sum" ]]; then
+            if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1 && ! command -v sha256 >/dev/null 2>&1; then
+                missing_commands+=("sha256sum/shasum/sha256")
+            fi
+            continue
+        fi
         if ! command -v "$cmd" &>/dev/null; then
             if [[ "$cmd" == "sudo" ]] && command -v doas >/dev/null 2>&1; then
                 continue
@@ -329,11 +136,8 @@ check_commands() {
             missing_commands+=("$cmd")
         fi
     done
-    if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1 && ! command -v sha256 >/dev/null 2>&1; then
-        missing_commands+=("sha256sum/shasum/sha256")
-    fi
 
-    if [ "$mode" = "full" ]; then
+    if [[ "$include_db" == true ]]; then
         local db_client=""
         local db_dump=""
         db_client="$(select_db_client false false)"
@@ -345,6 +149,144 @@ check_commands() {
             missing_commands+=("mysqldump/mariadb-dump")
         fi
     fi
+
+    if [ ${#missing_commands[@]} -gt 0 ]; then
+        printf "%s\n" "${missing_commands[@]}"
+    fi
+}
+
+# ---------------------------------------------------------------------
+# check_db_tools_preflight()
+# Emit database client/dump status for preflight.
+# Consumes: args: add_fn, tag; env: INM_ENV_FILE/INM_INSTALLATION_PATH/DB_*; deps: expand_path_vars, select_db_client, select_db_dump.
+# Computes: DB tooling status lines.
+# Returns: 0 after emitting.
+# ---------------------------------------------------------------------
+check_db_tools_preflight() {
+    local add_fn="$1"
+    local tag="${2:-CMD}"
+    local emit_fn=""
+    if [[ -n "$add_fn" ]] && declare -F "$add_fn" >/dev/null 2>&1; then
+        emit_fn="$add_fn"
+    fi
+    db_emit() {
+        local status="$1"
+        local detail="$2"
+        if [[ -n "$emit_fn" ]]; then
+            "$emit_fn" "$status" "$tag" "$detail"
+        else
+            case "$status" in
+                OK) log info "[${tag}] $detail" ;;
+                WARN) log warn "[${tag}] $detail" ;;
+                ERR) log err "[${tag}] $detail" ;;
+                INFO) log info "[${tag}] $detail" ;;
+                *) log info "[${tag}] $detail" ;;
+            esac
+        fi
+    }
+
+    local db_cmds_required=false
+    local db_config_present=false
+    if [[ -n "${DB_HOST:-}" || -n "${DB_USERNAME:-}" || -n "${DB_DATABASE:-}" ]]; then
+        db_cmds_required=true
+        db_config_present=true
+    else
+        local env_for_db=""
+        if [ -n "${INM_ENV_FILE:-}" ]; then
+            env_for_db="$(expand_path_vars "$INM_ENV_FILE")"
+        elif [ -n "${INM_INSTALLATION_PATH:-}" ]; then
+            env_for_db="${INM_INSTALLATION_PATH%/}/.env"
+        fi
+        if [ -n "$env_for_db" ] && [ -f "$env_for_db" ]; then
+            if grep -qE '^DB_(HOST|USERNAME|DATABASE)=' "$env_for_db" 2>/dev/null; then
+                db_cmds_required=true
+                db_config_present=true
+            fi
+        fi
+    fi
+    local db_scope_note=""
+    local db_missing_status="ERR"
+    if [ "$db_cmds_required" != true ]; then
+        db_scope_note=" (DB not configured)"
+        db_missing_status="WARN"
+    fi
+
+    local have_mysql=false
+    local have_mariadb=false
+    local have_mysqldump=false
+    local have_mariadb_dump=false
+    command -v mysql >/dev/null 2>&1 && have_mysql=true
+    command -v mariadb >/dev/null 2>&1 && have_mariadb=true
+    command -v mysqldump >/dev/null 2>&1 && have_mysqldump=true
+    command -v mariadb-dump >/dev/null 2>&1 && have_mariadb_dump=true
+
+    local db_client=""
+    local db_dump=""
+    local db_client_note=""
+    if [ "$have_mysql" = true ] && [ "$have_mariadb" != true ]; then
+        db_client="mysql"
+    elif [ "$have_mariadb" = true ] && [ "$have_mysql" != true ]; then
+        db_client="mariadb"
+    elif [ "$have_mysql" = true ] && [ "$have_mariadb" = true ]; then
+        db_client="mysql"
+        if [ -n "${INM_DB_CLIENT:-}" ]; then
+            case "${INM_DB_CLIENT,,}" in
+                mysql|mariadb)
+                    db_client="${INM_DB_CLIENT,,}"
+                    db_client_note=" (INM_DB_CLIENT)"
+                    ;;
+                *)
+                    db_emit WARN "INM_DB_CLIENT ignored (use mysql or mariadb)"
+                    ;;
+            esac
+        else
+            if [ "$db_config_present" != true ]; then
+                db_client_note=" (both installed; DB not configured)"
+            else
+                db_client_note=" (both installed)"
+            fi
+        fi
+    fi
+
+    if [ "$db_client" = "mariadb" ] && [ "$have_mariadb_dump" = true ]; then
+        db_dump="mariadb-dump"
+    elif [ "$db_client" = "mysql" ] && [ "$have_mysqldump" = true ]; then
+        db_dump="mysqldump"
+    elif [ "$have_mysqldump" = true ]; then
+        db_dump="mysqldump"
+    elif [ "$have_mariadb_dump" = true ]; then
+        db_dump="mariadb-dump"
+    fi
+
+    if [ "$have_mysql" = true ] || [ "$have_mariadb" = true ]; then
+        if [ "$have_mysql" = true ] && [ "$have_mariadb" = true ]; then
+            db_emit OK "DB client: ${db_client:-mysql}${db_client_note} (mysql + mariadb available)"
+        else
+            db_emit OK "DB client: ${db_client:-mysql}${db_client_note}"
+        fi
+    else
+        db_emit "$db_missing_status" "DB client missing (need mysql or mariadb)${db_scope_note}"
+    fi
+
+    if [ "$have_mysqldump" = true ] || [ "$have_mariadb_dump" = true ]; then
+        if [ "$have_mysqldump" = true ] && [ "$have_mariadb_dump" = true ]; then
+            db_emit OK "DB dump: ${db_dump:-mysqldump} (mysqldump + mariadb-dump available)"
+        else
+            db_emit OK "DB dump: ${db_dump:-mysqldump}"
+        fi
+    else
+        db_emit "$db_missing_status" "DB dump tool missing (need mysqldump or mariadb-dump)${db_scope_note}"
+    fi
+}
+
+# ---------------------------------------------------------------------
+# check_commands()
+# Verifies required external tools and shell builtins are available.
+# ---------------------------------------------------------------------
+check_commands() {
+    local mode="${1:-full}"
+    local missing_commands=()
+    mapfile -t missing_commands < <(check_commands_missing "$mode")
 
     local shell_builtins=("read")
     for builtin in "${shell_builtins[@]}"; do
@@ -366,42 +308,6 @@ check_commands() {
 }
 
 # ---------------------------------------------------------------------
-# check_github_rate_limit()
-# Warns if GitHub API rate limit is low to encourage token usage.
-# ---------------------------------------------------------------------
-check_github_rate_limit() {
-    local auth_flag=()
-    case "${INM_GH_API_CREDENTIALS:-}" in
-        token:*)
-            auth_flag=(-H "Authorization: token ${INM_GH_API_CREDENTIALS#token:}")
-            ;;
-        *:*)
-            auth_flag=(-u "${INM_GH_API_CREDENTIALS//:/ }")
-            ;;
-    esac
-    local rl
-    rl=$(curl -s --fail "${auth_flag[@]}" https://api.github.com/rate_limit 2>/dev/null) || return
-    if ! command -v jq >/dev/null 2>&1; then
-        return
-    fi
-    local remaining limit reset
-    remaining=$(echo "$rl" | jq -r '.rate.remaining // empty')
-    limit=$(echo "$rl" | jq -r '.rate.limit // empty')
-    reset=$(echo "$rl" | jq -r '.rate.reset // empty')
-    if [[ -n "$remaining" && -n "$limit" ]]; then
-        if (( remaining <= 5 )); then
-            local reset_human=""
-            if [[ -n "$reset" ]] && command -v date >/dev/null 2>&1; then
-                reset_human=$(date -d @"$reset" +'%Y-%m-%d %H:%M:%S' 2>/dev/null || true)
-            fi
-            log warn "[DN] GitHub API rate low: ${remaining}/${limit} remaining${reset_human:+ (reset: $reset_human)}. Set INM_GH_API_CREDENTIALS=token:<PAT> to increase limits."
-        else
-            log debug "[DN] GitHub API rate: ${remaining}/${limit} remaining."
-        fi
-    fi
-}
-
-# ---------------------------------------------------------------------
 # check_envs()
 # Orchestrates base dir check, config presence/creation, user switch,
 # and provision handling.
@@ -409,13 +315,16 @@ check_github_rate_limit() {
 check_envs() {
     log debug "[ENV] Check starts."
 
-    if [[ "${CMD_CONTEXT:-}" == "self" ]]; then
-        log debug "[ENV] Skipping project config checks for self commands."
+    if [[ "${CMD_CONTEXT:-}" == "self" || "${LEGACY_CMD:-}" == "version" ]]; then
+        log debug "[ENV] Skipping project config checks for self/version."
         return 0
     fi
     local allow_missing_config=false
     local skip_config_load=false
     if [[ "${CMD_CONTEXT:-}" == "core" && ( "${CMD_ACTION:-}" == "health" || "${CMD_ACTION:-}" == "info" ) ]]; then
+        allow_missing_config=true
+    fi
+    if [[ "${CMD_CONTEXT:-}" == "core" && "${CMD_ACTION:-}" == "get" ]]; then
         allow_missing_config=true
     fi
     if [[ "${LEGACY_CMD:-}" == "health" || "${LEGACY_CMD:-}" == "info" ]]; then
@@ -449,14 +358,14 @@ check_envs() {
         # Fallback: if a local .inmanage/.env.inmanage exists in PWD or base dir, use it
         if [ -f ".inmanage/.env.inmanage" ]; then
             INM_SELF_ENV_FILE="$PWD/.inmanage/.env.inmanage"
-            if declare -F should_suppress_pre_switch_logs >/dev/null 2>&1 && should_suppress_pre_switch_logs; then
+            if should_suppress_pre_switch_logs; then
                 log debug "[ENV] Using local .inmanage/.env.inmanage at $INM_SELF_ENV_FILE"
             else
                 log info "[ENV] Using local .inmanage/.env.inmanage at $INM_SELF_ENV_FILE"
             fi
         elif [ -n "${INM_BASE_DIRECTORY:-}" ] && [ -f "${INM_BASE_DIRECTORY%/}/.inmanage/.env.inmanage" ]; then
             INM_SELF_ENV_FILE="${INM_BASE_DIRECTORY%/}/.inmanage/.env.inmanage"
-            if declare -F should_suppress_pre_switch_logs >/dev/null 2>&1 && should_suppress_pre_switch_logs; then
+            if should_suppress_pre_switch_logs; then
                 log debug "[ENV] Using base .inmanage/.env.inmanage at $INM_SELF_ENV_FILE"
             else
                 log info "[ENV] Using base .inmanage/.env.inmanage at $INM_SELF_ENV_FILE"
@@ -464,7 +373,22 @@ check_envs() {
         fi
     fi
 
+    local config_unreadable_hint=false
     if [ -z "${INM_SELF_ENV_FILE:-}" ] || [ ! -f "$INM_SELF_ENV_FILE" ]; then
+        local perm_hint=""
+        if [ -d ".inmanage" ] && [ ! -x ".inmanage" ]; then
+            perm_hint="$PWD/.inmanage/.env.inmanage"
+        elif [ -n "${INM_BASE_DIRECTORY:-}" ] && [ -d "${INM_BASE_DIRECTORY%/}/.inmanage" ] && [ ! -x "${INM_BASE_DIRECTORY%/}/.inmanage" ]; then
+            perm_hint="${INM_BASE_DIRECTORY%/}/.inmanage/.env.inmanage"
+        fi
+
+        if [ -n "$perm_hint" ]; then
+            INM_SELF_ENV_FILE="$perm_hint"
+            config_unreadable_hint=true
+        fi
+    fi
+
+    if [ -z "${INM_SELF_ENV_FILE:-}" ] || { [ ! -f "$INM_SELF_ENV_FILE" ] && [ "$config_unreadable_hint" != true ]; }; then
         log note "[ENV] Project config file not found."
 
         if [[ "$allow_missing_config" == true ]]; then
@@ -502,7 +426,19 @@ check_envs() {
 
         # Config was found or created – validate and load
         if [ ! -r "$INM_SELF_ENV_FILE" ]; then
+            local current_user=""
+            current_user="$(id -un 2>/dev/null || true)"
             log err "[ENV] Project config file '$INM_SELF_ENV_FILE' is not readable. Aborting."
+            if [ -n "${INM_ENFORCED_USER:-}" ] && [ "$current_user" != "$INM_ENFORCED_USER" ]; then
+                log_hint "ENV" "Run as enforced user: sudo -u ${INM_ENFORCED_USER} inm core health"
+                log_hint "ENV" "Or run as root with: sudo inm core health --override-enforced-user"
+            else
+                log_hint "ENV" "CLI config defaults to 600 for security. Fix options: run as enforced user, add your user to the app group, or relax CLI config mode."
+                log_hint "ENV" "Directory access also matters: .inmanage needs +x for your user (group membership or chmod/chgrp)."
+                log_hint "ENV" "Set mode (group): sudo inm env set cli INM_CLI_ENV_MODE=640"
+                log_hint "ENV" "Set mode (world, if no secrets): sudo inm env set cli INM_CLI_ENV_MODE=644"
+                log_hint "ENV" "Apply permissions: sudo inm core health --fix-permissions"
+            fi
             exit 1
         fi
 
@@ -511,7 +447,7 @@ check_envs() {
             log err "[ENV] Failed to load project configuration."
             exit 1
         }
-        if declare -F should_suppress_pre_switch_logs >/dev/null 2>&1 && should_suppress_pre_switch_logs; then
+        if should_suppress_pre_switch_logs; then
             log debug "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
         else
             log info "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
@@ -523,34 +459,6 @@ check_envs() {
         }
     fi
 
-    # Expand placeholders in key paths after all loads (allows ${INM_BASE_DIRECTORY} style) without eval
-    expand_placeholders() {
-        local input="$1"
-        # replace ${VAR} by value of VAR from current environment
-        local output="$input"
-        while [[ "$output" =~ (\$\{([^}]+)\}) ]]; do
-            local full="${BASH_REMATCH[1]}"
-            local var="${BASH_REMATCH[2]}"
-            local val
-            if [[ "$var" == "HOME" && -n "${INM_ORIGINAL_HOME:-}" ]]; then
-                val="$INM_ORIGINAL_HOME"
-            else
-                val="${!var}"
-            fi
-            output="${output//$full/$val}"
-        done
-        printf "%s" "$output"
-    }
-    path_expand_no_eval() {
-        local p="$1"
-        [[ -z "$p" ]] && { printf "%s" "$p"; return; }
-        p="$(expand_placeholders "$p")"
-        local home_base="${INM_ORIGINAL_HOME:-$HOME}"
-        p="${p/#\~/$home_base}"
-        p="${p//\$\{HOME\}/$home_base}"
-        p="${p//\$HOME/$home_base}"
-        printf "%s" "$p"
-    }
     INM_ENV_FILE="$(path_expand_no_eval "${INM_ENV_FILE:-}")"
     INM_ARTISAN_STRING="$(path_expand_no_eval "${INM_ARTISAN_STRING:-}")"
     INM_PROVISION_ENV_FILE="$(path_expand_no_eval "${INM_PROVISION_ENV_FILE:-}")"
@@ -558,25 +466,30 @@ check_envs() {
     INM_CACHE_GLOBAL_DIRECTORY="$(path_expand_no_eval "${INM_CACHE_GLOBAL_DIRECTORY:-}")"
     INM_CACHE_LOCAL_DIRECTORY="$(path_expand_no_eval "${INM_CACHE_LOCAL_DIRECTORY:-}")"
     INM_BACKUP_DIRECTORY="$(path_expand_no_eval "${INM_BACKUP_DIRECTORY:-}")"
+    INM_HISTORY_LOG_FILE="$(path_expand_no_eval "${INM_HISTORY_LOG_FILE:-}")"
 
     # Normalize base dir to always carry a trailing slash for consistent concatenation.
-    if declare -F ensure_trailing_slash >/dev/null && [ -n "${INM_BASE_DIRECTORY:-}" ]; then
+    if [ -n "${INM_BASE_DIRECTORY:-}" ]; then
         INM_BASE_DIRECTORY="$(ensure_trailing_slash "$INM_BASE_DIRECTORY")"
         log debug "[ENV] Normalized base directory: $INM_BASE_DIRECTORY"
     fi
 
     # Normalize installation path in case INM_INSTALLATION_DIRECTORY is absolute.
-    if declare -F compute_installation_path >/dev/null; then
-        INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
+    INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
+    if [[ -n "${INM_INSTALLATION_PATH:-}" ]]; then
         local env_state=""
-        if [[ -n "${INM_ENV_FILE:-}" ]] && declare -F file_read_state >/dev/null 2>&1; then
+        if [[ -n "${INM_ENV_FILE:-}" ]]; then
             env_state="$(file_read_state "$INM_ENV_FILE")"
         fi
         if [[ "$env_state" == "exists_unreadable" || "$env_state" == "permission" ]]; then
-            if declare -F should_suppress_pre_switch_logs >/dev/null 2>&1 && should_suppress_pre_switch_logs; then
+            if [[ "${INM_ENV_WARNED:-false}" == true ]]; then
                 log debug "[ENV] App .env not readable: $INM_ENV_FILE (permission issue)."
+            elif should_suppress_pre_switch_logs; then
+                log debug "[ENV] App .env not readable: $INM_ENV_FILE (permission issue)."
+                INM_ENV_WARNED=true
             else
                 log warn "[ENV] App .env not readable: $INM_ENV_FILE (permission issue)."
+                INM_ENV_WARNED=true
             fi
         fi
         # If the resolved .env path is missing, rebuild it relative to the normalized install path.
@@ -591,9 +504,7 @@ check_envs() {
         fi
     fi
 
-    if declare -F maybe_migrate_legacy_cli >/dev/null 2>&1; then
-        maybe_migrate_legacy_cli "$@" || exit 1
-    fi
+    maybe_migrate_legacy_cli "$@" || exit 1
 
     enforce_user_switch --user="$INM_ENFORCED_USER" "$@"
 
@@ -654,6 +565,10 @@ check_provision_file() {
         return 0
     fi
 
+    if trace_suspend_if_sensitive_key "DB_PASSWORD"; then
+        trap 'trace_resume' RETURN
+    fi
+
     log ok "[PVF] Provision file found. Loading..."
     load_env_file_raw "$INM_PROVISION_ENV_FILE" || {
         log err "[PVF] Failed to load DB variables from $INM_PROVISION_ENV_FILE"
@@ -686,27 +601,62 @@ check_provision_file() {
 
     local elevated_username="${DB_ELEVATED_USERNAME:-}"
     local elevated_password="${DB_ELEVATED_PASSWORD:-}"
+    local elevated_auth_socket=false
+    if [[ -n "$elevated_password" && "${elevated_password,,}" == "auth_socket" ]]; then
+        elevated_auth_socket=true
+    fi
+    local current_user=""
+    current_user="$(id -un 2>/dev/null || true)"
     if [ -n "$elevated_username" ]; then
         log info "[PVF] Elevated SQL user '$elevated_username' found."
 
-        if "$db_client" -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e 'quit' 2>/dev/null; then
-            log ok "[PVF] Connection with elevated credentials successful."
-
-            if "$db_client" -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e "USE \`$DB_DATABASE\`;" 2>/dev/null; then
-                log ok "[PVF] Database '$DB_DATABASE' already exists."
+        if [ "$elevated_auth_socket" = true ]; then
+            if [[ "$DB_HOST" != "localhost" && "$DB_HOST" != "127.0.0.1" && "$DB_HOST" != "::1" && "$DB_HOST" != /* ]]; then
+                log err "[PVF] auth_socket requires a local DB host (localhost or socket path)."
+                exit 1
+            fi
+            local socket_path=""
+            if [[ "$DB_HOST" == /* ]]; then
+                socket_path="$DB_HOST"
             else
-                log warn "[PVF] Database '$DB_DATABASE' does not exist. Creating..."
-                create_database "$elevated_username" "$elevated_password"
+                socket_path="${DB_SOCKET:-/var/run/mysqld/mysqld.sock}"
+            fi
+            local -a elevated_cmd=()
+            if [[ "$current_user" != "$elevated_username" ]]; then
+                if [ "$EUID" -eq 0 ] && [ "$elevated_username" = "root" ]; then
+                    elevated_cmd=("$db_client")
+                elif command -v sudo >/dev/null 2>&1; then
+                    if sudo -n -u "$elevated_username" true 2>/dev/null; then
+                        elevated_cmd=(sudo -n -u "$elevated_username" "$db_client")
+                    else
+                        log err "[PVF] auth_socket requires passwordless sudo for '${current_user}' or run as root (e.g., sudo inm core install --provision --force --override-enforced-user)."
+                        exit 1
+                    fi
+                else
+                    log err "[PVF] auth_socket requires sudo or running as $elevated_username."
+                    exit 1
+                fi
+            else
+                elevated_cmd=("$db_client")
+            fi
+            elevated_cmd+=("-u${elevated_username}" "-S" "$socket_path")
+
+            if "${elevated_cmd[@]}" -e 'quit' 2>/dev/null; then
+                log ok "[PVF] Connection with elevated auth_socket credentials successful."
+
+                if "${elevated_cmd[@]}" -e "USE \`$DB_DATABASE\`;" 2>/dev/null; then
+                    log ok "[PVF] Database '$DB_DATABASE' already exists."
+                else
+                    log warn "[PVF] Database '$DB_DATABASE' does not exist. Creating..."
+                    create_database "$elevated_username" "$elevated_password"
+                fi
+            else
+                log err "[PVF] auth_socket connection failed; check sudo and local socket auth."
+                exit 1
             fi
         else
-            log warn "[PVF] Connection with elevated user failed. Trying interactive password prompt..."
-
-            if [ -z "$elevated_password" ]; then
-                elevated_password=$(prompt_var "DB_ELEVATED_PASSWORD" "" "Enter the password for elevated user '$elevated_username'" true)
-            fi
-
             if "$db_client" -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e 'quit' 2>/dev/null; then
-                log ok "[PVF] Retry successful with prompted password."
+                log ok "[PVF] Connection with elevated credentials successful."
 
                 if "$db_client" -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e "USE \`$DB_DATABASE\`;" 2>/dev/null; then
                     log ok "[PVF] Database '$DB_DATABASE' already exists."
@@ -715,8 +665,25 @@ check_provision_file() {
                     create_database "$elevated_username" "$elevated_password"
                 fi
             else
-                log err "[PVF] Retry with elevated credentials failed."
-                exit 1
+                log warn "[PVF] Connection with elevated user failed. Trying interactive password prompt..."
+
+                if [ -z "$elevated_password" ]; then
+                    elevated_password=$(prompt_var "DB_ELEVATED_PASSWORD" "" "Enter the password for elevated user '$elevated_username'" true)
+                fi
+
+                if "$db_client" -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e 'quit' 2>/dev/null; then
+                    log ok "[PVF] Retry successful with prompted password."
+
+                    if "$db_client" -h "$DB_HOST" -P "$DB_PORT" -u "$elevated_username" -p"$elevated_password" -e "USE \`$DB_DATABASE\`;" 2>/dev/null; then
+                        log ok "[PVF] Database '$DB_DATABASE' already exists."
+                    else
+                        log warn "[PVF] Database '$DB_DATABASE' does not exist. Creating..."
+                        create_database "$elevated_username" "$elevated_password"
+                    fi
+                else
+                    log err "[PVF] Retry with elevated credentials failed."
+                    exit 1
+                fi
             fi
         fi
     else
@@ -735,20 +702,4 @@ check_provision_file() {
         fi
     fi
     run_installation "Provisioned"
-}
-# ---------------------------------------------------------------------
-# check_gh_credentials()
-# Determines curl auth flag based on INM_GH_API_CREDENTIALS.
-# ---------------------------------------------------------------------
-check_gh_credentials() {
-    # Only set CURL_AUTH_FLAG for commands that actually download; keep quiet otherwise.
-    if [[ -n "$INM_GH_API_CREDENTIALS" && "$INM_GH_API_CREDENTIALS" == *:* ]]; then
-        # shellcheck disable=SC2034
-        CURL_AUTH_FLAG="-u $INM_GH_API_CREDENTIALS"
-        log debug "[GH] Credentials detected. Curl commands will include them."
-    else
-        # shellcheck disable=SC2034
-        CURL_AUTH_FLAG=""
-        log debug "[GH] No credentials set. If curl connections fail, try to add credentials."
-    fi
 }

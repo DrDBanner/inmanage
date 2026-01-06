@@ -7,6 +7,13 @@ __SERVICE_DB_LOADED=1
 # ---------------------------------------------------------------------
 # detect_mysql_collation()
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# detect_mysql_collation()
+# Detect the default MySQL collation for the current connection.
+# Consumes: args: db_client, db_host, db_port, db_user, db_pass.
+# Computes: collation string from server.
+# Returns: prints collation or empty string.
+# ---------------------------------------------------------------------
 detect_mysql_collation() {
     local collation="${1:-}"
     local db_client="${2:-}"
@@ -26,12 +33,163 @@ detect_mysql_collation() {
 }
 
 # ---------------------------------------------------------------------
+# db_emit_preflight()
+# Emit database connectivity and schema info for preflight output.
+# Consumes: args: add_fn, db_tag, app_tag; env: DB_*, INM_ENV_FILE/INM_INSTALLATION_PATH; deps: load_env_file_raw/select_db_client/expand_path_vars.
+# Computes: connection status, server settings, language table info.
+# Returns: 0 after emitting.
+# ---------------------------------------------------------------------
+db_emit_preflight() {
+    local add_fn="$1"
+    local db_tag="${2:-DB}"
+    local app_tag="${3:-APP}"
+    local emit_fn=""
+    if trace_suspend_if_sensitive_key "DB_PASSWORD"; then
+        trap 'trace_resume' RETURN
+    fi
+    if [[ -n "$add_fn" ]] && declare -F "$add_fn" >/dev/null 2>&1; then
+        emit_fn="$add_fn"
+    fi
+    db_emit() {
+        local status="$1"
+        local tag="$2"
+        local detail="$3"
+        if [[ -n "$emit_fn" ]]; then
+            "$emit_fn" "$status" "$tag" "$detail"
+        else
+            case "$status" in
+                OK) log info "[${tag}] $detail" ;;
+                WARN) log warn "[${tag}] $detail" ;;
+                ERR) log err "[${tag}] $detail" ;;
+                INFO) log info "[${tag}] $detail" ;;
+                *) log info "[${tag}] $detail" ;;
+            esac
+        fi
+    }
+
+    # Try to hydrate DB vars from app env if missing
+    local env_file="${INM_ENV_FILE:-}"
+    if [ -z "$env_file" ] && [ -n "${INM_INSTALLATION_PATH:-}" ]; then
+        env_file="${INM_INSTALLATION_PATH%/}/.env"
+    fi
+    if [ -z "${DB_HOST:-}" ] && [ -n "$env_file" ] && [ -f "$env_file" ]; then
+        if load_env_file_raw "$env_file"; then
+            db_emit INFO "$db_tag" "Loaded DB vars from ${env_file}"
+        else
+            db_emit WARN "$db_tag" "Failed to parse DB vars from ${env_file}"
+        fi
+    fi
+
+    # ---- DB connectivity ----
+    if [ -n "${DB_HOST:-}" ] && [ -n "${DB_USERNAME:-}" ]; then
+        local db_port="${DB_PORT:-3306}"
+        db_emit INFO "$db_tag" "Target: host=${DB_HOST} port=${db_port} db=${DB_DATABASE:-<unset>} user=${DB_USERNAME}"
+
+        local db_client_local="${db_client:-}"
+        if [ -z "$db_client_local" ]; then
+            db_client_local="$(select_db_client false true)"
+        fi
+        if [ -z "$db_client_local" ]; then
+            db_emit ERR "$db_tag" "No MySQL/MariaDB client available"
+            return 0
+        fi
+
+        local -a db_cmd_base=("$db_client_local" -h "$DB_HOST" -P "$db_port" -u "$DB_USERNAME")
+        if [ -n "${DB_PASSWORD:-}" ]; then
+            db_cmd_base+=(-p"$DB_PASSWORD")
+        fi
+        if "${db_cmd_base[@]}" -e "SELECT 1" >/dev/null 2>&1; then
+            db_emit INFO "$db_tag" "Client: ${db_client_local}"
+            db_emit OK "$db_tag" "Connection ok to $DB_HOST:${db_port}"
+            # Try to read server/version info
+            local dbinfo
+            dbinfo="$("${db_cmd_base[@]}" -N -e "select @@version, @@version_comment;" 2>/dev/null | head -n1)"
+            if [ -n "$dbinfo" ]; then
+                db_emit INFO "$db_tag" "Server: $dbinfo"
+            fi
+            # DB settings (best effort)
+            local settings
+            settings="$("${db_cmd_base[@]}" -N -e "select @@innodb_file_per_table, @@max_allowed_packet, @@character_set_server, @@collation_server;" 2>/dev/null | head -n1)"
+            if [ -n "$settings" ]; then
+                IFS=$'\t' read -r innodb packet charset coll <<<"$settings"
+                db_emit INFO "$db_tag" "innodb_file_per_table=${innodb:-?}"
+                db_emit INFO "$db_tag" "max_allowed_packet=${packet:-?}"
+                db_emit INFO "$db_tag" "charset=${charset:-?} collation=${coll:-?}"
+            fi
+            local sql_mode
+            sql_mode="$("${db_cmd_base[@]}" -N -e "select @@sql_mode;" 2>/dev/null | head -n1)"
+            [[ -n "$sql_mode" ]] && db_emit INFO "$db_tag" "sql_mode=${sql_mode}"
+            if [ -n "${DB_DATABASE:-}" ]; then
+                if "${db_cmd_base[@]}" -e "USE \`$DB_DATABASE\`;" >/dev/null 2>&1; then
+                    db_emit OK "$db_tag" "Database '$DB_DATABASE' exists."
+                    local lang_table=""
+                    if "${db_cmd_base[@]}" -N -B \
+                        -e "SELECT table_name FROM information_schema.tables WHERE table_schema='${DB_DATABASE}' AND table_name='languages' LIMIT 1;" 2>/dev/null | grep -q "^languages$"; then
+                        lang_table="languages"
+                    elif "${db_cmd_base[@]}" -N -B \
+                        -e "SELECT table_name FROM information_schema.tables WHERE table_schema='${DB_DATABASE}' AND table_name='language' LIMIT 1;" 2>/dev/null | grep -q "^language$"; then
+                        lang_table="language"
+                    fi
+
+                    if [ -n "$lang_table" ]; then
+                        local lang_count=""
+                        lang_count="$("${db_cmd_base[@]}" -N -B \
+                            -e "SELECT COUNT(*) FROM \`${DB_DATABASE}\`.\`${lang_table}\`;" 2>/dev/null | head -n1)"
+                        if [[ "$lang_count" =~ ^[0-9]+$ ]]; then
+                            if [ "$lang_count" -eq 0 ]; then
+                                db_emit ERR "$app_tag" "Languages loaded: 0 (run ninja:translations + db:seed --class=LanguageSeeder)"
+                            elif [ "$lang_count" -lt 10 ]; then
+                                db_emit WARN "$app_tag" "Languages loaded: ${lang_count} (expected more; run ninja:translations + db:seed --class=LanguageSeeder)"
+                            else
+                                db_emit OK "$app_tag" "Languages loaded: ${lang_count}"
+                            fi
+                        else
+                            db_emit WARN "$app_tag" "Languages count unavailable (query failed)"
+                        fi
+                    else
+                        db_emit WARN "$app_tag" "Languages table missing; run migrations/seed (ninja:translations + db:seed --class=LanguageSeeder)"
+                    fi
+                else
+                    local hint="Database '$DB_DATABASE' not found or no access."
+                    hint+=" Set DB_ELEVATED_USERNAME/PASSWORD in .env.provision and rerun provision to create it."
+                    db_emit WARN "$db_tag" "$hint"
+                fi
+            fi
+        else
+            local hint="Cannot connect to $DB_HOST:${db_port} as $DB_USERNAME"
+            hint+=" (check DB_ELEVATED_USERNAME/PASSWORD or credentials in .env/.env.provision)"
+            db_emit ERR "$db_tag" "$hint"
+        fi
+    else
+        local db_env_file="${INM_ENV_FILE:-}"
+        if [ -z "$db_env_file" ] && [ -n "${INM_INSTALLATION_PATH:-}" ]; then
+            db_env_file="${INM_INSTALLATION_PATH%/}/.env"
+        fi
+        if [ -n "$db_env_file" ] && [ -f "$db_env_file" ]; then
+            db_emit ERR "$db_tag" "Missing DB_HOST/DB_USERNAME despite loaded .env"
+        else
+            db_emit WARN "$db_tag" "DB config not set; skipping connectivity checks"
+        fi
+    fi
+}
+
+# ---------------------------------------------------------------------
 # import_database()
+# ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# import_database()
+# Import a SQL file into the configured database.
+# Consumes: args: file; env: DB_* and INM_*; deps: select_db_client.
+# Computes: DB import using mysql client.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 import_database() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
         log info "[DRY-RUN] Skipping DB restore/import."
         return 0
+    fi
+    if trace_suspend_if_sensitive_key "DB_PASSWORD"; then
+        trap 'trace_resume' RETURN
     fi
     log debug "[import_db] Starting import ..."
 
@@ -49,10 +207,12 @@ import_database() {
     fi
 
     # Hydrate DB vars from app env if not set
-    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
-        log debug "[import_db] Loading DB vars from app env: ${INM_ENV_FILE}"
-        if ! load_env_file_raw "${INM_ENV_FILE}"; then
-            log warn "[import_db] Failed to parse app env: ${INM_ENV_FILE}"
+    local env_file=""
+    env_file="$(_db_env_file)"
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ -n "$env_file" ] && [ -f "$env_file" ]; then
+        log debug "[import_db] Loading DB vars from app env: ${env_file}"
+        if ! load_env_file_raw "${env_file}"; then
+            log warn "[import_db] Failed to parse app env: ${env_file}"
         fi
     fi
     local db_config_present=false
@@ -138,12 +298,8 @@ import_database() {
                 return 1
             fi
             log ok "[import_db] Pre-import backup saved to $shadow_dump"
-            if declare -F enforce_ownership >/dev/null 2>&1; then
-                enforce_ownership "$backup_dir"
-            fi
-            if declare -F cleanup_old_backups >/dev/null 2>&1; then
-                cleanup_old_backups || log warn "[import_db] Backup cleanup failed."
-            fi
+            enforce_ownership "$backup_dir"
+            cleanup_old_backups || log warn "[import_db] Backup cleanup failed."
         else
             log err "[import_db] Backup directory unavailable; aborting import. Use --pre-backup=false to override."
             return 1
@@ -183,10 +339,20 @@ import_database() {
 # purge_database()
 # Drops all tables/views in the current database without drop/create.
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# purge_database()
+# Drop all tables from the configured database.
+# Consumes: env: DB_* and INM_*; deps: select_db_client.
+# Computes: DB table drops.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
 purge_database() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
         log info "[DRY-RUN] Skipping DB purge."
         return 0
+    fi
+    if trace_suspend_if_sensitive_key "DB_PASSWORD"; then
+        trap 'trace_resume' RETURN
     fi
 
     local -A ARGS
@@ -199,10 +365,12 @@ purge_database() {
     fi
 
     # Hydrate DB vars from app env if not set
-    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
-        log debug "[db purge] Loading DB vars from app env: ${INM_ENV_FILE}"
-        if ! load_env_file_raw "${INM_ENV_FILE}"; then
-            log warn "[db purge] Failed to parse app env: ${INM_ENV_FILE}"
+    local env_file=""
+    env_file="$(_db_env_file)"
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ -n "$env_file" ] && [ -f "$env_file" ]; then
+        log debug "[db purge] Loading DB vars from app env: ${env_file}"
+        if ! load_env_file_raw "${env_file}"; then
+            log warn "[db purge] Failed to parse app env: ${env_file}"
         fi
     fi
     local db_config_present=false
@@ -330,12 +498,24 @@ purge_database() {
 # db_table_count()
 # Returns the number of tables in the current DB. Prints count on success.
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# db_table_count()
+# Count tables in the configured database.
+# Consumes: env: DB_* and INM_*; deps: select_db_client.
+# Computes: table count.
+# Returns: prints count; non-zero on failure.
+# ---------------------------------------------------------------------
 db_table_count() {
+    if trace_suspend_if_sensitive_key "DB_PASSWORD"; then
+        trap 'trace_resume' RETURN
+    fi
     # Hydrate DB vars from app env if not set
-    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
-        log debug "[db_count] Loading DB vars from app env: $INM_ENV_FILE"
-        if ! load_env_file_raw "$INM_ENV_FILE"; then
-            log warn "[db_count] Failed to parse app env: $INM_ENV_FILE"
+    local env_file=""
+    env_file="$(_db_env_file)"
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -n "$env_file" ] && [ -f "$env_file" ]; then
+        log debug "[db_count] Loading DB vars from app env: $env_file"
+        if ! load_env_file_raw "$env_file"; then
+            log warn "[db_count] Failed to parse app env: $env_file"
         fi
     fi
 
@@ -371,15 +551,27 @@ db_table_count() {
 # Creates a database dump to the given target file, honoring .my.cnf or
 # prompting for password when needed.
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# dump_database()
+# Dump the configured database to a SQL file.
+# Consumes: args: out_file, extra_args; env: DB_* and INM_*; deps: select_db_dump.
+# Computes: mysqldump output (sanitized).
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
 dump_database() {
     local target_file="$1"
     [[ -z "$target_file" ]] && { log err "[dump_db] No target file provided."; return 1; }
+    if trace_suspend_if_sensitive_key "DB_PASSWORD"; then
+        trap 'trace_resume' RETURN
+    fi
 
     # Hydrate DB vars from app env if not set
-    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
-        log debug "[dump_db] Loading DB vars from app env: $INM_ENV_FILE"
-        if ! load_env_file_raw "$INM_ENV_FILE"; then
-            log warn "[dump_db] Failed to parse app env: $INM_ENV_FILE"
+    local env_file=""
+    env_file="$(_db_env_file)"
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -n "$env_file" ] && [ -f "$env_file" ]; then
+        log debug "[dump_db] Loading DB vars from app env: $env_file"
+        if ! load_env_file_raw "$env_file"; then
+            log warn "[dump_db] Failed to parse app env: $env_file"
         fi
     fi
 
@@ -430,39 +622,42 @@ dump_database() {
             rm -f "$dump_err"
         fi
     else
-
-    log debug "[dump_db] INM_FORCE_READ_DB_PW≠Y → Attempt .my.cnf"
-        if ! "${dump_cmd[@]}" > "$target_file" 2>_dump.err; then
-            if grep -qi "Access denied" _dump.err; then
+        log debug "[dump_db] INM_FORCE_READ_DB_PW≠Y → Attempt .my.cnf"
+        local dump_err=""
+        dump_err="$(mktemp /tmp/.inm_dump_err_XXXXXX 2>/dev/null || printf "/tmp/.inm_dump_err_%s" "$$")"
+        if ! "${dump_cmd[@]}" > "$target_file" 2>"$dump_err"; then
+            if grep -qi "Access denied" "$dump_err"; then
                 log warn "[dump_db] .my.cnf failed – prompting for password"
                 local success=false
+                local dump_cmd_base=("${dump_cmd[@]}")
                 for attempt in {1..3}; do
                     DB_PASSWORD=$(prompt_var DB_PASSWORD "" \
-                    "Enter database password (user: ${DB_USERNAME:-<unset>})" true 60) || {
-                    log err "[dump_db] No password entered – aborting"
-                    break
-                }
-                dump_cmd=("${dump_cmd[@]/-u$DB_USERNAME/-u$DB_USERNAME -p$DB_PASSWORD}")
-                if "${dump_cmd[@]}" > "$target_file"; then
-                    success=true
-                    break
-                else
-                    log warn "[dump_db] Dump failed (attempt $attempt)"
-                fi
-            done
-                rm -f _dump.err
+                        "Enter database password (user: ${DB_USERNAME:-<unset>})" true 60) || {
+                        log err "[dump_db] No password entered – aborting"
+                        break
+                    }
+                    dump_cmd=("${dump_cmd_base[@]}" "-p$DB_PASSWORD")
+                    if "${dump_cmd[@]}" > "$target_file" 2>"$dump_err"; then
+                        success=true
+                        break
+                    else
+                        log warn "[dump_db] Dump failed (attempt $attempt)"
+                    fi
+                done
+                rm -f "$dump_err"
                 [[ "$success" != true ]] && return 1
             else
-                log err "[dump_db] Dump failed for ${DB_DATABASE}@${DB_HOST} (${db_dump} exit $(cat _dump.err))"
-            log err "[dump_db] Dump failed for ${DB_DATABASE}@${DB_HOST}. ${db_dump} output:"
-            cat _dump.err >&2
-                rm -f _dump.err
+                local err_out=""
+                err_out="$(cat "$dump_err" 2>/dev/null || true)"
+                log err "[dump_db] Dump failed for ${DB_DATABASE}@${DB_HOST} (${db_dump} exit ${err_out})"
+                log err "[dump_db] Dump failed for ${DB_DATABASE}@${DB_HOST}. ${db_dump} output:"
+                cat "$dump_err" >&2
+                rm -f "$dump_err"
                 return 1
             fi
         else
-            rm -f _dump.err
-    fi
-
+            rm -f "$dump_err"
+        fi
     fi
 
     # Sanitize dump for portability: strip hardcoded DEFINERs
@@ -488,10 +683,20 @@ dump_database() {
 # ---------------------------------------------------------------------
 # create_database()
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# create_database()
+# Create database and user using elevated credentials.
+# Consumes: env: DB_* and INM_*; deps: select_db_client.
+# Computes: database/user creation.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
 create_database() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
         log info "[DRY-RUN] Skipping DB create."
         return 0
+    fi
+    if trace_suspend_if_sensitive_key "DB_PASSWORD"; then
+        trap 'trace_resume' RETURN
     fi
     local elevated_user="$1"
     local elevated_pass="$2"
@@ -511,9 +716,49 @@ create_database() {
     local db_name="${NAMED_ARGS[db_name]:-$DB_DATABASE}"
     local db_user="${NAMED_ARGS[db_user]:-$DB_USERNAME}"
     local db_pass="${NAMED_ARGS[db_pass]:-$DB_PASSWORD}"
+    local elevated_auth_socket=false
+    if [[ -n "$elevated_pass" && "${elevated_pass,,}" == "auth_socket" ]]; then
+        elevated_auth_socket=true
+    fi
+    local current_user=""
+    current_user="$(id -un 2>/dev/null || true)"
 
     log debug "[db] Running DB provisioning commands..."
-    if "$db_client" -h "$db_host" -P "$db_port" -u "$elevated_user" -p"$elevated_pass" <<EOF
+    local -a db_cmd=()
+    if [ "$elevated_auth_socket" = true ]; then
+        if [[ "$db_host" != "localhost" && "$db_host" != "127.0.0.1" && "$db_host" != "::1" && "$db_host" != /* ]]; then
+            log err "[db] auth_socket requires a local DB host (localhost or socket path)."
+            exit 1
+        fi
+        local socket_path=""
+        if [[ "$db_host" == /* ]]; then
+            socket_path="$db_host"
+        else
+            socket_path="${DB_SOCKET:-/var/run/mysqld/mysqld.sock}"
+        fi
+        if [[ "$current_user" != "$elevated_user" ]]; then
+            if [ "$EUID" -eq 0 ] && [ "$elevated_user" = "root" ]; then
+                db_cmd=("$db_client")
+            elif command -v sudo >/dev/null 2>&1; then
+                if sudo -n -u "$elevated_user" true 2>/dev/null; then
+                    db_cmd=(sudo -n -u "$elevated_user" "$db_client")
+                else
+                    log err "[db] auth_socket requires passwordless sudo for '${current_user}' or run as root (e.g., sudo inm core install --provision --force --override-enforced-user)."
+                    exit 1
+                fi
+            else
+                log err "[db] auth_socket requires sudo or running as $elevated_user."
+                exit 1
+            fi
+        else
+            db_cmd=("$db_client")
+        fi
+        db_cmd+=("-u${elevated_user}" "-S" "$socket_path")
+    else
+        db_cmd=("$db_client" "-h" "$db_host" "-P" "$db_port" "-u" "$elevated_user" "-p${elevated_pass}")
+    fi
+
+    if "${db_cmd[@]}" <<EOF
 CREATE DATABASE IF NOT EXISTS \`$db_name\` DEFAULT COLLATE $collation;
 
 CREATE USER IF NOT EXISTS '$db_user'@'localhost' IDENTIFIED BY '${db_pass//\'/\\\'}';
