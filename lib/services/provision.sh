@@ -5,19 +5,16 @@
 __SERVICE_PROVISION_LOADED=1
 
 # ---------------------------------------------------------------------
-# Provision Service – Plan / TODO
-# ---------------------------------------------------------------------
-# Historical: users filled .env.example -> .env.provision; install --provision would
-# create DB/user (with elevated creds), install app, move .env.provision -> .env,
-# key:generate, migrate/seed, cache warm, create admin, cron/backup hints.
-# Goal: centralize provision helpers, support migration backup hints, avoid duplication.
-# Current helpers: spawn_provision_file, provision_post_install (migration restore happens in install flow).
-# Pending: ensure DB creation via elevated creds when DB is absent, tighten dry-run hooks.
-
-# ---------------------------------------------------------------------
 # spawn_provision_file()
 # Creates/updates .env.provision based on .env.example (preferred) or app env.
 # Supports: --provision-file, --backup-file, --latest-backup, --force.
+# ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# spawn_provision_file()
+# Create a provision file template for Invoice Ninja + INmanage.
+# Consumes: env: INM_PROVISION_ENV_FILE, INM_BASE_DIRECTORY; globals: NAMED_ARGS.
+# Computes: provision file content.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 spawn_provision_file() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
@@ -32,12 +29,7 @@ spawn_provision_file() {
     if [[ "$target" != /* ]]; then
         target="$(pwd)/${target}"
     fi
-    if declare -F assert_file_path >/dev/null 2>&1; then
-        assert_file_path "$target" "Provision file path" || return 1
-    elif [[ -d "$target" || "$target" == */ ]]; then
-        log err "[PROV] Provision file path resolves to a directory: $target"
-        return 1
-    fi
+    assert_file_path "$target" "Provision file path" || return 1
 
     mkdir -p "$(dirname "$target")" 2>/dev/null || {
         log err "[PROV] Cannot create directory for provision file: $(dirname "$target")"
@@ -60,12 +52,16 @@ spawn_provision_file() {
     else
         log debug "[PROV] Downloading .env.example for provisioning"
         mkdir -p "$(dirname "$env_example")" 2>/dev/null || true
-        curl -sL ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} \
-            "https://raw.githubusercontent.com/invoiceninja/invoiceninja/v5-stable/.env.example" \
-            -o "$env_example" || {
-                log warn "[PROV] Failed to download .env.example; will try app env instead."
-                env_example=""
-            }
+        local env_example_contents=""
+        local -a auth_args=()
+        gh_auth_args auth_args
+        if http_fetch_with_args "https://raw.githubusercontent.com/invoiceninja/invoiceninja/v5-stable/.env.example" \
+            env_example_contents false -L "${auth_args[@]}"; then
+            printf "%s" "$env_example_contents" > "$env_example"
+        else
+            log warn "[PROV] Failed to download .env.example; will try app env instead."
+            env_example=""
+        fi
         if [ -f "$env_example" ]; then
             src_env="$env_example"
         fi
@@ -88,6 +84,21 @@ spawn_provision_file() {
         log err "[PROV] Failed to seed provision file from $src_env"
         return 1
     }
+
+    # Remove duplicate elevated DB entries if present (keep first occurrence).
+    local tmp_dedup="${target}.dedup.$$"
+    awk '
+        BEGIN {u=0; p=0}
+        /^DB_ELEVATED_USERNAME=/ {
+            if (u==0) {u=1; print}
+            next
+        }
+        /^DB_ELEVATED_PASSWORD=/ {
+            if (p==0) {p=1; print}
+            next
+        }
+        {print}
+    ' "$target" > "$tmp_dedup" 2>/dev/null && mv "$tmp_dedup" "$target"
 
     if ! grep -q '^# INMANAGE_PROVISION_BEGIN$' "$target" 2>/dev/null; then
         local tmp="${target}.tmp.$$"
@@ -126,15 +137,197 @@ spawn_provision_file() {
 }
 
 # ---------------------------------------------------------------------
+# apply_inm_keys_from_provision()
+# Copy INM_* keys from provision file into CLI config.
+# Consumes: args: provision_file; env: INM_SELF_ENV_FILE; deps: env_set.
+# Computes: CLI config updates.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
+apply_inm_keys_from_provision() {
+    local provision_file="$1"
+    if [ -z "$provision_file" ] || [ ! -f "$provision_file" ]; then
+        return 0
+    fi
+    if [ -z "${INM_SELF_ENV_FILE:-}" ] || [ ! -f "${INM_SELF_ENV_FILE:-}" ]; then
+        log warn "[PROV] CLI config not found; skipping INM_* keys from provision file."
+        return 0
+    fi
+
+    local count=0
+    local line trimmed key raw val sensitive
+    local -a applied_keys=()
+    local -A seen_keys=()
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        [[ -z "${line//[[:space:]]/}" ]] && continue
+        trimmed="${line#"${line%%[![:space:]]*}"}"
+        [[ "$trimmed" =~ ^# ]] && continue
+        if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?(INM_[A-Za-z0-9_]+)[[:space:]]*=(.*)$ ]]; then
+            key="${BASH_REMATCH[2]}"
+            raw="${BASH_REMATCH[3]}"
+            sensitive=false
+            if _env_key_is_sensitive "$key"; then
+                sensitive=true
+            fi
+            val="$(_env_parse_env_value "$raw" "$sensitive")"
+            if env_set cli "${key}=${val}" >/dev/null 2>&1; then
+                count=$((count + 1))
+                if [[ -z "${seen_keys[$key]:-}" ]]; then
+                    seen_keys["$key"]=1
+                    applied_keys+=("$key")
+                fi
+            else
+                log warn "[PROV] Failed to set ${key} in CLI config."
+            fi
+        fi
+    done < "$provision_file"
+
+    if [ "$count" -gt 0 ]; then
+        local keys_display=""
+        local max_keys=10
+        local i
+        for ((i=0; i<${#applied_keys[@]} && i<max_keys; i++)); do
+            keys_display+="${keys_display:+, }${applied_keys[i]}"
+        done
+        if [ "${#applied_keys[@]}" -gt "$max_keys" ]; then
+            keys_display+=", +$(( ${#applied_keys[@]} - max_keys )) more"
+        fi
+        log info "[PROV] Applied ${count} INM_* keys from provision file to CLI config (${keys_display})."
+        load_env_file_raw "$INM_SELF_ENV_FILE" || true
+    fi
+}
+
+# ---------------------------------------------------------------------
+# maybe_setup_heartbeat_notifications()
+# Applies notify defaults when heartbeat cron is installed.
+# Runs a notify test if configuration looks complete.
+# ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# maybe_setup_heartbeat_notifications()
+# Enable heartbeat notification config when provision data is complete.
+# Consumes: env: INM_NOTIFY_*; deps: env_set/notify_send_test.
+# Computes: heartbeat setup and optional test.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
+maybe_setup_heartbeat_notifications() {
+    local scope="${1:-install}"
+    local jobs="${INM_CRON_INSTALLED_JOBS:-}"
+    if [[ ",${jobs}," != *",heartbeat,"* ]]; then
+        return 0
+    fi
+    if [ -z "${INM_SELF_ENV_FILE:-}" ] || [ ! -f "${INM_SELF_ENV_FILE:-}" ]; then
+        log warn "[${scope}] Heartbeat cron installed but CLI config missing; cannot auto-configure notifications."
+        return 0
+    fi
+
+    load_env_file_raw "$INM_SELF_ENV_FILE" || true
+
+    local changed=false
+    local heartbeat_enabled="${INM_NOTIFY_HEARTBEAT_ENABLED,,}"
+    if [[ -z "${INM_NOTIFY_HEARTBEAT_ENABLED:-}" ]]; then
+        env_set cli INM_NOTIFY_HEARTBEAT_ENABLED=true >/dev/null 2>&1 && changed=true
+        heartbeat_enabled=true
+    fi
+    if [[ "$heartbeat_enabled" == "true" ]]; then
+        if [[ "${INM_NOTIFY_ENABLED,,}" != "true" ]]; then
+            env_set cli INM_NOTIFY_ENABLED=true >/dev/null 2>&1 && changed=true
+        fi
+        if [[ -z "${INM_NOTIFY_TARGETS:-}" ]]; then
+            env_set cli INM_NOTIFY_TARGETS=email >/dev/null 2>&1 && changed=true
+        fi
+        if [[ -z "${INM_NOTIFY_HEARTBEAT_LEVEL:-}" ]]; then
+            env_set cli INM_NOTIFY_HEARTBEAT_LEVEL=WARN >/dev/null 2>&1 && changed=true
+        fi
+    fi
+    if [[ "$changed" == true ]]; then
+        load_env_file_raw "$INM_SELF_ENV_FILE" || true
+        log info "[${scope}] Heartbeat defaults applied (INM_NOTIFY_*)."
+    fi
+
+    local notify_enabled="${INM_NOTIFY_ENABLED,,}"
+    heartbeat_enabled="${INM_NOTIFY_HEARTBEAT_ENABLED,,}"
+    if [[ "$notify_enabled" != "true" || "$heartbeat_enabled" != "true" ]]; then
+        log warn "[${scope}] Heartbeat cron installed but notifications are disabled (INM_NOTIFY_ENABLED/INM_NOTIFY_HEARTBEAT_ENABLED)."
+        return 0
+    fi
+
+    local targets=""
+    targets="$(notify_resolve_targets)"
+    if [ -z "$targets" ]; then
+        log warn "[${scope}] Notification targets are empty; skipping notify-test."
+        return 0
+    fi
+
+    local want_email=false
+    local want_webhook=false
+    [[ ",${targets}," == *",email,"* ]] && want_email=true
+    [[ ",${targets}," == *",webhook,"* ]] && want_webhook=true
+
+    local can_test=false
+    if [[ "$want_email" == true ]]; then
+        if [ -f "${INM_ENV_FILE:-}" ]; then
+            load_env_file_raw "$INM_ENV_FILE" || true
+        fi
+        local mailer="${MAIL_MAILER:-${MAIL_DRIVER:-}}"
+        mailer="${mailer,,}"
+        if [[ -n "$mailer" && "$mailer" != "smtp" ]]; then
+            log warn "[${scope}] MAIL_MAILER is '${mailer}', SMTP required for notify-test."
+        elif [[ -z "${MAIL_HOST:-}" || -z "${MAIL_FROM_ADDRESS:-}" ]]; then
+            log warn "[${scope}] SMTP not configured (MAIL_HOST/MAIL_FROM_ADDRESS). Set in app .env or .env.provision."
+        elif [[ -z "${INM_NOTIFY_EMAIL_TO:-}" ]]; then
+            log warn "[${scope}] INM_NOTIFY_EMAIL_TO is empty; skipping email notify-test."
+        else
+            can_test=true
+        fi
+    fi
+
+    if [[ "$want_webhook" == true ]]; then
+        if [[ -z "${INM_NOTIFY_WEBHOOK_URL:-}" ]]; then
+            log warn "[${scope}] INM_NOTIFY_WEBHOOK_URL is empty; skipping webhook notify-test."
+        else
+            can_test=true
+        fi
+    fi
+
+    if [[ "$can_test" != true ]]; then
+        return 0
+    fi
+
+    local -A saved_named=()
+    local key
+    if declare -p NAMED_ARGS >/dev/null 2>&1; then
+        for key in "${!NAMED_ARGS[@]}"; do
+            saved_named["$key"]="${NAMED_ARGS[$key]}"
+        done
+    fi
+    declare -g -A NAMED_ARGS=()
+    declare -g INM_NOTIFY_SENT=false
+    if ! run_preflight --notify-test --no-cli-clear --compact; then
+        if [[ "${INM_NOTIFY_SENT:-false}" == true ]]; then
+            log info "[${scope}] notify-test sent; preflight reported issues."
+        else
+            log warn "[${scope}] notify-test failed; check SMTP/webhook settings."
+        fi
+    fi
+    declare -g -A NAMED_ARGS=()
+    for key in "${!saved_named[@]}"; do
+        NAMED_ARGS["$key"]="${saved_named[$key]}"
+    done
+}
+
+# ---------------------------------------------------------------------
 # provision_post_install()
-# Runs provision-specific post steps (migrate/seed, create admin, messages).
+# Run post-install steps for provisioned installs.
+# Consumes: env: INM_* and APP_*; deps: cron/install/db tasks.
+# Computes: DB prep, cron install, notify test, preflight.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 provision_post_install() {
     log info "[PROV] Running provisioned post-install steps"
 
     local force="${NAMED_ARGS[force]:-${force_update:-false}}"
     local can_prompt=false
-    [[ -t 0 && -t 1 ]] && declare -F prompt_confirm >/dev/null 2>&1 && can_prompt=true
+    [[ -t 0 && -t 1 ]] && can_prompt=true
 
     if [[ "$force" != true ]]; then
         local table_count=""
@@ -244,7 +437,11 @@ provision_post_install() {
         fi
         if true; then
             local cron_jobs
-            cron_jobs="$(args_get - "both" cron_jobs jobs)"
+            cron_jobs="$(args_get - "essential" cron_jobs jobs)"
+            local cron_jobs_set=false
+            if [[ -n "${NAMED_ARGS[cron_jobs]:-}" || -n "${NAMED_ARGS[jobs]:-}" ]]; then
+                cron_jobs_set=true
+            fi
             local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
             local cron_ok=true
             local cron_skipped=false
@@ -256,8 +453,67 @@ provision_post_install() {
             no_backup_cron="$(args_get - "false" no_backup_cron)"
             local backup_time
             backup_time="$(args_get - "03:24" backup_time)"
+            if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
+                load_env_file_raw "$INM_SELF_ENV_FILE" || true
+            fi
+            local hb_enabled="${INM_NOTIFY_HEARTBEAT_ENABLED:-}"
+            local hb_time="${INM_NOTIFY_HEARTBEAT_TIME:-}"
+            local cfg_file=""
+            local prov_file=""
+            cfg_file="${INM_SELF_ENV_FILE:-}"
+            prov_file="${INM_PROVISION_FILE_USED:-${INM_PROVISION_ENV_FILE:-}}"
+            if [ -z "$cfg_file" ] && [ -n "${INM_BASE_DIRECTORY:-}" ]; then
+                cfg_file="${INM_BASE_DIRECTORY%/}/.inmanage/.env.inmanage"
+            fi
+            if [ -z "$prov_file" ] && [ -n "${INM_BASE_DIRECTORY:-}" ]; then
+                prov_file="${INM_BASE_DIRECTORY%/}/.inmanage/.env.provision"
+            fi
+            if [ -n "$cfg_file" ] && [[ "$cfg_file" != /* ]] && [ -n "${INM_BASE_DIRECTORY:-}" ]; then
+                cfg_file="${INM_BASE_DIRECTORY%/}/${cfg_file#/}"
+            fi
+            if [ -n "$prov_file" ] && [[ "$prov_file" != /* ]] && [ -n "${INM_BASE_DIRECTORY:-}" ]; then
+                prov_file="${INM_BASE_DIRECTORY%/}/${prov_file#/}"
+            fi
+            if [ -n "$cfg_file" ] && [ -f "$cfg_file" ]; then
+                local hb_from_cfg
+                local hb_time_from_cfg
+                hb_from_cfg="$(read_env_value_safe "$cfg_file" "INM_NOTIFY_HEARTBEAT_ENABLED" 2>/dev/null)"
+                hb_time_from_cfg="$(read_env_value_safe "$cfg_file" "INM_NOTIFY_HEARTBEAT_TIME" 2>/dev/null)"
+                if [ -n "$hb_from_cfg" ]; then
+                    hb_enabled="$hb_from_cfg"
+                fi
+                if [ -n "$hb_time_from_cfg" ]; then
+                    hb_time="$hb_time_from_cfg"
+                fi
+            fi
+            if [ -n "$prov_file" ] && [ -f "$prov_file" ]; then
+                local hb_from_prov
+                local hb_time_from_prov
+                hb_from_prov="$(read_env_value_safe "$prov_file" "INM_NOTIFY_HEARTBEAT_ENABLED" 2>/dev/null)"
+                hb_time_from_prov="$(read_env_value_safe "$prov_file" "INM_NOTIFY_HEARTBEAT_TIME" 2>/dev/null)"
+                if [ -n "$hb_from_prov" ]; then
+                    hb_enabled="$hb_from_prov"
+                fi
+                if [ -n "$hb_time_from_prov" ]; then
+                    hb_time="$hb_time_from_prov"
+                fi
+            fi
+            hb_enabled="${hb_enabled,,}"
+            hb_enabled="${hb_enabled//[[:space:]]/}"
+            log debug "[PROV] Cron select: cron_jobs=${cron_jobs} cron_jobs_set=${cron_jobs_set} hb_enabled=${hb_enabled:-<unset>} hb_time=${hb_time:-<unset>} cfg=${cfg_file:-<unset>} prov=${prov_file:-<unset>}"
             local heartbeat_time
-            heartbeat_time="$(args_get - "${INM_NOTIFY_HEARTBEAT_TIME:-06:00}" heartbeat_time)"
+            heartbeat_time="$(args_get - "${hb_time:-${INM_NOTIFY_HEARTBEAT_TIME:-06:00}}" heartbeat_time)"
+            local cron_jobs_lc="${cron_jobs,,}"
+            if args_is_true "$hb_enabled"; then
+                if [[ ",${cron_jobs_lc}," != *",heartbeat,"* && ",${cron_jobs_lc}," != *",all,"* ]]; then
+                    if [[ "$cron_jobs_set" == true ]]; then
+                        log debug "[PROV] Heartbeat enabled but cron jobs set explicitly; leaving jobs as '${cron_jobs}'."
+                    else
+                        cron_jobs="${cron_jobs},heartbeat"
+                    fi
+                fi
+            fi
+            log debug "[PROV] Cron final: jobs=${cron_jobs}"
             if args_is_true "$no_backup_cron"; then
                 cron_jobs="artisan"
             fi
@@ -270,6 +526,9 @@ provision_post_install() {
                     cron_ok=false
                 fi
             fi
+            if [[ "$cron_ok" == true ]]; then
+                maybe_setup_heartbeat_notifications "PROV"
+            fi
             if [ -f "${INM_ENV_FILE:-}" ]; then
                 load_env_file_raw "$INM_ENV_FILE" || log warn "[PROV] Failed to load app env for summary."
             fi
@@ -281,6 +540,13 @@ provision_post_install() {
 # ---------------------------------------------------------------------
 # provision_prebackup_db()
 # Creates a DB-only backup before destructive provisioning steps.
+# ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# provision_prebackup_db()
+# Create a pre-provision database backup when needed.
+# Consumes: env: INM_BACKUP_DIRECTORY, DB_*; deps: dump_database.
+# Computes: pre-provision SQL dump.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 provision_prebackup_db() {
     # Hydrate DB vars from app env if not set
@@ -303,19 +569,27 @@ provision_prebackup_db() {
     }
 
     local target_file
-    target_file="${backup_dir%/}/${DB_DATABASE}_preprovision_$(date +%Y%m%d-%H%M%S).sql"
+    local ts="${INM_INSTALL_TIMESTAMP:-}"
+    if [[ -z "$ts" && -n "${INM_INSTALL_ROLLBACK_DIR:-}" ]]; then
+        local rb_base=""
+        rb_base="$(basename "$INM_INSTALL_ROLLBACK_DIR")"
+        if [[ "$rb_base" == *_rollback_* ]]; then
+            ts="${rb_base##*_rollback_}"
+        fi
+    fi
+    if [[ -z "$ts" ]]; then
+        ts="$(date +%Y%m%d_%H%M%S)"
+    fi
+    INM_INSTALL_TIMESTAMP="$ts"
+    target_file="${backup_dir%/}/${DB_DATABASE}_preprovision_${ts}.sql"
     log debug "[PROV] Creating pre-provision DB backup: $target_file"
     if ! INM_QUIET_DUMP=true dump_database "$target_file"; then
         log err "[PROV] Pre-provision backup failed: $target_file"
         return 1
     fi
     log debug "[PROV] Pre-provision backup saved: $target_file"
-    if declare -F enforce_ownership >/dev/null 2>&1; then
-        enforce_ownership "$backup_dir"
-    fi
-    if declare -F cleanup_old_backups >/dev/null 2>&1; then
-        cleanup_old_backups || log warn "[PROV] Backup cleanup failed."
-    fi
+    enforce_ownership "$backup_dir"
+    cleanup_old_backups || log warn "[PROV] Backup cleanup failed."
     return 0
 }
 
@@ -323,6 +597,13 @@ provision_prebackup_db() {
 # provision_prepare_database()
 # Ensures target DB exists before migration/restore in provisioned installs.
 # Uses DB_ELEVATED_* if present; prompts otherwise.
+# ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# provision_prepare_database()
+# Prepare the database for provisioned installs.
+# Consumes: env: DB_* and INM_*; deps: create_database/purge_database/import_database.
+# Computes: DB creation or reset flow.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 provision_prepare_database() {
     if [[ "${DRY_RUN:-false}" == true ]]; then

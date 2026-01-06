@@ -6,12 +6,10 @@ __PROMPT_HELPER_LOADED=1
 
 # ---------------------------------------------------------------------
 # prompt_var()
-#
-# Reads input with default, optional silent mode, timeout, and custom text.
-# Shared helper so all modules can prompt consistently.
-#
-# Globals used:
-#   GREEN, GRAY, RESET, prompt_texts (from config), log()
+# Prompt for a value with defaults, timeout, and optional hidden input.
+# Consumes: args: var, default, text, silent, timeout; env: NO_COLOR; globals: prompt_texts, GREEN/GRAY/RESET; deps: log.
+# Computes: rendered prompt and user input.
+# Returns: prints input (or default); 1 on timeout/abort.
 # ---------------------------------------------------------------------
 prompt_var() {
     # Parameters:
@@ -65,7 +63,10 @@ prompt_var() {
 
 # ---------------------------------------------------------------------
 # prompt_confirm()
-# Yes/No prompt with default, optional silent, timeout. Returns 0 on yes.
+# Prompt for yes/no confirmation.
+# Consumes: args: key, default, text, silent, timeout; deps: prompt_var.
+# Computes: normalized reply.
+# Returns: 0 if yes, 1 otherwise.
 # ---------------------------------------------------------------------
 prompt_confirm() {
     local key="$1"
@@ -81,7 +82,10 @@ prompt_confirm() {
 
 # ---------------------------------------------------------------------
 # prompt_secret_keep_current()
-# Keeps current value when input is empty; hides input.
+# Prompt for secret input, keeping the current value if blank.
+# Consumes: args: prompt, current, timeout; tty input; deps: log.
+# Computes: secret input string.
+# Returns: prints value; 1 on error.
 # ---------------------------------------------------------------------
 prompt_secret_keep_current() {
     local prompt="$1"

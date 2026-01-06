@@ -4,7 +4,21 @@
 [[ -n ${__SERVICE_ENV_LOADED:-} ]] && return
 __SERVICE_ENV_LOADED=1
 
-# Resolve target env file (app or cli) and ensure it exists
+# shellcheck source=../helpers/env_parse.sh
+# shellcheck disable=SC1090,SC1091
+if [[ -f "${LIB_DIR}/helpers/env_parse.sh" ]]; then
+    source "${LIB_DIR}/helpers/env_parse.sh"
+else
+    log err "[ENV] Missing env parse helper: ${LIB_DIR}/helpers/env_parse.sh"
+fi
+
+# ---------------------------------------------------------------------
+# resolve_env_file()
+# Resolve the env file path for app or CLI targets.
+# Consumes: args: target; env: INM_ENV_FILE, INM_SELF_ENV_FILE; deps: expand_placeholders.
+# Computes: validated env file path.
+# Returns: prints path or non-zero on failure.
+# ---------------------------------------------------------------------
 resolve_env_file() {
     local target="${1:-app}"
     local path=""
@@ -12,9 +26,9 @@ resolve_env_file() {
         app)
             path="${INM_ENV_FILE:-}"
             # shellcheck disable=SC2016
-            if [[ "$path" == *'${'* ]] && declare -F expand_placeholders >/dev/null; then
-                path="$(expand_placeholders "$path")"
-            fi
+        if [[ "$path" == *'${'* ]]; then
+            path="$(expand_placeholders "$path")"
+        fi
             ;;
         cli)
             path="${INM_SELF_ENV_FILE:-}"
@@ -35,6 +49,13 @@ resolve_env_file() {
     printf "%s" "$path"
 }
 
+# ---------------------------------------------------------------------
+# _env_owner_for()
+# Determine the owner to use for an env file.
+# Consumes: args: env_file; env: INM_ENFORCED_USER; deps: _fs_get_owner.
+# Computes: owner username.
+# Returns: prints owner name.
+# ---------------------------------------------------------------------
 _env_owner_for() {
     local env_file="$1"
     local og owner
@@ -49,6 +70,13 @@ _env_owner_for() {
     printf "%s" "$owner"
 }
 
+# ---------------------------------------------------------------------
+# _env_owner_for_path()
+# Determine the owner for a target path (file or parent).
+# Consumes: args: path; env: INM_ENFORCED_USER; deps: _fs_get_owner.
+# Computes: owner username.
+# Returns: prints owner name.
+# ---------------------------------------------------------------------
 _env_owner_for_path() {
     local path="$1"
     local owner=""
@@ -68,6 +96,13 @@ _env_owner_for_path() {
     printf "%s" "$owner"
 }
 
+# ---------------------------------------------------------------------
+# _env_owner_group_for()
+# Determine owner:group for an env file.
+# Consumes: args: env_file, owner; deps: _fs_get_owner, id.
+# Computes: owner:group string.
+# Returns: prints owner:group.
+# ---------------------------------------------------------------------
 _env_owner_group_for() {
     local env_file="$1"
     local owner="${2:-}"
@@ -86,6 +121,13 @@ _env_owner_group_for() {
     printf "%s:%s" "$owner" "$group"
 }
 
+# ---------------------------------------------------------------------
+# _env_owner_group_for_path()
+# Determine owner:group for a target path (file or parent).
+# Consumes: args: path, owner; deps: _fs_get_owner, id.
+# Computes: owner:group string.
+# Returns: prints owner:group.
+# ---------------------------------------------------------------------
 _env_owner_group_for_path() {
     local path="$1"
     local owner="${2:-}"
@@ -108,6 +150,13 @@ _env_owner_group_for_path() {
     printf "%s:%s" "$owner" "$group"
 }
 
+# ---------------------------------------------------------------------
+# _env_access_mode()
+# Decide how to access an env file (direct or sudo).
+# Consumes: args: env_file, mode, owner; env: DRY_RUN; deps: prompt_confirm.
+# Computes: access mode string.
+# Returns: prints access mode or non-zero on failure.
+# ---------------------------------------------------------------------
 _env_access_mode() {
     local env_file="$1"
     local mode="${2:-read}"
@@ -118,6 +167,10 @@ _env_access_mode() {
     fi
     local dir
     dir="$(dirname "$env_file")"
+    if [[ ! -e "$env_file" && "$need_write" == true && -d "$dir" && -w "$dir" ]]; then
+        echo "direct"
+        return 0
+    fi
     if [[ -r "$env_file" && ( "$need_write" == false || ( -w "$env_file" && -w "$dir" ) ) ]]; then
         echo "direct"
         return 0
@@ -162,6 +215,13 @@ _env_access_mode() {
     return 1
 }
 
+# ---------------------------------------------------------------------
+# _env_run()
+# Run a command with the computed access mode.
+# Consumes: args: access, owner, cmd...; deps: sudo.
+# Computes: command execution.
+# Returns: command exit code.
+# ---------------------------------------------------------------------
 _env_run() {
     local access="$1"
     local owner="$2"
@@ -175,6 +235,13 @@ _env_run() {
     fi
 }
 
+# ---------------------------------------------------------------------
+# _env_run_shell()
+# Run a shell command with env vars using access mode.
+# Consumes: args: access, owner, cmd, env pairs; deps: sudo.
+# Computes: command execution via bash -c.
+# Returns: command exit code.
+# ---------------------------------------------------------------------
 _env_run_shell() {
     local access="$1"
     local owner="$2"
@@ -189,6 +256,13 @@ _env_run_shell() {
     fi
 }
 
+# ---------------------------------------------------------------------
+# _env_replace_file()
+# Replace the target env file with a temp file.
+# Consumes: args: access, owner, env_file, tmp_file; deps: _env_owner_group_for/_env_run.
+# Computes: atomic file replacement and ownership fix.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
 _env_replace_file() {
     local access="$1"
     local owner="$2"
@@ -210,6 +284,13 @@ _env_replace_file() {
     return 0
 }
 
+# ---------------------------------------------------------------------
+# env_user_ini_apply()
+# Write a managed .user.ini into the public webroot.
+# Consumes: args: target_path; env: INM_INSTALLATION_PATH; globals: NAMED_ARGS; deps: _env_access_mode.
+# Computes: .user.ini file contents and placement.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
 env_user_ini_apply() {
     local target_path="${1:-}"
     local webroot="${INM_INSTALLATION_PATH%/}/public"
@@ -274,6 +355,13 @@ EOF
     log ok "[ENV] Wrote .user.ini to $target_path"
 }
 
+# ---------------------------------------------------------------------
+# env_show()
+# Print the contents of the selected env file.
+# Consumes: args: target; deps: resolve_env_file/_env_access_mode/_env_run.
+# Computes: file output.
+# Returns: command exit code.
+# ---------------------------------------------------------------------
 env_show() {
     local target="${1:-app}"
     local env_file
@@ -285,6 +373,13 @@ env_show() {
     _env_run "$access" "$owner" cat "$env_file"
 }
 
+# ---------------------------------------------------------------------
+# env_get()
+# Get a single key from app or CLI env file.
+# Consumes: args: target, key; deps: resolve_env_file/_env_access_mode/_env_run/_env_parse_env_value.
+# Computes: value extraction.
+# Returns: prints value; 0 even if missing (warns).
+# ---------------------------------------------------------------------
 env_get() {
     local target="app" key
     # allow: env get app KEY
@@ -313,18 +408,21 @@ env_get() {
     fi
     local raw val
     raw="${line#*=}"
-    if declare -F _env_parse_env_value >/dev/null 2>&1; then
-        local sensitive=false
-        if declare -F _env_key_is_sensitive >/dev/null 2>&1 && _env_key_is_sensitive "$key"; then
-            sensitive=true
-        fi
-        val="$(_env_parse_env_value "$raw" "$sensitive")"
-    else
-        val="${raw%$'\r'}"
+    local sensitive=false
+    if _env_key_is_sensitive "$key"; then
+        sensitive=true
     fi
+    val="$(_env_parse_env_value "$raw" "$sensitive")"
     echo "$val"
 }
 
+# ---------------------------------------------------------------------
+# env_unset()
+# Remove a key from app or CLI env file.
+# Consumes: args: target, key; deps: resolve_env_file/_env_access_mode/_env_run/_env_replace_file.
+# Computes: updated env file content.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
 env_unset() {
     local target="app" key
     if [[ "$1" == "app" || "$1" == "cli" ]]; then
@@ -367,6 +465,13 @@ env_unset() {
     fi
 }
 
+# ---------------------------------------------------------------------
+# _env_escape_value()
+# Escape a value for inclusion in env files.
+# Consumes: args: value, allow_placeholders.
+# Computes: escaped value string.
+# Returns: prints escaped value.
+# ---------------------------------------------------------------------
 _env_escape_value() {
     local value="$1"
     local allow_placeholders="${2:-false}"
@@ -381,11 +486,25 @@ _env_escape_value() {
     printf "%s" "$out"
 }
 
+# ---------------------------------------------------------------------
+# _env_key_valid()
+# Validate an env key name.
+# Consumes: args: key.
+# Computes: regex match.
+# Returns: 0 if valid, 1 if invalid.
+# ---------------------------------------------------------------------
 _env_key_valid() {
     local key="$1"
     [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
 }
 
+# ---------------------------------------------------------------------
+# env_set()
+# Set or update a key in app or CLI env file.
+# Consumes: args: target, key=value; deps: resolve_env_file/_env_access_mode/_env_replace_file.
+# Computes: updated env file content.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
 env_set() {
     local target="app" pair
     if [[ "$1" == "app" || "$1" == "cli" ]]; then
@@ -423,7 +542,7 @@ env_set() {
         return 1
     }
     local sensitive=false
-    if declare -F _env_key_is_sensitive >/dev/null 2>&1 && _env_key_is_sensitive "$key"; then
+    if _env_key_is_sensitive "$key"; then
         sensitive=true
     fi
     local file_content
@@ -443,7 +562,7 @@ env_set() {
 
     local new_line=""
     if [[ "$last_idx" -gt 0 ]]; then
-        if [[ "$sensitive" == false ]] && declare -F _env_extract_inline_comment >/dev/null 2>&1; then
+        if [[ "$sensitive" == false ]]; then
             local raw
             raw="${last_line#*=}"
             comment="$(_env_extract_inline_comment "$raw")"

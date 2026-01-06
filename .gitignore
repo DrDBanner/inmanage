@@ -4,8 +4,10 @@
 /.idea
 /.vscode
 /.vagrant
+/.inmanage
 /tests/_output
 /testing_ground/
+/scripts/selftest.sh
 Homestead.json
 Homestead.yaml
 npm-debug.log

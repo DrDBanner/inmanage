@@ -6,7 +6,10 @@ __SERVICE_UPDATE_LOADED=1
 
 # ---------------------------------------------------------------------
 # run_update()
-# Updates Invoice Ninja to the latest available or specified version.
+# Update Invoice Ninja to the latest or specified version.
+# Consumes: args: version/cache_only/no_db_backup/etc; env: INM_*; deps: get_latest_version/download_ninja.
+# Computes: download, backup, swap, post-update tasks, rollback markers.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 run_update() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
@@ -61,16 +64,14 @@ run_update() {
     fi
 
     # expand any placeholders in INM_ENV_FILE before use (without eval)
-    if declare -F expand_placeholders >/dev/null 2>&1; then
-        # shellcheck disable=SC2016
-        if printf '%s' "${INM_ENV_FILE:-}" | grep -q '\${'; then
-            INM_ENV_FILE="$(expand_placeholders "$INM_ENV_FILE")"
-        fi
+    # shellcheck disable=SC2016
+    if printf '%s' "${INM_ENV_FILE:-}" | grep -q '\${'; then
+        INM_ENV_FILE="$(expand_placeholders "$INM_ENV_FILE")"
     fi
     if [ ! -f "$INM_ENV_FILE" ]; then
         log warn "[UPD] No .env file found – the system is not provisioned or broken."
         log debug "[UPD] Please check the .env file location at $INM_ENV_FILE"
-        log info "[UPD] Use 'spawn_provision' to set up a new system fast, use '-h' to see more options, or move a valid .env file into '$INM_INSTALLATION_DIRECTORY' to fix a potentially broken installation."
+        log info "[UPD] Use 'inm spawn provision-file' to set up a new system fast, use '-h' to see more options, or move a valid .env file into '$INM_INSTALLATION_DIRECTORY' to fix a potentially broken installation."
         return 1
     fi
 
@@ -92,9 +93,7 @@ run_update() {
         fi
     fi
 
-    if declare -F run_hook >/dev/null 2>&1; then
-        run_hook "pre-update" || return 1
-    fi
+    run_hook "pre-update" || return 1
 
     if ! args_is_true "$no_db_backup"; then
         local backup_dir="${INM_BACKUP_DIRECTORY%/}"
@@ -114,9 +113,7 @@ run_update() {
             log err "[UPD] DB backup failed; aborting update. Use --no-db-backup to override (not recommended)."
             return 1
         fi
-        if declare -F enforce_ownership >/dev/null 2>&1; then
-            enforce_ownership "$backup_dir"
-        fi
+        enforce_ownership "$backup_dir"
     else
         log warn "[UPD] DB backup skipped by flag (--no-db-backup)."
     fi
@@ -131,21 +128,11 @@ run_update() {
     # Extract from cache tarball
     local extracted
     extracted="$(mktemp -d)"
-    if declare -F tar_safe_extract >/dev/null 2>&1; then
-        if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting Invoice Ninja..." tar_safe_extract "$cache_dir/invoiceninja_v$latest_version.tar.gz" "$extracted"; then
-            log err "[UPD] Failed to extract Invoice Ninja archive."
-            return 1
-        fi
-    elif ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting Invoice Ninja..." tar -xzf "$cache_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
+    if ! INM_SPINNER_HEARTBEAT=0 spinner_run_mode normal "Extracting Invoice Ninja..." tar_extract_fallback "$cache_dir/invoiceninja_v$latest_version.tar.gz" "$extracted"; then
         log err "[UPD] Failed to extract Invoice Ninja archive."
         return 1
     fi
-    source_dir="$extracted"
-    # If archive contains a single top-level directory, use it as the source root
-    mapfile -t top_entries < <(find "$extracted" -mindepth 1 -maxdepth 1 -print)
-    if [[ ${#top_entries[@]} -eq 1 && -d "${top_entries[0]}" ]]; then
-        source_dir="${top_entries[0]}"
-    fi
+    source_dir="$(fs_resolve_single_root_dir "$extracted")"
 
     chmod -R u+rwX,go+rX "$source_dir" 2>/dev/null || true
 
@@ -158,41 +145,16 @@ run_update() {
 
     log debug "[UPD] Preparing new version directory: $new_dir"
 
-    safe_rm_rf "$new_dir" "$install_parent"
-    mkdir -p "$(dirname "$new_dir")"
-
     log debug "[UPD] Moving from extracted cache to $new_dir"
-    safe_move_or_copy_and_clean "$source_dir" "$new_dir" move || {
+    if ! fs_stage_dir "$source_dir" "$new_dir" "$install_parent" move; then
         log err "[UPD] Failed to move/copy files to new directory"
         return 1
-    }
+    fi
 
     log debug "[UPD] Copying .env to $new_dir"
     cp "$INM_ENV_FILE" "$new_dir/.env" || {
         log err "[UPD] Failed to copy .env"
         return 1
-    }
-
-    preserve_update_path() {
-        local rel="$1"
-        rel="${rel#/}"
-        local src="${install_path%/}/$rel"
-        local dst="${new_dir%/}/$rel"
-        if [[ -d "$src" ]]; then
-            mkdir -p "$dst" 2>/dev/null || true
-            rsync -a --ignore-existing "$src/." "$dst/" || \
-                log warn "[UPD] Failed to preserve directory: $rel"
-            return 0
-        fi
-        if [[ -f "$src" ]]; then
-            mkdir -p "$(dirname "$dst")" 2>/dev/null || true
-            if [[ ! -e "$dst" ]]; then
-                cp -a "$src" "$dst" || log warn "[UPD] Failed to preserve file: $rel"
-            fi
-            return 0
-        fi
-        log debug "[UPD] Preserve path not found: $rel"
-        return 0
     }
 
     local preserve_paths_default=("storage" "public/uploads" "public/.user.ini" "public/.well-known")
@@ -205,7 +167,7 @@ run_update() {
     if [[ ${#preserve_paths[@]} -gt 0 ]]; then
         log debug "[UPD] Preserving custom paths from existing install"
         for p in "${preserve_paths[@]}"; do
-            [[ -n "$p" ]] && preserve_update_path "$p"
+            [[ -n "$p" ]] && app_preserve_path "UPD" "$install_path" "$new_dir" "$p"
         done
     fi
 
@@ -224,10 +186,10 @@ run_update() {
         return 1
     }
     enforce_ownership "$install_path"
-    if [[ -n "${INM_DIR_MODE:-}" ]] && declare -F enforce_dir_permissions >/dev/null 2>&1; then
+    if [[ -n "${INM_DIR_MODE:-}" ]]; then
         enforce_dir_permissions "$INM_DIR_MODE" "$install_path"
     fi
-    if [[ -n "${INM_FILE_MODE:-}" ]] && declare -F enforce_file_permissions >/dev/null 2>&1; then
+    if [[ -n "${INM_FILE_MODE:-}" ]]; then
         enforce_file_permissions "$INM_FILE_MODE" "$install_path"
     fi
 
@@ -254,19 +216,23 @@ run_update() {
     cleanup || log warn "[UPD] Cache cleanup failed"
     log ok "[UPD] Update completed successfully!"
     if [ -n "$rollback_dir" ]; then
-        log info "[UPD] Rollback available: $(basename "$rollback_dir")"
-        log info "[UPD] Rollback: inm update rollback last (or: inm update rollback $(basename "$rollback_dir"))"
+        app_log_rollback_hint "UPD" "update" "$rollback_dir"
     fi
 
-    if declare -F run_hook >/dev/null 2>&1; then
-        run_hook "post-update" || return 1
-    fi
+    run_hook "post-update" || return 1
 }
 
 # ---------------------------------------------------------------------
 # run_update_rollback()
 # Rolls back to a previous version directory.
 # Usage: inmanage core update rollback last|<dir>
+# ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# run_update_rollback()
+# Roll back to the previous update snapshot.
+# Consumes: args: selection; env: INM_INSTALLATION_PATH.
+# Computes: app directory swap to rollback version.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 run_update_rollback() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
@@ -276,79 +242,10 @@ run_update_rollback() {
     local -A args=()
     parse_named_args args "$@"
     local target
-    target="$(args_get args "" target rollback dir)"
-    if [ -z "$target" ]; then
-        for arg in "$@"; do
-            if [[ "$arg" != --* ]]; then
-                target="$arg"
-                break
-            fi
-        done
-    fi
-    target="${target:-last}"
+    target="$(app_parse_rollback_target args "latest" "$@")"
 
     local install_path="${INM_INSTALLATION_PATH%/}"
-    local install_parent install_name
-    install_parent="$(dirname "$install_path")"
-    install_name="$(basename "$install_path")"
-
-    if [ -z "$install_path" ] || [ ! -d "$install_parent" ]; then
-        log err "[UPD] Install path not set or invalid: ${install_path:-<unset>}"
-        return 1
-    fi
-    if [ ! -d "$install_path" ]; then
-        log err "[UPD] Current installation not found at $install_path"
-        return 1
-    fi
-
-    local rollback_dir=""
-    if [ "$target" = "last" ]; then
-        rollback_dir="$(find "$install_parent" -maxdepth 1 -type d -name "${install_name}_rollback_*" 2>/dev/null | sort -r | head -n1)"
-        if [ -z "$rollback_dir" ]; then
-            log err "[UPD] No rollback directory found in $install_parent"
-            return 1
-        fi
-    else
-        if [ -d "$target" ]; then
-            rollback_dir="$target"
-        elif [ -d "${install_parent%/}/$target" ]; then
-            rollback_dir="${install_parent%/}/$target"
-        else
-            log err "[UPD] Rollback directory not found: $target"
-            return 1
-        fi
-    fi
-
-    local rollback_name
-    rollback_name="$(basename "$rollback_dir")"
-
     local force
     force="$(args_get args "false" force)"
-    if ! args_is_true "$force"; then
-        if ! prompt_confirm "UPD_ROLLBACK" "no" "Rollback to ${rollback_name}? (yes/no):" false 60; then
-            log info "[UPD] Rollback cancelled."
-            return 0
-        fi
-    else
-        log info "[UPD] Force flag set. Proceeding with rollback."
-    fi
-
-    local timestamp
-    timestamp="$(date +'%Y%m%d_%H%M%S')"
-    local new_rollback="${install_parent}/${install_name}_rollback_${timestamp}"
-
-    log info "[UPD] Moving current install to rollback: $(basename "$new_rollback")"
-    safe_move_or_copy_and_clean "$install_path" "$new_rollback" move || {
-        log err "[UPD] Failed to move current installation to rollback."
-        return 1
-    }
-
-    log info "[UPD] Restoring rollback: ${rollback_name}"
-    safe_move_or_copy_and_clean "$rollback_dir" "$install_path" move || {
-        log err "[UPD] Failed to restore rollback directory."
-        return 1
-    }
-    enforce_ownership "$install_path"
-    log ok "[UPD] Rollback activated: ${rollback_name}"
-    return 0
+    app_run_rollback "UPD" "UPD_ROLLBACK" "$install_path" "$target" "$force"
 }

@@ -4,6 +4,13 @@
 [[ -n ${__HOOKS_HELPER_LOADED:-} ]] && return
 __HOOKS_HELPER_LOADED=1
 
+# ---------------------------------------------------------------------
+# resolve_hooks_dir()
+# Resolve the hooks directory path (absolute).
+# Consumes: env: INM_HOOKS_DIR, INM_CONFIG_ROOT, INM_BASE_DIRECTORY; cwd.
+# Computes: absolute hooks directory.
+# Returns: prints hooks directory to stdout.
+# ---------------------------------------------------------------------
 resolve_hooks_dir() {
     local hooks_dir="${INM_HOOKS_DIR:-${INM_CONFIG_ROOT%/}/hooks}"
     if [[ "$hooks_dir" != /* ]]; then
@@ -16,38 +23,63 @@ resolve_hooks_dir() {
     printf "%s" "$hooks_dir"
 }
 
+# ---------------------------------------------------------------------
+# hook_notify_bool()
+# Normalize a truthy/falsey value for hook notifications.
+# Consumes: args: value; deps: notify_bool (optional).
+# Computes: boolean decision.
+# Returns: 0 for true, 1 for false.
+# ---------------------------------------------------------------------
 hook_notify_bool() {
     local val="${1:-}"
-    if declare -F notify_bool >/dev/null 2>&1; then
-        notify_bool "$val"
-        return $?
-    fi
-    val="${val,,}"
-    case "$val" in
-        1|true|yes|y|on) return 0 ;;
-    esac
-    return 1
+    notify_bool "$val"
+    return $?
 }
 
+# ---------------------------------------------------------------------
+# hook_notify_enabled()
+# Check whether hook notifications are enabled.
+# Consumes: env: INM_NOTIFY_HOOKS_ENABLED.
+# Computes: boolean decision.
+# Returns: 0 if enabled, 1 otherwise.
+# ---------------------------------------------------------------------
 hook_notify_enabled() {
     hook_notify_bool "${INM_NOTIFY_HOOKS_ENABLED:-true}"
 }
 
+# ---------------------------------------------------------------------
+# hook_notify_success_enabled()
+# Check whether hook success notifications are enabled.
+# Consumes: env: INM_NOTIFY_HOOKS_SUCCESS.
+# Computes: boolean decision.
+# Returns: 0 if enabled, 1 otherwise.
+# ---------------------------------------------------------------------
 hook_notify_success_enabled() {
     hook_notify_bool "${INM_NOTIFY_HOOKS_SUCCESS:-false}"
 }
 
+# ---------------------------------------------------------------------
+# hook_notify_failure_enabled()
+# Check whether hook failure notifications are enabled.
+# Consumes: env: INM_NOTIFY_HOOKS_FAILURE.
+# Computes: boolean decision.
+# Returns: 0 if enabled, 1 otherwise.
+# ---------------------------------------------------------------------
 hook_notify_failure_enabled() {
     hook_notify_bool "${INM_NOTIFY_HOOKS_FAILURE:-true}"
 }
 
+# ---------------------------------------------------------------------
+# hook_notify_emit()
+# Emit a hook notification via the notify subsystem.
+# Consumes: args: level, title, details; deps: notify_emit_event.
+# Computes: notification dispatch when enabled.
+# Returns: 0 when no action or on success.
+# ---------------------------------------------------------------------
 hook_notify_emit() {
     local level="$1"
     local title="$2"
     local details="${3:-}"
-    if ! declare -F notify_emit_event >/dev/null 2>&1; then
-        return 0
-    fi
     if ! hook_notify_enabled; then
         return 0
     fi
@@ -56,8 +88,10 @@ hook_notify_emit() {
 
 # ---------------------------------------------------------------------
 # run_hook()
-# Execute pre/post hooks with env or file-based configuration.
-# Pre-* hooks abort on failure. Post-* hooks warn unless INM_HOOK_STRICT=true.
+# Execute a hook script for the given event.
+# Consumes: args: event; env: INM_HOOK_* / INM_HOOKS_DIR / INM_HOOK_STRICT / DRY_RUN.
+# Computes: resolves hook path and executes it.
+# Returns: hook exit code (pre-* aborts), 0 on non-strict post-* failure.
 # ---------------------------------------------------------------------
 run_hook() {
     local event="$1"

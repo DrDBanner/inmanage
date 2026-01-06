@@ -6,8 +6,10 @@ __SELECTION_HELPER_LOADED=1
 
 # ---------------------------------------------------------------------
 # select_from_candidates()
-#
-# Prompts user to choose from a list of options; returns selected value.
+# Prompt the user to choose one option from a list.
+# Consumes: args: prompt, options...; env: NAMED_ARGS[select_timeout], NAMED_ARGS[auto_select]; tty/stdin.
+# Computes: interactive selection result.
+# Returns: prints selected value; 0 on success, 1 on failure.
 # ---------------------------------------------------------------------
 select_from_candidates() {
     local prompt="$1"

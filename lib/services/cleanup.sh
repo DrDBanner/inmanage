@@ -6,6 +6,10 @@ __SERVICE_CLEANUP_LOADED=1
 
 # ---------------------------------------------------------------------
 # cleanup_old_versions()
+# Remove old update and rollback directories.
+# Consumes: env: INM_INSTALLATION_PATH, INM_INSTALLATION_DIRECTORY, INM_KEEP_BACKUPS; deps: safe_rm_rf.
+# Computes: directory cleanup for old versions.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 cleanup_old_versions() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
@@ -49,6 +53,10 @@ cleanup_old_versions() {
 
 # ---------------------------------------------------------------------
 # cleanup_old_backups()
+# Remove old backup files based on retention rules.
+# Consumes: env: INM_BASE_DIRECTORY, INM_BACKUP_DIRECTORY, INM_KEEP_BACKUPS; globals: NAMED_ARGS.
+# Computes: backup pruning with optional stats.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 cleanup_old_backups() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
@@ -199,7 +207,7 @@ cleanup_old_backups() {
         local size_kb
         for item in "${to_remove[@]}"; do
             [[ -e "$item" ]] || continue
-            size_kb=$(du -sk "$item" 2>/dev/null | awk '{print $1}')
+            size_kb="$(fs_path_size_kb "$item")"
             if [[ "$size_kb" =~ ^[0-9]+$ ]]; then
                 total_kb=$((total_kb + size_kb))
             fi
@@ -208,7 +216,7 @@ cleanup_old_backups() {
     fi
 
     local spinner_active=false
-    if [[ "$stats" != true && "${#to_remove[@]}" -gt 0 ]] && declare -F spinner_start >/dev/null 2>&1; then
+    if [[ "$stats" != true && "${#to_remove[@]}" -gt 0 ]]; then
         spinner_start "Cleaning backups..."
         spinner_active=true
     fi
@@ -219,8 +227,9 @@ cleanup_old_backups() {
         if [[ "$fast" == true && -d "$item" ]] && command -v rsync >/dev/null 2>&1; then
             empty_dir="$(mktemp -d 2>/dev/null || mktemp -d -t inm-empty)"
             if [[ -n "$empty_dir" && -d "$empty_dir" ]]; then
-                rsync -a --delete "${empty_dir}/" "${item%/}/" >/dev/null 2>&1 || \
+                if ! fs_sync_dir "fast delete" "$empty_dir" "${item%/}" false quiet "COB" --delete >/dev/null 2>&1; then
                     log warn "[COB] Fast delete (rsync) failed for $item; falling back."
+                fi
                 safe_rm_rf "$empty_dir" "$(dirname "$empty_dir")" || true
             fi
         fi
@@ -238,11 +247,48 @@ cleanup_old_backups() {
 # ---------------------------------------------------------------------
 # cleanup()
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# cleanup()
+# Run cleanup for versions and backups.
+# Consumes: env: DRY_RUN.
+# Computes: cleanup tasks.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
 cleanup() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
         log info "[DRY-RUN] Skipping cleanup."
         return 0
     fi
+    local explicit=false
+    local do_versions=false
+    local do_backups=false
+    local do_cache=false
+    if [[ "${NAMED_ARGS[versions]:-}" != "" || "${NAMED_ARGS[version]:-}" != "" || "${NAMED_ARGS[backups]:-}" != "" || "${NAMED_ARGS[cache]:-}" != "" ]]; then
+        explicit=true
+        if args_is_true "${NAMED_ARGS[versions]:-}"; then
+            do_versions=true
+        elif [[ -n "${NAMED_ARGS[version]:-}" ]]; then
+            case "${NAMED_ARGS[version],,}" in
+                0|false|no|off) ;;
+                *) do_versions=true ;;
+            esac
+        fi
+        args_is_true "${NAMED_ARGS[backups]:-}" && do_backups=true
+        args_is_true "${NAMED_ARGS[cache]:-}" && do_cache=true
+    fi
+
+    if [[ "$explicit" == true ]]; then
+        if [[ "$do_versions" != true && "$do_backups" != true && "$do_cache" != true ]]; then
+            log err "[CLEAN] No prune targets selected. Use --version and/or --backups."
+            return 1
+        fi
+        log debug "[CLEAN] Pruning selected targets: versions=$do_versions backups=$do_backups cache=$do_cache"
+        [[ "$do_versions" == true ]] && cleanup_old_versions
+        [[ "$do_backups" == true ]] && cleanup_old_backups
+        [[ "$do_cache" == true ]] && cleanup_cache
+        return 0
+    fi
+
     local keep="${INM_KEEP_BACKUPS:-2}"
     local cache_keep="${INM_CACHE_GLOBAL_RETENTION:-3}"
     log debug "[CLEAN] Removing old versions/backups/cache (keep backups/rollbacks: ${keep}, cache: ${cache_keep})"

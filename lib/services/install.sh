@@ -6,14 +6,18 @@ __SERVICE_INSTALL_LOADED=1
 
 # ---------------------------------------------------------------------
 # run_installation()
+# Run the Invoice Ninja installation flow (provisioned or wizard).
+# Consumes: args: mode; env: INM_*; globals: NAMED_ARGS; deps: prompt_var/prompt_confirm/get_latest_version/etc.
+# Computes: install staging, provisioning, cron and post-install actions.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 run_installation() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
         log info "[DRY-RUN] Skipping installation."
         return 0
     fi
+    unset INM_INSTALL_ROLLBACK_DIR
     local mode="$1"
-    local smolog_prev=""
     if [[ -z "$mode" && "${NAMED_ARGS[provision]:-false}" == "true" ]]; then
         mode="Provisioned"
         log debug "[TAR] Provision mode enabled via --provision."
@@ -45,6 +49,7 @@ run_installation() {
     fi
     local env_file timestamp latest_version source_dir
     timestamp="$(date +'%Y%m%d_%H%M%S')"
+    export INM_INSTALL_TIMESTAMP="$timestamp"
     latest_version="$(get_latest_version)"
     local install_path="${INM_INSTALLATION_PATH%/}"
     local install_parent
@@ -91,12 +96,7 @@ run_installation() {
         env_file="${install_parent}/${install_name}_temp/.env.example"
     fi
 
-    if declare -F assert_file_path >/dev/null 2>&1; then
-        assert_file_path "$env_file" "Provision file path" || return 1
-    elif [ -d "$env_file" ]; then
-        log err "[TAR] Provision file path resolves to a directory: $env_file"
-        return 1
-    fi
+    assert_file_path "$env_file" "Provision file path" || return 1
 
     if [ "$mode" = "Provisioned" ]; then
         if [[ -t 0 ]]; then
@@ -154,13 +154,34 @@ run_installation() {
             fi
         else
             log warn "[PROV] Provision file missing: $env_file"
-            log info "[PROV] Run 'inmanage core provision spawn' or 'inmanage core install --help'."
+            log info "[PROV] Run 'inm spawn provision-file' or 'inm core install --help'."
         fi
     fi
 
-    if declare -F run_hook >/dev/null 2>&1; then
-        run_hook "pre-install" || return 1
+    if [ "$mode" = "Provisioned" ] && [ -f "$env_file" ]; then
+        apply_inm_keys_from_provision "$env_file"
+        resolve_env_paths || true
+        local new_env_file=""
+        local provision_rel="${INM_PROVISION_ENV_FILE:-.inmanage/.env.provision}"
+        if [ -n "${INM_BASE_DIRECTORY:-}" ]; then
+            new_env_file="${INM_BASE_DIRECTORY%/}/${provision_rel#/}"
+        else
+            new_env_file="$provision_rel"
+            if [[ "$new_env_file" != /* ]]; then
+                new_env_file="$(pwd)/${new_env_file}"
+            fi
+        fi
+        if [ -f "$new_env_file" ]; then
+            env_file="$new_env_file"
+            if [ -z "${INM_MIGRATION_BACKUP:-}" ]; then
+                INM_MIGRATION_BACKUP=$(grep -E '^INM_MIGRATION_BACKUP=' "$env_file" 2>/dev/null | tail -n1 | cut -d= -f2-)
+            fi
+        elif [[ "$new_env_file" != "$env_file" ]]; then
+            log warn "[PROV] Provision file path from INM_* not found; keeping $env_file"
+        fi
     fi
+
+    run_hook "pre-install" || return 1
 
     if [ -d "$install_path" ]; then
         local src_path="$install_path"
@@ -180,17 +201,12 @@ run_installation() {
             log debug "[TAR] Forced install – archiving current version"
         fi
 
-        local smolog_prev="${INM_SMO_LOG_LEVEL:-}"
-        INM_SMO_LOG_LEVEL="debug"
-        safe_move_or_copy_and_clean "$src_path" "$rollback_dir" new || {
+        if ! fs_with_smo_log_level debug safe_move_or_copy_and_clean "$src_path" "$rollback_dir" new; then
             log err "[TAR] Failed to archive old installation"
             return 1
-        }
-        if [ -n "$smolog_prev" ]; then
-            INM_SMO_LOG_LEVEL="$smolog_prev"
-        else
-            unset INM_SMO_LOG_LEVEL
         fi
+        # shellcheck disable=SC2034
+        INM_INSTALL_ROLLBACK_DIR="$rollback_dir"
         log info "[TAR] Previous installation archived."
     fi
 
@@ -203,43 +219,21 @@ run_installation() {
 
     local extracted
     extracted="$(mktemp -d)"
-    if declare -F tar_safe_extract >/dev/null 2>&1; then
-        if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting Invoice Ninja..." tar_safe_extract "$source_dir/invoiceninja_v$latest_version.tar.gz" "$extracted"; then
-            log err "[TAR] Failed to extract Invoice Ninja archive."
-            safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
-            return 1
-        fi
-    elif ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting Invoice Ninja..." tar -xzf "$source_dir/invoiceninja_v$latest_version.tar.gz" -C "$extracted"; then
+    if ! INM_SPINNER_HEARTBEAT=0 spinner_run_mode normal "Extracting Invoice Ninja..." tar_extract_fallback "$source_dir/invoiceninja_v$latest_version.tar.gz" "$extracted"; then
         log err "[TAR] Failed to extract Invoice Ninja archive."
         safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
         return 1
     fi
 
-    local source_root="$extracted"
-    mapfile -t top_entries < <(find "$extracted" -mindepth 1 -maxdepth 1 -print)
-    if [[ ${#top_entries[@]} -eq 1 && -d "${top_entries[0]}" ]]; then
-        source_root="${top_entries[0]}"
-    fi
+    local source_root
+    source_root="$(fs_resolve_single_root_dir "$extracted")"
 
     local temp_dir="${install_parent}/${install_name}_temp"
-    mkdir -p "$install_parent" || {
-        log err "[TAR] Failed to create install parent: $install_parent"
-        safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
-        return 1
-    }
-    safe_rm_rf "$temp_dir" "$(dirname "$temp_dir")" || true
     log debug "[TAR] Staging extracted files for atomic switch: $temp_dir (source: $source_dir/invoiceninja_v$latest_version.tar.gz)"
-    smolog_prev="${INM_SMO_LOG_LEVEL:-}"
-    INM_SMO_LOG_LEVEL="debug"
-    safe_move_or_copy_and_clean "$source_root" "$temp_dir" move || {
+    if ! fs_stage_dir "$source_root" "$temp_dir" "$install_parent" move "debug"; then
         log err "[TAR] Failed to move/copy extracted files"
         safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
         return 1
-    }
-    if [ -n "$smolog_prev" ]; then
-        INM_SMO_LOG_LEVEL="$smolog_prev"
-    else
-        unset INM_SMO_LOG_LEVEL
     fi
     safe_rm_rf "$extracted" "$(dirname "$extracted")" || true
 
@@ -266,8 +260,11 @@ run_installation() {
             return 1
         }
         if [ "$mode" = "Provisioned" ]; then
-            sed -i '/^# INMANAGE_PROVISION_BEGIN$/,/^# INMANAGE_PROVISION_END$/d' \
-                "${install_parent}/${install_name}_temp/.env" 2>/dev/null || true
+            local env_target="${install_parent}/${install_name}_temp/.env"
+            local sed_script='/^# INMANAGE_PROVISION_BEGIN$/,/^# INMANAGE_PROVISION_END$/d;/^[[:space:]]*(export[[:space:]]+)?INM_[A-Za-z0-9_]*[[:space:]]*=/d'
+            if ! sed -i '' -e "$sed_script" "$env_target" 2>/dev/null; then
+                sed -i -e "$sed_script" "$env_target" 2>/dev/null || true
+            fi
         fi
         chmod 600 "${install_parent}/${install_name}_temp/.env" || \
             log warn "[TAR] chmod 600 failed on .env"
@@ -286,25 +283,16 @@ run_installation() {
         fi
     fi
 
-    smolog_prev="${INM_SMO_LOG_LEVEL:-}"
-    INM_SMO_LOG_LEVEL="debug"
-    safe_move_or_copy_and_clean "${install_parent}/${install_name}_temp" "$install_path" || {
+    if ! fs_with_smo_log_level debug safe_move_or_copy_and_clean "${install_parent}/${install_name}_temp" "$install_path"; then
         log err "[TAR] Failed to deploy new installation"
         return 1
-    }
-    if [ -n "$smolog_prev" ]; then
-        INM_SMO_LOG_LEVEL="$smolog_prev"
-    else
-        unset INM_SMO_LOG_LEVEL
     fi
     log info "[TAR] Installation files deployed successfully."
-    if declare -F enforce_ownership >/dev/null 2>&1; then
-        enforce_ownership "$install_path"
-    fi
-    if [[ -n "${INM_DIR_MODE:-}" ]] && declare -F enforce_dir_permissions >/dev/null 2>&1; then
+    enforce_ownership "$install_path"
+    if [[ -n "${INM_DIR_MODE:-}" ]]; then
         enforce_dir_permissions "$INM_DIR_MODE" "$install_path"
     fi
-    if [[ -n "${INM_FILE_MODE:-}" ]] && declare -F enforce_file_permissions >/dev/null 2>&1; then
+    if [[ -n "${INM_FILE_MODE:-}" ]]; then
         enforce_file_permissions "$INM_FILE_MODE" "$install_path"
     fi
 
@@ -365,6 +353,10 @@ run_installation() {
     else
         local cron_jobs
         cron_jobs="$(args_get - "artisan" cron_jobs jobs)"
+        local cron_jobs_set=false
+        if [[ -n "${NAMED_ARGS[cron_jobs]:-}" || -n "${NAMED_ARGS[jobs]:-}" ]]; then
+            cron_jobs_set=true
+        fi
         local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
         local cron_ok=true
         local cron_skipped=false
@@ -376,8 +368,41 @@ run_installation() {
         no_backup_cron="$(args_get - "false" no_backup_cron)"
         local backup_time
         backup_time="$(args_get - "03:24" backup_time)"
+        if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
+            load_env_file_raw "$INM_SELF_ENV_FILE" || true
+        fi
+        local hb_enabled="${INM_NOTIFY_HEARTBEAT_ENABLED:-}"
+        local hb_time="${INM_NOTIFY_HEARTBEAT_TIME:-}"
+        if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
+            local cfg_file="$INM_SELF_ENV_FILE"
+            if [[ "$cfg_file" != /* ]] && [ -n "${INM_BASE_DIRECTORY:-}" ]; then
+                cfg_file="${INM_BASE_DIRECTORY%/}/${cfg_file#/}"
+            fi
+            local hb_from_file
+            local hb_time_from_file
+            hb_from_file="$(read_env_value_safe "$cfg_file" "INM_NOTIFY_HEARTBEAT_ENABLED" 2>/dev/null)"
+            hb_time_from_file="$(read_env_value_safe "$cfg_file" "INM_NOTIFY_HEARTBEAT_TIME" 2>/dev/null)"
+            if [ -n "$hb_from_file" ]; then
+                hb_enabled="$hb_from_file"
+            fi
+            if [ -n "$hb_time_from_file" ]; then
+                hb_time="$hb_time_from_file"
+            fi
+        fi
+        hb_enabled="${hb_enabled,,}"
+        hb_enabled="${hb_enabled//[[:space:]]/}"
         local heartbeat_time
-        heartbeat_time="$(args_get - "${INM_NOTIFY_HEARTBEAT_TIME:-06:00}" heartbeat_time)"
+        heartbeat_time="$(args_get - "${hb_time:-${INM_NOTIFY_HEARTBEAT_TIME:-06:00}}" heartbeat_time)"
+        local cron_jobs_lc="${cron_jobs,,}"
+        if args_is_true "$hb_enabled"; then
+            if [[ ",${cron_jobs_lc}," != *",heartbeat,"* && ",${cron_jobs_lc}," != *",all,"* ]]; then
+                if [[ "$cron_jobs_set" == true ]]; then
+                    log debug "[TAR] Heartbeat enabled but cron jobs set explicitly; leaving jobs as '${cron_jobs}'."
+                else
+                    cron_jobs="${cron_jobs},heartbeat"
+                fi
+            fi
+        fi
         if args_is_true "$no_backup_cron"; then
             cron_jobs="artisan"
         fi
@@ -390,16 +415,65 @@ run_installation() {
                 cron_ok=false
             fi
         fi
+        if [[ "$cron_ok" == true ]]; then
+            maybe_setup_heartbeat_notifications "TAR"
+        fi
         print_wizard_summary "$cron_ok" "$cron_jobs" "$cron_skipped"
     fi
 
-    if declare -F run_hook >/dev/null 2>&1; then
-        run_hook "post-install" || return 1
+    run_hook "post-install" || return 1
+
+    if [[ "${NAMED_ARGS[override_enforced_user]:-}" == "true" || "${INM_OVERRIDE_ENFORCED_USER:-}" == "true" ]]; then
+        if [[ "$EUID" -eq 0 && -n "${INM_ENFORCED_USER:-}" ]]; then
+            local cfg_dir=""
+            if [[ -n "${INM_SELF_ENV_FILE:-}" ]]; then
+                cfg_dir="$(dirname "$INM_SELF_ENV_FILE")"
+            fi
+            if [[ -n "$cfg_dir" && -d "$cfg_dir" ]]; then
+                log debug "[INSTALL] Fixing ownership for CLI config: $cfg_dir"
+                enforce_ownership "$cfg_dir" "$INM_SELF_ENV_FILE"
+            fi
+        fi
     fi
 
-    run_artisan config:clear || log warn "[TAR] artisan config:clear failed"
-    run_artisan cache:clear || log warn "[TAR] artisan cache:clear failed"
+    if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
+        run_artisan config:clear || log warn "[TAR] artisan config:clear failed"
+        run_artisan cache:clear || log warn "[TAR] artisan cache:clear failed"
+    else
+        run_artisan config:clear >/dev/null 2>&1 || log warn "[TAR] artisan config:clear failed"
+        run_artisan cache:clear >/dev/null 2>&1 || log warn "[TAR] artisan cache:clear failed"
+    fi
 
     cd "$INM_BASE_DIRECTORY" || return 1
     return 0
+}
+
+# ---------------------------------------------------------------------
+# run_install_rollback()
+# Rolls back to an archived installation directory (install_name_rollback_*).
+# Usage: inm core install rollback --latest|--name=DIR
+# ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# run_install_rollback()
+# Roll back to a previous install snapshot.
+# Consumes: args: selection; env: INM_INSTALLATION_PATH; deps: safe_move.
+# Computes: app directory swap to rollback version.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
+run_install_rollback() {
+    if [[ "${DRY_RUN:-false}" == true ]]; then
+        log info "[DRY-RUN] Skipping install rollback."
+        return 0
+    fi
+
+    # shellcheck disable=SC2034
+    local -A args=()
+    parse_named_args args "$@"
+    local target
+    target="$(app_parse_rollback_target args "latest" "$@")"
+
+    local install_path="${INM_INSTALLATION_PATH%/}"
+    local force
+    force="$(args_get args "false" force)"
+    app_run_rollback "INSTALL" "INSTALL_ROLLBACK" "$install_path" "$target" "$force"
 }

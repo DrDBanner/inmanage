@@ -6,8 +6,10 @@ __USER_HELPER_LOADED=1
 
 # ---------------------------------------------------------------------
 # enforce_user_switch()
-#
-# Switches to target user if --user is provided; optional switchback.
+# Re-exec the script as the target user when requested.
+# Consumes: args: user, switchback, override_enforced_user, fix_permissions; env: INM_OVERRIDE_ENFORCED_USER, DRY_RUN.
+# Computes: re-exec decision and user switch command.
+# Returns: 0 when no switch is needed; otherwise execs the script.
 # ---------------------------------------------------------------------
 enforce_user_switch() {
     local -A args=()
@@ -52,7 +54,21 @@ enforce_user_switch() {
             log info "[ENV] Hint: use --override-enforced-user to keep root for --fix-permissions."
         fi
 
-        exec sudo -u "${args[user]}" env INM_ORIGINAL_HOME="$original_home" bash "$memyselfasscript" "${providedargs[@]}"
+        local -a env_args=(INM_ORIGINAL_HOME="$original_home")
+        if [[ -n "${INM_INSTALL_TIMESTAMP:-}" ]]; then
+            env_args+=(INM_INSTALL_TIMESTAMP="$INM_INSTALL_TIMESTAMP")
+        fi
+        if [[ -n "${INM_INSTALL_ROLLBACK_DIR:-}" ]]; then
+            env_args+=(INM_INSTALL_ROLLBACK_DIR="$INM_INSTALL_ROLLBACK_DIR")
+        fi
+        if [[ -n "${INM_PROVISION_ENV_FILE:-}" ]]; then
+            env_args+=(INM_PROVISION_ENV_FILE="$INM_PROVISION_ENV_FILE")
+        fi
+        if [[ -n "${INM_SELF_ENV_FILE:-}" ]]; then
+            env_args+=(INM_SELF_ENV_FILE="$INM_SELF_ENV_FILE")
+        fi
+
+        exec sudo -u "${args[user]}" env "${env_args[@]}" bash "$memyselfasscript" "${providedargs[@]}"
     fi
 
     if [ -n "${args[switchback]}" ] && [ -n "$__INTERNAL_SWITCHED_FROM_USER" ]; then
@@ -70,7 +86,10 @@ enforce_user_switch() {
 
 # ---------------------------------------------------------------------
 # should_suppress_pre_switch_logs()
-# True when a user switch will happen and we're still pre-switch.
+# Decide whether to suppress logs before a user switch.
+# Consumes: env: INM_CHILD_REEXEC, INM_OVERRIDE_ENFORCED_USER, INM_ENFORCED_USER, DRY_RUN; global: NAMED_ARGS.
+# Computes: whether current run is pre-switch.
+# Returns: 0 to suppress logs, 1 otherwise.
 # ---------------------------------------------------------------------
 should_suppress_pre_switch_logs() {
     if [[ -n "${INM_CHILD_REEXEC:-}" ]]; then

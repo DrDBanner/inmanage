@@ -6,7 +6,10 @@ __FORMAT_HELPER_LOADED=1
 
 # ---------------------------------------------------------------------
 # setup_colors()
-# Centralized color definitions for CLI output.
+# Initialize ANSI color variables for CLI output.
+# Consumes: tty state (stdout).
+# Computes: color variables.
+# Returns: 0 always.
 # ---------------------------------------------------------------------
 setup_colors() {
     # shellcheck disable=SC2034
@@ -24,4 +27,41 @@ setup_colors() {
     else
         GREEN=''; RED=''; CYAN=''; YELLOW=''; BLUE=''; WHITE=''; MAGENTA=''; GRAY=''; BOLD=''; RESET=''
     fi
+}
+
+# ---------------------------------------------------------------------
+# mem_to_mb()
+# Convert memory string to MB.
+# Consumes: args: val.
+# Computes: integer MB from K/M/G or numeric.
+# Returns: MB on stdout (empty if invalid).
+# ---------------------------------------------------------------------
+mem_to_mb() {
+    local val="$1"
+    if [[ "$val" =~ ^-?[0-9]+$ ]]; then
+        echo "$val"
+        return
+    fi
+    if [[ "$val" =~ ^([0-9]+)([KkMmGg])$ ]]; then
+        local mem_val="${BASH_REMATCH[1]}"
+        local mem_unit="${BASH_REMATCH[2]}"
+        case "$mem_unit" in
+            K|k) echo $((mem_val / 1024));;
+            M|m) echo "$mem_val";;
+            G|g) echo $((mem_val * 1024));;
+        esac
+        return
+    fi
+    echo ""
+}
+
+# ---------------------------------------------------------------------
+# escape_regex()
+# Escape a string for safe regex use.
+# Consumes: args: string; tools: sed.
+# Computes: escaped string.
+# Returns: escaped string on stdout.
+# ---------------------------------------------------------------------
+escape_regex() {
+    printf '%s' "$1" | sed -E 's/[][\\.^$*+?(){}|]/\\&/g'
 }

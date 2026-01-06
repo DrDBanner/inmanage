@@ -6,8 +6,10 @@ __SERVICE_RESTORE_LOADED=1
 
 # ---------------------------------------------------------------------
 # run_restore()
-# Restores from a backup bundle/directory or individual part (db/app/files).
-# Detects new flat bundle layout (real folders/files, no nested archives).
+# Restore from a backup bundle/directory or single part.
+# Consumes: args: --file/--latest/--force/--include-app/...; env: INM_*; helpers: fs_archive, fs_permissions, spinner.
+# Computes: restores app files, db, env, storage/uploads/extra.
+# Returns: 0 on success, 1 on failure.
 # ---------------------------------------------------------------------
 run_restore() {
     # shellcheck disable=SC2034
@@ -17,36 +19,28 @@ run_restore() {
     local bundle
     bundle="$(args_get ARGS "" file bundle)"
     local force
-    force="$(args_get ARGS "${force_update:-false}" force)"
-    if args_is_true "$force"; then
-        force=true
-    else
-        force=false
+    force="false"
+    if args_is_true "$(args_get ARGS "${force_update:-false}" force)"; then
+        force="true"
     fi
     local include_app
-    include_app="$(args_get ARGS "true" include_app)"
-    if args_is_true "$include_app"; then
-        include_app=true
-    else
-        include_app=false
+    include_app="false"
+    if args_is_true "$(args_get ARGS "true" include_app)"; then
+        include_app="true"
     fi
     local target_arg
     target_arg="$(args_get ARGS "" target bundle_target)"
     local target_default="${INM_INSTALLATION_PATH:-${INM_BASE_DIRECTORY%/}/${INM_INSTALLATION_DIRECTORY#/}}"
     local target="${target_arg:-$target_default}"
     local prebackup
-    prebackup="$(args_get ARGS "true" pre_backup)"
-    if args_is_true "$prebackup"; then
-        prebackup=true
-    else
-        prebackup=false
+    prebackup="false"
+    if args_is_true "$(args_get ARGS "true" pre_backup)"; then
+        prebackup="true"
     fi
     local purge
-    purge="$(args_get ARGS "true" purge_db purge)"
-    if args_is_true "$purge"; then
-        purge=true
-    else
-        purge=false
+    purge="false"
+    if args_is_true "$(args_get ARGS "true" purge_db purge)"; then
+        purge="true"
     fi
     local autofill
     autofill="$(args_get ARGS "1" autofill_missing autoheal)"
@@ -145,18 +139,12 @@ run_restore() {
 
     local tmpdir
     tmpdir="$(mktemp -d)"
-    # shellcheck disable=SC2329
-    cleanup_tmp_restore() {
-        local dir="$1"
-        [[ -n "$dir" ]] || return 0
-        safe_rm_rf "$dir" "$(dirname "$dir")" || true
-    }
-    trap 'cleanup_tmp_restore "$tmpdir"; trap - RETURN' RETURN
+    trap 'safe_rm_rf "$tmpdir" "$(dirname "$tmpdir")" || true; trap - RETURN' RETURN
 
     local stage_root="$tmpdir"
     if [[ -d "$bundle" ]]; then
         log info "[RESTORE] Using bundle directory: $bundle"
-        if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Staging bundle directory..." cp -a "$bundle"/. "$stage_root"/; then
+        if ! fs_sync_dir "bundle" "$bundle" "$stage_root" "$simulate" quiet "RESTORE"; then
             log err "[RESTORE] Failed to stage bundle directory."
             return 1
         fi
@@ -164,30 +152,16 @@ run_restore() {
         case "$bundle" in
             *.tar.gz|*.tgz)
                 log info "[RESTORE] Extracting tar bundle -> $stage_root"
-                if declare -F tar_safe_extract >/dev/null 2>&1; then
-                    if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting backup..." tar_safe_extract "$bundle" "$stage_root"; then
-                        log err "[RESTORE] Failed to extract bundle."
-                        return 1
-                    fi
-                else
-                    if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting backup..." tar -xzf "$bundle" -C "$stage_root"; then
-                        log err "[RESTORE] Failed to extract bundle."
-                        return 1
-                    fi
+                if ! spinner_run_mode quiet "Extracting backup..." tar_extract_fallback "$bundle" "$stage_root"; then
+                    log err "[RESTORE] Failed to extract bundle."
+                    return 1
                 fi
                 ;;
             *.zip)
                 log info "[RESTORE] Extracting zip bundle -> $stage_root"
-                if declare -F zip_safe_extract >/dev/null 2>&1; then
-                    if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting backup..." zip_safe_extract "$bundle" "$stage_root"; then
-                        log err "[RESTORE] Failed to extract bundle."
-                        return 1
-                    fi
-                else
-                    if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Extracting backup..." unzip -q "$bundle" -d "$stage_root"; then
-                        log err "[RESTORE] Failed to extract bundle."
-                        return 1
-                    fi
+                if ! spinner_run_mode quiet "Extracting backup..." zip_extract_fallback "$bundle" "$stage_root"; then
+                    log err "[RESTORE] Failed to extract bundle."
+                    return 1
                 fi
                 ;;
             *)
@@ -197,6 +171,7 @@ run_restore() {
         esac
     fi
 
+    local pre_restore_backup=""
     local db_part env_part storage_dir uploads_dir extra_dir app_dir
     local app_missing=false
     db_part=$(find "$stage_root" -maxdepth 4 -type f \( -name "db.sql" -o -name "*_db.sql" \) | head -n1)
@@ -243,7 +218,6 @@ run_restore() {
     fi
 
     if [[ "$include_app" == true && -d "$target" ]]; then
-        local pre_restore_backup
         pre_restore_backup="${INM_BACKUP_DIRECTORY%/}/restore_pre_$(date +%Y%m%d-%H%M%S)"
         if [[ "$simulate" == true ]]; then
             log info "[DRY-RUN] Would move existing app to $pre_restore_backup before restore."
@@ -251,9 +225,7 @@ run_restore() {
             mkdir -p "$pre_restore_backup" || { log err "[RESTORE] Cannot create backup dir: $pre_restore_backup"; return 1; }
             log info "[RESTORE] Moving existing app to backup: $pre_restore_backup"
             safe_move_or_copy_and_clean "$target" "$pre_restore_backup" move || { log err "[RESTORE] Failed to backup existing app to $pre_restore_backup"; return 1; }
-            if declare -F enforce_ownership >/dev/null 2>&1; then
-                enforce_ownership "$pre_restore_backup"
-            fi
+            enforce_ownership "$pre_restore_backup"
         fi
     fi
     [[ "$simulate" != true ]] && mkdir -p "$target"
@@ -263,7 +235,7 @@ run_restore() {
                 log info "[DRY-RUN] Would restore application files -> $target"
             else
                 log info "[RESTORE] Restoring application files via rsync -> $target"
-                if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Restoring app files..." rsync -a "$app_dir"/ "$target"/; then
+                if ! fs_sync_dir "app files" "$app_dir" "$target" "$simulate" quiet "RESTORE"; then
                     log err "[RESTORE] Failed to restore application files."
                     return 1
                 fi
@@ -287,42 +259,15 @@ run_restore() {
     fi
 
         if [[ -n "$storage_dir" ]]; then
-            local storage_dest="$target/storage"
-            if [[ "$simulate" == true ]]; then
-                log info "[DRY-RUN] Would restore storage -> $storage_dest"
-            else
-                log info "[RESTORE] Restoring storage via rsync -> $storage_dest"
-                mkdir -p "$storage_dest"
-                if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Restoring storage..." rsync -a "$storage_dir"/ "$storage_dest"/; then
-                    log warn "[RESTORE] Restoring storage failed."
-                fi
-            fi
+            fs_sync_dir "storage" "$storage_dir" "$target/storage" "$simulate" quiet "RESTORE"
         fi
 
         if [[ -n "$uploads_dir" ]]; then
-            local uploads_dest="$target/public/uploads"
-            if [[ "$simulate" == true ]]; then
-                log info "[DRY-RUN] Would restore uploads -> $uploads_dest"
-            else
-                log info "[RESTORE] Restoring uploads via rsync -> $uploads_dest"
-                mkdir -p "$uploads_dest"
-                if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Restoring uploads..." rsync -a "$uploads_dir"/ "$uploads_dest"/; then
-                    log warn "[RESTORE] Restoring uploads failed."
-                fi
-            fi
+            fs_sync_dir "uploads" "$uploads_dir" "$target/public/uploads" "$simulate" quiet "RESTORE"
         fi
 
         if [[ -n "$extra_dir" ]]; then
-            local extra_dest="$target/extra"
-            if [[ "$simulate" == true ]]; then
-                log info "[DRY-RUN] Would restore extra paths -> $extra_dest"
-            else
-                log info "[RESTORE] Restoring extra paths via rsync -> $extra_dest"
-                mkdir -p "$extra_dest"
-                if ! INM_SPINNER_HEARTBEAT=0 spinner_run "Restoring extra paths..." rsync -a "$extra_dir"/ "$extra_dest"/; then
-                    log warn "[RESTORE] Restoring extra paths failed."
-                fi
-            fi
+            fs_sync_dir "extra paths" "$extra_dir" "$target/extra" "$simulate" quiet "RESTORE"
         fi
 
     local user_ini_src=""
@@ -417,14 +362,10 @@ run_restore() {
         local restored_ver
         restored_ver="$(head -n1 "$version_file" | tr -d '[:space:]')"
         log ok "[RESTORE] Active app version: ${restored_ver:-unknown}"
-        if declare -F get_latest_version >/dev/null 2>&1; then
-            local latest_ver
-            latest_ver="$(get_latest_version 2>/dev/null)"
-            if [[ -n "$latest_ver" && "$restored_ver" != "$latest_ver" ]]; then
-                log info "[RESTORE] Newer version available: $latest_ver. Run 'inmanage core update' to upgrade."
-            fi
-        else
-            log info "[RESTORE] Hint: run 'inmanage core update' to check for newer releases."
+        local latest_ver
+        latest_ver="$(get_latest_version 2>/dev/null)"
+        if [[ -n "$latest_ver" && "$restored_ver" != "$latest_ver" ]]; then
+            log info "[RESTORE] Newer version available: $latest_ver. Run 'inmanage core update' to upgrade."
         fi
     else
         log warn "[RESTORE] VERSION.txt missing in $target; unable to report restored version."
@@ -439,7 +380,7 @@ run_restore() {
 
     if command -v du >/dev/null 2>&1; then
         local target_size
-        target_size=$(du -sh "$target" 2>/dev/null | awk '{print $1}')
+        target_size="$(fs_path_size "$target")"
         [[ -n "$target_size" ]] && log info "[RESTORE] Target footprint: $target_size at $target"
     fi
 
@@ -460,11 +401,42 @@ run_restore() {
         fi
     fi
 
-    if [[ "$simulate" != true ]] && declare -F cleanup_old_backups >/dev/null 2>&1; then
+    if [[ "$simulate" != true ]]; then
         cleanup_old_backups || log warn "[RESTORE] Backup cleanup failed."
     fi
 
     local suffix=""
     [[ "$simulate" == true ]] && suffix=" (dry-run)"
+    if [[ -n "$pre_restore_backup" ]]; then
+        app_log_rollback_hint "RESTORE" "restore" "$pre_restore_backup"
+    fi
     log ok "[RESTORE] Restore flow completed${suffix}."
+}
+
+# ---------------------------------------------------------------------
+# run_restore_rollback()
+# Roll back to a pre-restore backup (restore_pre_*).
+# Consumes: args: latest/name/target; env: INM_BACKUP_DIRECTORY, INM_INSTALLATION_PATH.
+# Computes: app directory swap to pre-restore backup.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
+run_restore_rollback() {
+    if [[ "${DRY_RUN:-false}" == true ]]; then
+        log info "[DRY-RUN] Skipping restore rollback."
+        return 0
+    fi
+
+    local -A args=()
+    parse_named_args args "$@"
+
+    local target
+    target="${INM_INSTALLATION_PATH:-${INM_BASE_DIRECTORY%/}/${INM_INSTALLATION_DIRECTORY#/}}"
+    target="${target%/}"
+    local backup_dir="${INM_BACKUP_DIRECTORY:-./_backups}"
+
+    local target_arg
+    target_arg="$(app_parse_rollback_target args "latest" "$@")"
+    local force
+    force="$(args_get args "false" force)"
+    app_run_rollback_in_dir "RESTORE" "RESTORE_ROLLBACK" "$target" "$backup_dir" "restore_pre_" "$target_arg" "$force"
 }

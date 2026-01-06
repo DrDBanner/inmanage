@@ -5,8 +5,107 @@
 __SERVICE_SELF_INSTALL_LOADED=1
 
 # ---------------------------------------------------------------------
+# self_detect_web_user()
+# Find a likely web server user on the system.
+# Consumes: system user database (id).
+# Computes: first matching user from common list.
+# Returns: prints username or empty string.
+# ---------------------------------------------------------------------
+self_detect_web_user() {
+  local candidate=""
+  local candidates=(www-data nginx apache httpd)
+  for candidate in "${candidates[@]}"; do
+    if id -u "$candidate" >/dev/null 2>&1; then
+      printf "%s" "$candidate"
+      return 0
+    fi
+  done
+  printf "%s" ""
+}
+
+# ---------------------------------------------------------------------
+# self_normalize_install_mode()
+# Normalize install mode input to numeric code.
+# Consumes: args: mode.
+# Computes: normalized mode string.
+# Returns: prints normalized mode.
+# ---------------------------------------------------------------------
+self_normalize_install_mode() {
+  case "$1" in
+    1|system) printf "1" ;;
+    2|local|user) printf "2" ;;
+    3|project) printf "3" ;;
+    *) printf "%s" "$1" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------
+# self_resolve_path()
+# Resolve a script path to an absolute path if possible.
+# Consumes: args: path; deps: resolve_script_path/realpath.
+# Computes: resolved path.
+# Returns: prints resolved path.
+# ---------------------------------------------------------------------
+self_resolve_path() {
+  if declare -F resolve_script_path >/dev/null 2>&1; then
+    resolve_script_path "$1" 2>/dev/null && return
+  fi
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$1" 2>/dev/null && return
+  fi
+  printf "%s" "$1"
+}
+
+# ---------------------------------------------------------------------
+# self_write_version_file()
+# Write a VERSION file with branch/commit metadata for consistent reporting.
+# Consumes: args: target_dir, source_dir; deps: git_collect_info.
+# Computes: VERSION file content.
+# Returns: 0 (best-effort).
+# ---------------------------------------------------------------------
+self_write_version_file() {
+  local target_dir="$1"
+  local source_dir="$2"
+  local branch="" commit="" dirty="" commit_date="" err=""
+  local version_line=""
+
+  [[ -z "$target_dir" ]] && return 0
+  [[ -z "$source_dir" ]] && source_dir="$target_dir"
+
+  if command -v git >/dev/null 2>&1 && [ -d "$source_dir/.git" ]; then
+    git_collect_info "$source_dir" branch commit dirty commit_date err || true
+  fi
+  if [[ -z "$branch" && -z "$commit" && -d "$target_dir/.git" && "$target_dir" != "$source_dir" ]]; then
+    git_collect_info "$target_dir" branch commit dirty commit_date err || true
+  fi
+
+  if [[ -n "$branch" || -n "$commit" ]]; then
+    version_line="branch=${branch:-unknown} commit=${commit:-unknown}"
+  fi
+
+  if [[ -z "$version_line" && -r "${source_dir%/}/VERSION" ]]; then
+    version_line="$(head -n1 "${source_dir%/}/VERSION" 2>/dev/null || true)"
+  fi
+  if [[ -z "$version_line" && -r "${target_dir%/}/VERSION" ]]; then
+    version_line="$(head -n1 "${target_dir%/}/VERSION" 2>/dev/null || true)"
+  fi
+
+  if [[ -n "$version_line" ]]; then
+    if ! printf "%s\n" "$version_line" > "${target_dir%/}/VERSION" 2>/dev/null; then
+      log warn "[SELF] Failed to write VERSION file to ${target_dir%/}/VERSION"
+      return 0
+    fi
+    chmod 0644 "${target_dir%/}/VERSION" 2>/dev/null || true
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------
 # install_self()
-# Handles self-install (global/local/project) and symlinks.
+# Install the CLI into system/user/project locations and create symlinks.
+# Consumes: env: NAMED_ARGS, INM_BASE_DIRECTORY, RUN_AS_USER, XDG_DATA_HOME; deps: self_detect_web_user.
+# Computes: install path selection and file copy/symlink actions.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 install_self() {
   if [[ "${DRY_RUN:-false}" == true ]]; then
@@ -20,7 +119,7 @@ install_self() {
 
   local default_bin="/usr/local/bin"
   local source_script
-  source_script="$(realpath "$0")"
+  source_script="$(self_resolve_path "$0")"
   local source_dir
   source_dir="$(dirname "$source_script")"
 
@@ -33,22 +132,10 @@ install_self() {
   local is_root=false
   [[ ${EUID:-$(id -u)} -eq 0 ]] && is_root=true
 
-  detect_web_user() {
-    local candidate=""
-    local candidates=(www-data nginx apache httpd)
-    for candidate in "${candidates[@]}"; do
-      if id -u "$candidate" >/dev/null 2>&1; then
-        printf "%s" "$candidate"
-        return 0
-      fi
-    done
-    printf "%s" ""
-  }
-
   local run_user_default="${RUN_AS_USER:-}"
   if [[ -z "$run_user_default" ]]; then
       if [[ "$is_root" == true ]]; then
-          run_user_default="$(detect_web_user)"
+          run_user_default="$(self_detect_web_user)"
       else
           run_user_default="$current_user"
       fi
@@ -88,18 +175,7 @@ install_self() {
 
   # Derive a base_dir for project mode defaults
   local base_dir="${INM_BASE_DIRECTORY:-$PWD}"
-  if declare -F ensure_trailing_slash >/dev/null; then
-      base_dir="$(ensure_trailing_slash "$base_dir")"
-  fi
-
-  normalize_install_mode() {
-    case "$1" in
-      1|system) printf "1" ;;
-      2|local|user) printf "2" ;;
-      3|project) printf "3" ;;
-      *) printf "%s" "$1" ;;
-    esac
-  }
+  base_dir="$(ensure_trailing_slash "$base_dir")"
 
   if [[ -z "$install_mode" ]]; then
     if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
@@ -108,7 +184,7 @@ install_self() {
       install_mode="2"
     fi
   fi
-  install_mode="$(normalize_install_mode "$install_mode")"
+  install_mode="$(self_normalize_install_mode "$install_mode")"
 
   if [[ -n "$run_user" && "$run_user" != "$current_user" && ${EUID:-$(id -u)} -ne 0 ]]; then
       log err "[SELF] Enforced user '$run_user' differs; re-run with sudo/root."
@@ -142,16 +218,6 @@ install_self() {
     esac
   fi
 
-  resolve_path() {
-    if declare -F resolve_script_path >/dev/null 2>&1; then
-      resolve_script_path "$1" 2>/dev/null && return
-    fi
-    if command -v realpath >/dev/null 2>&1; then
-      realpath "$1" 2>/dev/null && return
-    fi
-    printf "%s" "$1"
-  }
-
   local current_mode="unknown"
   if [[ "$source_dir" == "/usr/local/share/inmanage" ]]; then
     current_mode="1"
@@ -163,7 +229,7 @@ install_self() {
     current_mode="3"
   fi
 
-  if [[ "$(resolve_path "$install_dir")" == "$(resolve_path "$source_dir")" ]]; then
+  if [[ "$(self_resolve_path "$install_dir")" == "$(self_resolve_path "$source_dir")" ]]; then
       if [[ "$current_mode" != "unknown" && "$install_mode" == "$current_mode" ]]; then
           log ok "[SELF] Already installed in this mode. All good, nothing to do."
           return 0
@@ -180,15 +246,13 @@ install_self() {
   log debug "[SELF] Installing to: $install_dir"
   mkdir -p "$install_dir" || { log err "[SELF] Cannot create $install_dir"; return 1; }
 
-  if declare -F spinner_run_optional >/dev/null 2>&1; then
-      spinner_run_optional "Installing inmanage..." safe_move_or_copy_and_clean "$(dirname "$source_script")" "$install_dir" copy || {
-          log err "[SELF] Failed to copy files"; return 1;
-      }
-  else
-      safe_move_or_copy_and_clean "$(dirname "$source_script")" "$install_dir" copy || {
-          log err "[SELF] Failed to copy files"; return 1;
-      }
+  if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
+      log debug "[SELF] Copying CLI from $source_dir to $install_dir (mode=copy)"
   fi
+  spinner_run_mode normal "Installing inmanage..." safe_move_or_copy_and_clean "$(dirname "$source_script")" "$install_dir" copy || {
+      log err "[SELF] Failed to copy files"; return 1;
+  }
+  self_write_version_file "$install_dir" "$source_dir"
 
   if [[ "$install_mode" == "2" && ${EUID:-$(id -u)} -eq 0 && "$run_user" != "root" ]]; then
       local run_group
@@ -234,11 +298,7 @@ install_self() {
 
   case "$install_mode" in
     1)
-      if [[ -n "$run_user" ]]; then
-          log info "[SELF] Global install selected; ensure enforced user '$run_user' exists and has needed perms for cron/artisan."
-      else
-          log info "[SELF] Global install selected."
-      fi
+      log info "[SELF] Global install selected; set INM_ENFORCED_USER to the user that owns the app files (often www-data/nginx/apache/httpd, or your login user on shared hosting)."
       if [[ ! -d "$link_dir" ]]; then
         if ! mkdir -p "$link_dir" 2>/dev/null; then
           if command -v sudo &>/dev/null && [[ "$can_prompt" == true ]]; then
@@ -317,17 +377,10 @@ install_self() {
           exit 1
       }
 
-      if declare -F spinner_run_optional >/dev/null 2>&1; then
-          spinner_run_optional "Installing inmanage..." safe_move_or_copy_and_clean "$(dirname "$source_path")" "$app_dir" || {
-              log err "[INSTALL] Could not deploy to project directory."
-              exit 1
-          }
-      else
-          safe_move_or_copy_and_clean "$(dirname "$source_path")" "$app_dir" || {
-              log err "[INSTALL] Could not deploy to project directory."
-              exit 1
-          }
-      fi
+      spinner_run_mode normal "Installing inmanage..." safe_move_or_copy_and_clean "$(dirname "$source_path")" "$app_dir" || {
+          log err "[INSTALL] Could not deploy to project directory."
+          exit 1
+      }
 
       local app_source="$app_dir/inmanage.sh"
       local legacy_app_dir="${project_root}/.inmanage"
@@ -369,13 +422,13 @@ install_self() {
       echo
       log info "Tip: You can install globally anytime via 'inmanage self install --install-mode=1'"
 
-      log info "[INSTALL] Tip: Run 'inm core install' from your project root to create .inmanage/.env.inmanage."
+      log info "[INSTALL] Tip: Run 'inm -h' for help."
 
       return 0
       ;;
   esac
 
-  log info "[SELF] Tip: Run 'inm core install' from your project root to create .inmanage/.env.inmanage."
+  log info "[SELF] Tip: Run 'inm -h' for help."
   if declare -F hash >/dev/null 2>&1 || command -v hash >/dev/null 2>&1; then
     hash -r 2>/dev/null || true
   fi
@@ -383,15 +436,14 @@ install_self() {
 
 # ---------------------------------------------------------------------
 # self_update()
-# Updates the CLI in-place (git pull) if installed from a git checkout.
+# Update the CLI in-place from a git checkout.
+# Consumes: env: DRY_RUN; deps: git_pull_ff_only/self_resolve_path.
+# Computes: git pull in install root.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 self_update() {
   local script_path="$0"
-  if declare -F resolve_script_path >/dev/null 2>&1; then
-    script_path="$(resolve_script_path "$0" 2>/dev/null || printf "%s" "$0")"
-  elif command -v realpath >/dev/null 2>&1; then
-    script_path="$(realpath "$0" 2>/dev/null || printf "%s" "$0")"
-  fi
+  script_path="$(self_resolve_path "$0")"
   local root
   root="$(cd "$(dirname "$script_path")" && pwd)"
   if [[ ! -x "$root" || ! -r "$root" ]]; then
@@ -411,7 +463,8 @@ self_update() {
     return 0
   fi
   log info "[SELF] Updating CLI in $root (git pull)"
-  if git -C "$root" pull --ff-only; then
+  if git_pull_ff_only "$root"; then
+    self_write_version_file "$root" "$root"
     log ok "[SELF] Update completed."
   else
     log err "[SELF] git pull failed; resolve manually."
@@ -421,7 +474,10 @@ self_update() {
 
 # ---------------------------------------------------------------------
 # self_switch_mode()
-# Reinstall CLI in a different mode; optionally cleans old symlinks/dir.
+# Reinstall the CLI in a different mode and clean old links optionally.
+# Consumes: env: NAMED_ARGS, DRY_RUN; deps: install_self/safe_rm_rf.
+# Computes: mode switch and cleanup.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 self_switch_mode() {
   local old_root
@@ -463,15 +519,14 @@ self_switch_mode() {
 
 # ---------------------------------------------------------------------
 # self_uninstall()
-# Removes symlinks pointing to this install and optionally deletes it.
+# Remove CLI symlinks and optionally delete install directory.
+# Consumes: env: NAMED_ARGS, XDG_DATA_HOME, INM_BASE_DIRECTORY, DRY_RUN; deps: safe_rm_rf.
+# Computes: symlink cleanup and optional deletion.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 self_uninstall() {
   local script_path="$0"
-  if declare -F resolve_script_path >/dev/null 2>&1; then
-    script_path="$(resolve_script_path "$0" 2>/dev/null || printf "%s" "$0")"
-  elif command -v realpath >/dev/null 2>&1; then
-    script_path="$(realpath "$0" 2>/dev/null || printf "%s" "$0")"
-  fi
+  script_path="$(self_resolve_path "$0")"
   local root
   root="$(cd "$(dirname "$script_path")" && pwd)"
   local force_delete="${NAMED_ARGS[force]:-${NAMED_ARGS[--force]:-false}}"
@@ -560,91 +615,81 @@ self_uninstall() {
 
 # ---------------------------------------------------------------------
 # self_version()
-# Shows CLI version/metadata.
+# Show CLI version and install metadata.
+# Consumes: env: INM_SELF_INSTALL_MODE, INM_BASE_DIRECTORY; deps: git_collect_info/self_resolve_path.
+# Computes: version output.
+# Returns: 0 after logging.
 # ---------------------------------------------------------------------
 self_version() {
-  local script_path="$0"
-  if declare -F resolve_script_path >/dev/null 2>&1; then
-    script_path="$(resolve_script_path "$0" 2>/dev/null || printf "%s" "$0")"
-  elif command -v realpath >/dev/null 2>&1; then
-    script_path="$(realpath "$0" 2>/dev/null || printf "%s" "$0")"
-  fi
-  local root
-  root="$(cd "$(dirname "$script_path")" && pwd)"
+  local -A cli_info=()
+  cli_collect_info cli_info
 
+  local root="${cli_info[root]}"
   log info "[SELF] CLI path: $root"
-  if [[ ! -x "$root" || ! -r "$root" ]]; then
+  if [[ -n "$root" && ( ! -x "$root" || ! -r "$root" ) ]]; then
     log warn "[SELF] Cannot access install path: $root (try: sudo inm self version)."
   fi
-  if [ -f "$root/VERSION" ]; then
-    local cli_ver
-    cli_ver="$(<"$root/VERSION")"
-    log info "[SELF] Version file: $cli_ver"
-  fi
-  if command -v git >/dev/null 2>&1 && [ -d "$root/.git" ]; then
-    local branch commit dirty=""
-    branch="$(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-    commit="$(git -C "$root" rev-parse --short HEAD 2>/dev/null || true)"
-    git -C "$root" status --porcelain >/dev/null 2>&1 && \
-      git -C "$root" status --porcelain | grep -q . && dirty="*"
-    branch="${branch:-unknown}"
-    commit="${commit:-unknown}"
-    log info "[SELF] Source: git checkout (branch=${branch} commit=${commit}${dirty})"
-    local commit_date
-    commit_date="$(git -C "$root" log -1 --format=%cd --date=iso 2>/dev/null || true)"
-    [[ -n "$commit_date" ]] && log info "[SELF] Last commit date: $commit_date"
+
+  if [[ "${cli_info[git_present]}" == true ]]; then
+    log info "[SELF] Source: git checkout (branch=${cli_info[branch]} commit=${cli_info[commit]}${cli_info[dirty]})"
+    if echo "${cli_info[git_error]:-}" | grep -qi "dubious ownership"; then
+      log warn "[SELF] Git ownership check blocked access. Run: git config --global --add safe.directory $root"
+    elif echo "${cli_info[git_error]:-}" | grep -qi "permission denied"; then
+      log warn "[SELF] Git metadata not readable at $root (try: sudo or adjust ownership)."
+    fi
+    [[ -n "${cli_info[commit_date]:-}" ]] && log info "[SELF] Last commit date: ${cli_info[commit_date]}"
+  elif [[ -n "${cli_info[commit]:-}" || -n "${cli_info[version]:-}" ]]; then
+    log info "[SELF] Source: snapshot (branch=${cli_info[branch]:-unknown} commit=${cli_info[commit]:-unknown})"
   else
     log warn "[SELF] Source: no git metadata (tarball/snapshot install)"
   fi
 
-  local mode="unknown"
-  if [ -n "${INM_SELF_INSTALL_MODE:-}" ]; then
-    case "${INM_SELF_INSTALL_MODE}" in
-      1|system) mode="system" ;;
-      2|local|user) mode="user" ;;
-      3|project) mode="project" ;;
-    esac
+  if [[ -n "${cli_info[version]:-}" ]]; then
+    log info "[SELF] Version file: ${cli_info[version]}"
   fi
-  if [ "$mode" = "unknown" ]; then
-    local user_data_home="${XDG_DATA_HOME:-${HOME%/}/.local/share}"
-    user_data_home="${user_data_home%/}"
-    local default_user_dir="${user_data_home}/inmanage"
-    local default_project_dir=""
-    if [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
-        default_project_dir="${INM_BASE_DIRECTORY%/}/.inmanage/cli"
-    fi
-    if [[ "$root" == "/usr/local/share/inmanage" ]]; then
-      mode="system"
-    elif [[ -n "${HOME:-}" && "$root" == "$default_user_dir" ]]; then
-      mode="user"
-    elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$root" == "$default_project_dir" ]]; then
-      mode="project"
-    elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$root" == "${INM_BASE_DIRECTORY%/}"* ]]; then
-      mode="project"
-    fi
-  fi
-  log info "[SELF] Install mode: ${mode}"
+
+  log info "[SELF] Install mode: ${cli_info[install_mode]:-unknown}"
   log info "[SELF] App versions: run 'inm core versions'"
 }
 
 # ---------------------------------------------------------------------
 # Legacy migration helpers
 # ---------------------------------------------------------------------
+
+# ---------------------------------------------------------------------
+# legacy_is_interactive()
+# Check if a TTY is available for prompts.
+# Consumes: tty availability.
+# Computes: interactive state.
+# Returns: 0 if interactive, 1 otherwise.
+# ---------------------------------------------------------------------
 legacy_is_interactive() {
   [[ -t 0 && -t 1 ]]
 }
 
+# ---------------------------------------------------------------------
+# legacy_resolve_path()
+# Resolve a path for legacy migration.
+# Consumes: args: target; deps: resolve_script_path/realpath.
+# Computes: resolved path.
+# Returns: prints resolved path.
+# ---------------------------------------------------------------------
 legacy_resolve_path() {
   local target="$1"
-  if declare -F resolve_script_path >/dev/null 2>&1; then
-    resolve_script_path "$target" 2>/dev/null && return
-  fi
+  resolve_script_path "$target" 2>/dev/null && return
   if command -v realpath >/dev/null 2>&1; then
     realpath "$target" 2>/dev/null && return
   fi
   printf "%s" "$target"
 }
 
+# ---------------------------------------------------------------------
+# legacy_backup_dir()
+# Compute the legacy backup directory path.
+# Consumes: args: base_dir; env: INM_CONFIG_ROOT.
+# Computes: backup dir path.
+# Returns: prints backup directory.
+# ---------------------------------------------------------------------
 legacy_backup_dir() {
   local base_dir="$1"
   local legacy_dir="${INM_CONFIG_ROOT:-.inmanage}"
@@ -655,6 +700,13 @@ legacy_backup_dir() {
   printf "%s" "$legacy_dir"
 }
 
+# ---------------------------------------------------------------------
+# legacy_backup_path()
+# Move or archive a legacy path into the backup directory.
+# Consumes: args: path, base_dir; deps: safe_move_or_copy_and_clean.
+# Computes: archive destination.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
 legacy_backup_path() {
   local path="$1"
   local base_dir="$2"
@@ -671,20 +723,20 @@ legacy_backup_path() {
     return 0
   fi
 
-  if declare -F safe_move_or_copy_and_clean >/dev/null 2>&1; then
-    if safe_move_or_copy_and_clean "$path" "$dest" move; then
-      return 0
-    fi
-  else
-    if mv "$path" "$dest" 2>/dev/null; then
-      log info "[SELF] Archived legacy path: $path -> $dest"
-      return 0
-    fi
+  if safe_move_or_copy_and_clean "$path" "$dest" move; then
+    return 0
   fi
   log warn "[SELF] Failed to archive legacy path: $path"
   return 1
 }
 
+# ---------------------------------------------------------------------
+# legacy_link_path()
+# Create a legacy symlink pointing to the new script.
+# Consumes: args: target, new_script, base_dir; deps: legacy_backup_path.
+# Computes: symlink update.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
 legacy_link_path() {
   local target="$1"
   local new_script="$2"
@@ -705,6 +757,13 @@ legacy_link_path() {
   ln -sf "$new_script" "$target" && log info "[SELF] Legacy symlink: $target -> $new_script"
 }
 
+# ---------------------------------------------------------------------
+# legacy_warn_shell_alias()
+# Warn about legacy shell aliases/functions.
+# Consumes: env: HOME.
+# Computes: rc file scan.
+# Returns: 0 after logging.
+# ---------------------------------------------------------------------
 legacy_warn_shell_alias() {
   local rc_files=("$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile")
   local found=false
@@ -720,6 +779,13 @@ legacy_warn_shell_alias() {
   fi
 }
 
+# ---------------------------------------------------------------------
+# legacy_create_symlinks()
+# Create legacy compatibility symlinks.
+# Consumes: args: base_dir, new_script.
+# Computes: symlink creation.
+# Returns: 0 on completion.
+# ---------------------------------------------------------------------
 legacy_create_symlinks() {
   local base_dir="$1"
   local new_script="$2"
@@ -734,6 +800,13 @@ legacy_create_symlinks() {
   done
 }
 
+# ---------------------------------------------------------------------
+# maybe_migrate_legacy_cli()
+# Detect and migrate legacy CLI installs when applicable.
+# Consumes: args: original args; env: INM_CLI_COMPATIBILITY, NAMED_ARGS, INM_BASE_DIRECTORY.
+# Computes: migration flow and re-exec.
+# Returns: 0 if no migration, otherwise execs new CLI.
+# ---------------------------------------------------------------------
 maybe_migrate_legacy_cli() {
   local args=("$@")
   local compat="${INM_CLI_COMPATIBILITY:-}"
@@ -798,7 +871,7 @@ maybe_migrate_legacy_cli() {
   fi
 
   if [[ "$do_migrate" != true ]]; then
-    if declare -F env_set >/dev/null 2>&1 && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
+    if [ -f "${INM_SELF_ENV_FILE:-}" ]; then
       env_set cli "INM_CLI_COMPATIBILITY=\"legacy\"" >/dev/null 2>&1 || true
     fi
     log info "[SELF] Staying on legacy bootstrap. To migrate later: inmanage self install"
@@ -821,7 +894,7 @@ maybe_migrate_legacy_cli() {
 
   legacy_create_symlinks "$base_dir" "$new_script"
 
-  if declare -F env_set >/dev/null 2>&1 && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
+  if [ -f "${INM_SELF_ENV_FILE:-}" ]; then
     env_set cli "INM_CLI_COMPATIBILITY=\"ultron\"" >/dev/null 2>&1 || true
   fi
   export INM_CLI_COMPATIBILITY="ultron"

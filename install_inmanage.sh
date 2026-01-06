@@ -15,6 +15,7 @@ INSTALL_OWNER="${INSTALL_OWNER:-}"
 INSTALL_PERMS="${INSTALL_PERMS:-}"
 SOURCE_DIR="${SOURCE_DIR:-}"
 RUN_USER="${RUN_USER:-${RUN_AS_USER:-}}"
+DEBUG_FLAG="${DEBUG_FLAG:-false}"
 TMP_DIR=""
 
 log() {
@@ -41,6 +42,7 @@ Options:
   --source PATH   Use an existing checkout at PATH instead of git cloning.
   --install-owner USER:GROUP  Set ownership on the install directory (system installs).
   --install-perms DIR:FILE    Set permissions on the install directory (e.g. 775:664).
+  --debug         Enable verbose installer output.
 
 Examples:
   curl -fsSL ${REPO_URL%.*}/raw/${BRANCH}/install_inmanage.sh | bash
@@ -67,6 +69,7 @@ parse_args() {
       --branch) BRANCH="$2"; shift 2 ;;
       --source=*) SOURCE_DIR="${1#*=}"; shift ;;
       --source) SOURCE_DIR="$2"; shift 2 ;;
+      --debug) DEBUG_FLAG=true; shift ;;
       -h|--help) usage; exit 0 ;;
       *) log ERR "Unknown arg: $1"; usage; exit 1 ;;
     esac
@@ -128,6 +131,7 @@ run_self_install() {
   [[ -n "$INSTALL_OWNER" ]] && args+=("--install-owner=$INSTALL_OWNER")
   [[ -n "$INSTALL_PERMS" ]] && args+=("--install-perms=$INSTALL_PERMS")
   [[ -n "$RUN_USER" ]] && args+=("--run-user=$RUN_USER")
+  [[ "$DEBUG_FLAG" == true ]] && args+=("--debug")
 
   log INFO "Bootstrap source: $SOURCE_DIR"
   log INFO "Branch: $BRANCH"

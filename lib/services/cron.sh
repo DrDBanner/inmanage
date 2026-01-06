@@ -6,19 +6,37 @@ __SERVICE_CRON_LOADED=1
 
 # ---------------------------------------------------------------------
 # install_cronjob()
+# Install cron jobs for scheduler/backup/heartbeat.
+# Consumes: args: user/jobs/mode/backup_time/heartbeat_time; env: INM_ENFORCED_USER.
+# Computes: cron.d or user crontab entries.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 install_cronjob() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
         log info "[DRY-RUN] Skipping cron installation."
         return 0
     fi
+    # shellcheck disable=SC2034
+    # shellcheck disable=SC2034
+    # shellcheck disable=SC2034
     declare -A args
-    parse_named_args args "$@"
+    local -a normalized_args=()
+    local arg
+    for arg in "$@"; do
+        if [[ "$arg" == --* ]]; then
+            normalized_args+=("$arg")
+        elif [[ "$arg" == *=* ]]; then
+            normalized_args+=("--$arg")
+        else
+            normalized_args+=("$arg")
+        fi
+    done
+    parse_named_args args "${normalized_args[@]}"
 
     local user
     user="$(args_get args "${INM_ENFORCED_USER:-}" user)"
     local jobs_raw
-    jobs_raw="$(args_get args "both" jobs cron_jobs)"
+    jobs_raw="$(args_get args "essential" jobs cron_jobs)"
     local create_test_job
     create_test_job="$(args_get args "false" create_test_job)"
     local cron_file="/etc/cron.d/invoiceninja"
@@ -251,9 +269,7 @@ install_cronjob() {
         printf "%s" "${1//\'/\'\\\'\'}"
     }
     local cli_cmd=""
-    if declare -F resolve_cli_command_path >/dev/null 2>&1; then
-        cli_cmd="$(resolve_cli_command_path)" || cli_cmd=""
-    fi
+    cli_cmd="$(resolve_cli_command_path)" || cli_cmd=""
     if [[ -z "$cli_cmd" ]]; then
         cli_cmd="inmanage"
         log warn "[CRON] Could not resolve CLI path; falling back to '${cli_cmd}' (PATH-dependent)."
@@ -304,23 +320,33 @@ install_cronjob() {
         local tmpclean="${tmpfile}.clean"
         local home_cronfile="${HOME:-}/cronfile"
         local use_home_cronfile=false
-        if [[ -f "$home_cronfile" ]]; then
+        local home_cronfile_writable=false
+        if [[ -f "$home_cronfile" && -w "$home_cronfile" ]]; then
+            home_cronfile_writable=true
+        fi
+
+        local crontab_has_entries=false
+        if crontab -l >/dev/null 2>&1; then
+            if ! crontab -l > "$tmpfile" 2>/dev/null; then
+                log warn "[CRON] Failed to read existing user crontab; starting fresh."
+                : > "$tmpfile"
+            fi
+        else
+            : > "$tmpfile"
+        fi
+        if [[ -s "$tmpfile" ]]; then
+            crontab_has_entries=true
+        fi
+
+        if [[ "$crontab_has_entries" != true && -f "$home_cronfile" ]]; then
             if cp "$home_cronfile" "$tmpfile" 2>/dev/null; then
                 use_home_cronfile=true
                 log info "[CRON] Using existing cronfile: $home_cronfile"
             else
-                log warn "[CRON] Failed to read ${home_cronfile}; falling back to user crontab."
+                log warn "[CRON] Failed to read ${home_cronfile}; continuing with user crontab."
             fi
-        fi
-        if [[ "$use_home_cronfile" != true ]]; then
-            if crontab -l >/dev/null 2>&1; then
-                if ! crontab -l > "$tmpfile" 2>/dev/null; then
-                    log warn "[CRON] Failed to read existing user crontab; starting fresh."
-                    : > "$tmpfile"
-                fi
-            else
-                : > "$tmpfile"
-            fi
+        elif [[ -f "$home_cronfile" && "$crontab_has_entries" == true ]]; then
+            log debug "[CRON] User crontab has entries; ignoring existing cronfile: $home_cronfile"
         fi
         if ! awk 'BEGIN{skip=0} /^# INMANAGE CRON BEGIN/{skip=1; next} /^# INMANAGE CRON END/{skip=0; next} !skip{print}' \
             "$tmpfile" > "$tmpclean"; then
@@ -363,8 +389,12 @@ install_cronjob() {
             INM_CRON_INSTALL_TARGET="crontab"
             log ok "[CRON] Installed cronjobs in user crontab"
             if [[ "$use_home_cronfile" == true ]]; then
-                cp "$tmpfile" "$home_cronfile" 2>/dev/null || \
-                    log warn "[CRON] Failed to update ${home_cronfile} after install."
+                if [[ "$home_cronfile_writable" == true ]]; then
+                    cp "$tmpfile" "$home_cronfile" 2>/dev/null || \
+                        log warn "[CRON] Failed to update ${home_cronfile} after install."
+                else
+                    log debug "[CRON] Cronfile not writable; skipping sync: ${home_cronfile}"
+                fi
             fi
         else
             log err "[CRON] Failed to write user crontab${crontab_out:+: $crontab_out}"
@@ -432,13 +462,32 @@ install_cronjob() {
 # ---------------------------------------------------------------------
 # uninstall_cronjob()
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# uninstall_cronjob()
+# Remove INmanage cron jobs.
+# Consumes: args: user/mode; env: INM_ENFORCED_USER.
+# Computes: cron file removal or crontab cleanup.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
 uninstall_cronjob() {
     if [[ "${DRY_RUN:-false}" == true ]]; then
         log info "[DRY-RUN] Skipping cron uninstall."
         return 0
     fi
+    # shellcheck disable=SC2034
     declare -A args
-    parse_named_args args "$@"
+    local -a normalized_args=()
+    local arg
+    for arg in "$@"; do
+        if [[ "$arg" == --* ]]; then
+            normalized_args+=("$arg")
+        elif [[ "$arg" == *=* ]]; then
+            normalized_args+=("--$arg")
+        else
+            normalized_args+=("$arg")
+        fi
+    done
+    parse_named_args args "${normalized_args[@]}"
 
     local cron_file="/etc/cron.d/invoiceninja"
     local cron_mode
@@ -614,6 +663,178 @@ uninstall_cronjob() {
             fi
         elif [[ -d "$cron_dir" ]]; then
             log info "[CRON] No cron file found at $cron_file."
+        fi
+    fi
+}
+
+# ---------------------------------------------------------------------
+# cron_emit_preflight()
+# Emit cron/scheduler status for preflight output.
+# Consumes: args: add_fn, enforced_user, current_user; env: INM_BASE_DIRECTORY/INM_INSTALLATION_PATH/INM_NOTIFY_*.
+# Computes: cron presence and job status lines.
+# Returns: 0 after emitting.
+# ---------------------------------------------------------------------
+cron_emit_preflight() {
+    local add_fn="$1"
+    local enforced_user="${2:-${INM_ENFORCED_USER:-}}"
+    local current_user="${3:-$(id -un 2>/dev/null || true)}"
+    local emit_fn=""
+    if [[ -n "$add_fn" ]] && declare -F "$add_fn" >/dev/null 2>&1; then
+        emit_fn="$add_fn"
+    fi
+    cron_emit() {
+        local status="$1"
+        local detail="$2"
+        if [[ -n "$emit_fn" ]]; then
+            "$emit_fn" "$status" "CRON" "$detail"
+        else
+            case "$status" in
+                OK) log info "[CRON] $detail" ;;
+                WARN) log warn "[CRON] $detail" ;;
+                ERR) log err "[CRON] $detail" ;;
+                INFO) log info "[CRON] $detail" ;;
+                *) log info "[CRON] $detail" ;;
+            esac
+        fi
+    }
+
+    local cron_running=false
+    if pgrep -x cron >/dev/null 2>&1 || pgrep -x crond >/dev/null 2>&1 || pgrep -x systemd >/dev/null 2>&1; then
+        cron_running=true
+    elif [[ -f /var/run/cron.pid || -f /var/run/crond.pid ]]; then
+        cron_running=true
+    elif command -v service >/dev/null 2>&1; then
+        if service -e 2>/dev/null | grep -Eq '/cron$'; then
+            cron_running=true
+        fi
+    fi
+    if [[ "$cron_running" == true ]]; then
+        cron_emit OK "Scheduler service present"
+    else
+        cron_emit WARN "No cron service detected"
+    fi
+
+    local cron_file="/etc/cron.d/invoiceninja"
+    local cron_lines=""
+    if command -v crontab >/dev/null 2>&1; then
+        if crontab -l >/dev/null 2>&1; then
+            cron_lines="$(crontab -l 2>/dev/null)"
+        fi
+        if [[ -n "$enforced_user" && "$enforced_user" != "$current_user" ]]; then
+            local enforced_cron=""
+            if [[ $EUID -eq 0 ]]; then
+                enforced_cron="$(crontab -l -u "$enforced_user" 2>/dev/null || true)"
+            elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+                enforced_cron="$(sudo -n crontab -l -u "$enforced_user" 2>/dev/null || true)"
+            fi
+            if [[ -n "$enforced_cron" ]]; then
+                cron_lines+=$'\n'"$enforced_cron"
+            fi
+        fi
+    fi
+    if [[ -r "$cron_file" ]]; then
+        cron_lines+=$'\n'"$(cat "$cron_file")"
+    fi
+    local home_cronfile="${HOME:-}/cronfile"
+    if [[ -r "$home_cronfile" ]]; then
+        cron_lines+=$'\n'"$(cat "$home_cronfile")"
+    fi
+    if [[ -n "$enforced_user" && "$enforced_user" != "$current_user" ]]; then
+        local enforced_home=""
+        if command -v getent >/dev/null 2>&1; then
+            enforced_home="$(getent passwd "$enforced_user" 2>/dev/null | cut -d: -f6)"
+        fi
+        if [[ -z "$enforced_home" ]]; then
+            enforced_home="$(eval echo "~$enforced_user" 2>/dev/null || true)"
+        fi
+        if [[ -n "$enforced_home" && "$enforced_home" != "~$enforced_user" ]]; then
+            local enforced_cronfile="${enforced_home%/}/cronfile"
+            if [[ -r "$enforced_cronfile" ]]; then
+                cron_lines+=$'\n'"$(cat "$enforced_cronfile")"
+            fi
+        fi
+    fi
+
+    local cron_scope="$cron_lines"
+    local base_clean="${INM_BASE_DIRECTORY%/}"
+    local app_clean="${INM_INSTALLATION_PATH%/}"
+    if [ -n "$base_clean" ] || [ -n "$app_clean" ]; then
+        local base_re="" app_re="" scope_re=""
+        [ -n "$base_clean" ] && base_re="$(escape_regex "$base_clean")"
+        [ -n "$app_clean" ] && app_re="$(escape_regex "$app_clean")"
+        if [ -n "$base_re" ] && [ -n "$app_re" ]; then
+            scope_re="${base_re}|${app_re}"
+        else
+            scope_re="${base_re}${app_re}"
+        fi
+        if [ -n "$scope_re" ]; then
+            cron_scope="$(printf "%s\n" "$cron_lines" | grep -E "$scope_re" || true)"
+        fi
+    fi
+
+    local scheduler_work_running=false
+    if command -v pgrep >/dev/null 2>&1; then
+        pgrep -f "artisan schedule:work" >/dev/null 2>&1 && scheduler_work_running=true
+    elif command -v ps >/dev/null 2>&1; then
+        # shellcheck disable=SC2009
+        ps -ef 2>/dev/null | grep -q "[a]rtisan schedule:work" && scheduler_work_running=true
+    fi
+    if echo "$cron_scope" | grep -q "artisan schedule:run"; then
+        cron_emit OK "artisan schedule:run present"
+    elif [[ "$scheduler_work_running" == true ]]; then
+        cron_emit OK "artisan scheduler running (schedule:work)"
+    else
+        cron_emit WARN "artisan schedule missing; run: inm core cron install --jobs=artisan"
+    fi
+
+    # shellcheck disable=SC2034
+    PREFLIGHT_CONTAINER_HINT=false
+    if [ -f /proc/1/cgroup ] && grep -qiE 'docker|lxc|podman' /proc/1/cgroup; then
+        # shellcheck disable=SC2034
+        PREFLIGHT_CONTAINER_HINT=true
+    fi
+    cron_emit_missing() {
+        local label="$1"
+        local default_time="$2"
+        local install_cmd="$3"
+        if [[ "${PREFLIGHT_CONTAINER_HINT:-false}" == true ]]; then
+            cron_emit INFO "${label} cron not detected inside container; use host cron or a sidecar (default ${default_time})"
+        else
+            cron_emit WARN "${label} cron missing; run: ${install_cmd}"
+        fi
+    }
+
+    if echo "$cron_scope" | grep -Eq "(inmanage(\\.sh)?|inm(\\.sh)?) core backup"; then
+        local backup_line backup_time
+        backup_line="$(echo "$cron_scope" | grep -E "(inmanage(\\.sh)?|inm(\\.sh)?) core backup" | head -n1)"
+        backup_time="$(extract_cron_time "$backup_line")"
+        if [[ -n "$backup_time" ]]; then
+            cron_emit OK "backup cron present (${backup_time})"
+        else
+            cron_emit OK "backup cron present"
+        fi
+    else
+        local default_time="${INM_CRON_BACKUP_TIME:-03:24}"
+        cron_emit_missing "backup" "$default_time" "inm core cron install --jobs=backup --backup-time=${default_time}"
+    fi
+
+    if echo "$cron_scope" | grep -qE "notify-heartbeat"; then
+        local heartbeat_line heartbeat_time
+        heartbeat_line="$(echo "$cron_scope" | grep -E "notify-heartbeat" | head -n1)"
+        heartbeat_time="$(extract_cron_time "$heartbeat_line")"
+        if [[ -n "$heartbeat_time" ]]; then
+            cron_emit OK "heartbeat cron present (${heartbeat_time})"
+        else
+            cron_emit OK "heartbeat cron present"
+        fi
+    else
+        local hb_default_time="${INM_NOTIFY_HEARTBEAT_TIME:-06:00}"
+        local hb_enabled=false
+        args_is_true "${INM_NOTIFY_HEARTBEAT_ENABLED:-false}" && hb_enabled=true
+        if [[ "$hb_enabled" == true ]]; then
+            cron_emit_missing "heartbeat" "$hb_default_time" "inm core cron install --jobs=heartbeat --heartbeat-time=${hb_default_time}"
+        else
+            cron_emit INFO "heartbeat cron not enabled (set INM_NOTIFY_HEARTBEAT_ENABLED=true)"
         fi
     fi
 }

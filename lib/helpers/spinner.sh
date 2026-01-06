@@ -4,6 +4,13 @@
 [[ -n ${__HELPER_SPINNER_LOADED:-} ]] && return
 __HELPER_SPINNER_LOADED=1
 
+# ---------------------------------------------------------------------
+# spinner_can_run()
+# Decide if spinner output should be shown.
+# Consumes: env: INM_SPINNER, DEBUG; globals: NAMED_ARGS; tty availability.
+# Computes: boolean decision.
+# Returns: 0 when spinner is allowed, 1 otherwise.
+# ---------------------------------------------------------------------
 spinner_can_run() {
     [[ "${INM_SPINNER:-on}" =~ ^(0|off|false|no)$ ]] && return 1
     [[ "${DEBUG:-false}" == true ]] && return 1
@@ -14,6 +21,13 @@ spinner_can_run() {
     return 0
 }
 
+# ---------------------------------------------------------------------
+# spinner_select_tty()
+# Pick an output TTY for spinner rendering.
+# Consumes: tty availability (/dev/tty, stdout, stderr).
+# Computes: best TTY path.
+# Returns: prints TTY path to stdout.
+# ---------------------------------------------------------------------
 spinner_select_tty() {
     if [[ -w /dev/tty ]]; then
         printf "%s" "/dev/tty"
@@ -24,13 +38,20 @@ spinner_select_tty() {
     fi
 }
 
+# ---------------------------------------------------------------------
+# spinner_start()
+# Start the spinner background process.
+# Consumes: args: msg, style, clear_flag; env: INM_SPINNER_STYLE, INM_SPINNER_CLEAR; deps: safe_clear (optional).
+# Computes: spinner process and state.
+# Returns: 0 when started or skipped.
+# ---------------------------------------------------------------------
 spinner_start() {
     local msg="${1:-}"
     local style="${2:-${INM_SPINNER_STYLE:-spinner}}"
     local clear_flag="${3:-${INM_SPINNER_CLEAR:-}}"
     spinner_stop
     spinner_can_run || return 0
-    if [[ "$clear_flag" =~ ^(1|true|yes|on|clear)$ ]] && declare -F safe_clear >/dev/null 2>&1; then
+    if [[ "$clear_flag" =~ ^(1|true|yes|on|clear)$ ]]; then
         safe_clear
     fi
 
@@ -67,6 +88,13 @@ spinner_start() {
     SPINNER_PID=$!
 }
 
+# ---------------------------------------------------------------------
+# spinner_stop()
+# Stop the spinner and clear the line.
+# Consumes: args: final (optional); globals: SPINNER_*.
+# Computes: spinner cleanup.
+# Returns: 0 after cleanup.
+# ---------------------------------------------------------------------
 spinner_stop() {
     local final="${1:-}"
     if [ -n "${SPINNER_PID:-}" ] && kill -0 "$SPINNER_PID" 2>/dev/null; then
@@ -86,6 +114,13 @@ spinner_stop() {
     SPINNER_STYLE=""
 }
 
+# ---------------------------------------------------------------------
+# run_with_watchdog()
+# Run a command with timeout and heartbeat logging.
+# Consumes: args: timeout, heartbeat, msg, cmd...; deps: log (optional).
+# Computes: command execution with watchdog.
+# Returns: command exit code or 124 on timeout, 130 on interrupt.
+# ---------------------------------------------------------------------
 run_with_watchdog() {
     local timeout="$1"
     local heartbeat="$2"
@@ -117,11 +152,7 @@ run_with_watchdog() {
         fi
         if [[ "$heartbeat" =~ ^[0-9]+$ ]] && [ "$heartbeat" -gt 0 ]; then
             if [ $((now - last_beat)) -ge "$heartbeat" ]; then
-                if declare -F log >/dev/null 2>&1; then
-                    log info "[WAIT] ${msg:-Working}..."
-                else
-                    printf "%s [INFO] [WAIT] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "${msg:-Working}" >&2
-                fi
+                log info "[WAIT] ${msg:-Working}..."
                 last_beat="$now"
             fi
         fi
@@ -142,11 +173,7 @@ run_with_watchdog() {
         rc=130
     elif [ "$timed_out" = true ]; then
         wait "$cmd_pid" 2>/dev/null || true
-        if declare -F log >/dev/null 2>&1; then
-            log err "[TIMEOUT] ${msg:-Command} exceeded ${timeout}s; aborted."
-        else
-            printf "%s [ERR] [TIMEOUT] %s exceeded %ss; aborted.\n" "$(date '+%Y-%m-%d %H:%M:%S')" "${msg:-Command}" "$timeout" >&2
-        fi
+        log err "[TIMEOUT] ${msg:-Command} exceeded ${timeout}s; aborted."
         rc=124
     else
         wait "$cmd_pid"
@@ -167,6 +194,13 @@ run_with_watchdog() {
     return $rc
 }
 
+# ---------------------------------------------------------------------
+# spinner_run()
+# Run a command with spinner and optional watchdog.
+# Consumes: args: msg, cmd...; env: INM_SPINNER_TIMEOUT, INM_SPINNER_HEARTBEAT.
+# Computes: spinner-wrapped command execution.
+# Returns: command exit code.
+# ---------------------------------------------------------------------
 spinner_run() {
     local msg="${1:-}"
     shift
@@ -185,12 +219,54 @@ spinner_run() {
     return $rc
 }
 
+# ---------------------------------------------------------------------
+# spinner_run_optional()
+# Run a command with spinner if available.
+# Consumes: args: msg, cmd...; deps: spinner_run (optional).
+# Computes: conditional spinner execution.
+# Returns: command exit code.
+# ---------------------------------------------------------------------
 spinner_run_optional() {
     local msg="$1"
     shift
-    if declare -F spinner_run >/dev/null 2>&1; then
-        spinner_run "$msg" "$@"
-    else
-        "$@"
-    fi
+    spinner_run "$msg" "$@"
+}
+
+# ---------------------------------------------------------------------
+# spinner_run_quiet()
+# Run a command with spinner but no heartbeat logs.
+# Consumes: args: msg, cmd...; env: INM_SPINNER_HEARTBEAT.
+# Computes: spinner execution with heartbeat disabled.
+# Returns: command exit code.
+# ---------------------------------------------------------------------
+spinner_run_quiet() {
+    local msg="$1"
+    shift
+    INM_SPINNER_HEARTBEAT=0 spinner_run "$msg" "$@"
+}
+
+# ---------------------------------------------------------------------
+# spinner_run_mode()
+# Run a command with spinner behavior based on mode.
+# Consumes: args: mode, msg, cmd...; deps: spinner_run_optional/spinner_run_quiet.
+# Computes: command execution with optional spinner.
+# Returns: command exit code.
+# ---------------------------------------------------------------------
+spinner_run_mode() {
+    local mode="${1:-normal}"
+    local msg="$2"
+    shift 2 || true
+    case "$mode" in
+        quiet)
+            spinner_run_quiet "$msg" "$@"
+            return $?
+            ;;
+        normal|"")
+            spinner_run_optional "$msg" "$@"
+            return $?
+            ;;
+        none)
+            ;;
+    esac
+    "$@"
 }

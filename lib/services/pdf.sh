@@ -6,7 +6,10 @@ __SERVICE_PDF_LOADED=1
 
 # ---------------------------------------------------------------------
 # do_snappdf()
-# Handles Snappdf setup/download when PDF_GENERATOR=snappdf.
+# Ensure Snappdf Chromium is available when PDF_GENERATOR=snappdf.
+# Consumes: env: PDF_GENERATOR, INM_ENV_FILE, INM_INSTALLATION_PATH, INM_CACHE_*; deps: spinner_run_mode/expand_path_vars.
+# Computes: Chromium download or cache restore.
+# Returns: 0 on success or when skipped, non-zero on failure.
 # ---------------------------------------------------------------------
 do_snappdf() {
     local pdf_gen="${PDF_GENERATOR:-}"
@@ -99,19 +102,14 @@ do_snappdf() {
         fi
         if [[ -n "$cache_versions" && -d "$cache_versions" ]]; then
             log info "[SNAP] Restoring Chromium from cache: $cache_versions"
-            if declare -F safe_move_or_copy_and_clean >/dev/null 2>&1; then
-                safe_move_or_copy_and_clean "$cache_versions" "$snappdf_versions" copy || log warn "[SNAP] Failed to restore cached Chromium."
-            else
-                mkdir -p "$snappdf_versions" 2>/dev/null || true
-                rsync -a "$cache_versions/." "$snappdf_versions/" 2>/dev/null || log warn "[SNAP] Failed to restore cached Chromium."
-            fi
+            safe_move_or_copy_and_clean "$cache_versions" "$snappdf_versions" copy || log warn "[SNAP] Failed to restore cached Chromium."
             existing_bin="$(find_snappdf_chromium "$snappdf_versions")"
         fi
     fi
 
     if [[ -z "$existing_bin" && "$skip_download" != true ]]; then
         log debug "[SNAP] Downloading Chromium via snappdf CLI if needed."
-        if spinner_run "Downloading Chromium (snappdf)..." "$INM_PHP_EXECUTABLE" "$snappdf_cli" download >/dev/null 2>&1; then
+        if spinner_run_mode normal "Downloading Chromium (snappdf)..." "$INM_PHP_EXECUTABLE" "$snappdf_cli" download >/dev/null 2>&1; then
             log ok "[SNAP] Snappdf download finished."
             local cache_dir=""
             local cache_versions=""
@@ -119,11 +117,7 @@ do_snappdf() {
             if [[ -n "$cache_dir" ]]; then
                 cache_versions="${cache_dir%/}/versions"
                 mkdir -p "$cache_versions" 2>/dev/null || true
-                if declare -F safe_move_or_copy_and_clean >/dev/null 2>&1; then
-                    safe_move_or_copy_and_clean "$snappdf_versions" "$cache_versions" copy || log warn "[SNAP] Failed to update Chromium cache."
-                else
-                    rsync -a "$snappdf_versions/." "$cache_versions/" 2>/dev/null || log warn "[SNAP] Failed to update Chromium cache."
-                fi
+                safe_move_or_copy_and_clean "$snappdf_versions" "$cache_versions" copy || log warn "[SNAP] Failed to update Chromium cache."
             fi
         else
             log warn "[SNAP] Snappdf download failed."
@@ -219,4 +213,178 @@ PHP
         log warn "[SNAP] Snappdf render probe failed (no output). See https://github.com/beganovich/snappdf (use --debug for details)"
     fi
     return 1
+}
+
+# ---------------------------------------------------------------------
+# snappdf_warn_missing_libs()
+# Emit library hints for Snappdf probe failures.
+# Consumes: args: add_fn, chromium_path; tools: ldd; deps: log.
+# Returns: 0 always.
+# ---------------------------------------------------------------------
+snappdf_warn_missing_libs() {
+    local add_fn="$1"
+    local chromium_path="$2"
+    if [[ -z "$chromium_path" ]]; then
+        return 0
+    fi
+    if ! command -v ldd >/dev/null 2>&1; then
+        return 0
+    fi
+    local missing_libs
+    missing_libs=$(ldd "$chromium_path" 2>/dev/null | awk '/not found/ {print $1}' | xargs)
+    if [ -n "$missing_libs" ]; then
+        if [[ -n "$add_fn" ]]; then
+            "$add_fn" WARN "SNAPPDF" "Chromium missing libs: ${missing_libs}"
+        else
+            log warn "[SNAPPDF] Chromium missing libs: ${missing_libs}"
+        fi
+    fi
+}
+
+# ---------------------------------------------------------------------
+# snappdf_emit_preflight()
+# Run Snappdf preflight probe and emit results (WRITE).
+# Consumes: args: add_fn, fast, skip_snappdf; env: INM_ENV_FILE, INM_INSTALLATION_PATH, INM_CACHE_*; deps: preflight_pick_probe_dir/preflight_write_probe_file/expand_path_vars.
+# Returns: 0 after emitting results.
+# ---------------------------------------------------------------------
+snappdf_emit_preflight() {
+    local add_fn="$1"
+    local fast="${2:-false}"
+    local skip_snappdf="${3:-false}"
+
+    if [[ "$fast" == true || "$skip_snappdf" == true ]]; then
+        return 0
+    fi
+
+    local pdf_gen="${PDF_GENERATOR:-}"
+    if [ -z "$pdf_gen" ] && [ -f "${INM_ENV_FILE:-}" ]; then
+        pdf_gen=$(grep -E '^PDF_GENERATOR=' "$INM_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
+    fi
+    if [[ "${pdf_gen,,}" != "snappdf" ]]; then
+        "$add_fn" INFO "SNAPPDF" "PDF_GENERATOR not 'snappdf' (current: ${pdf_gen:-unset}); check skipped"
+        return 0
+    fi
+
+    local snap_dir="${INM_INSTALLATION_PATH%/}/vendor/beganovich/snappdf"
+    local snappdf_cli="${INM_INSTALLATION_PATH%/}/vendor/bin/snappdf"
+    if [ ! -d "$snap_dir" ]; then
+        "$add_fn" WARN "SNAPPDF" "Not present; run do_snappdf/update"
+        return 0
+    fi
+    if [ -z "${INM_INSTALLATION_PATH:-}" ] || [ ! -f "${INM_INSTALLATION_PATH%/}/vendor/autoload.php" ]; then
+        "$add_fn" WARN "SNAPPDF" "Vendor/autoload missing; cannot test snappdf"
+        return 0
+    fi
+    if [ ! -x "$snappdf_cli" ]; then
+        "$add_fn" WARN "SNAPPDF" "snappdf CLI missing: $snappdf_cli"
+    fi
+
+    local chromium_path=""
+    if [ -n "${SNAPPDF_EXECUTABLE_PATH:-}" ]; then
+        chromium_path="$SNAPPDF_EXECUTABLE_PATH"
+        if [ ! -x "$chromium_path" ]; then
+            "$add_fn" WARN "SNAPPDF" "SNAPPDF_EXECUTABLE_PATH not executable: $chromium_path"
+        else
+            "$add_fn" INFO "SNAPPDF" "Chromium path: $chromium_path (SNAPPDF_EXECUTABLE_PATH)"
+        fi
+    elif [ -n "${SNAPPDF_CHROMIUM_PATH:-}" ]; then
+        chromium_path="$SNAPPDF_CHROMIUM_PATH"
+        if [ ! -x "$chromium_path" ]; then
+            "$add_fn" WARN "SNAPPDF" "SNAPPDF_CHROMIUM_PATH not executable: $chromium_path"
+        else
+            "$add_fn" INFO "SNAPPDF" "Chromium path: $chromium_path (SNAPPDF_CHROMIUM_PATH)"
+        fi
+    else
+        chromium_path="$(find "$snap_dir/versions" -type f -perm -u+x '(' -name Chromium -o -name chrome -o -name chromium ')' 2>/dev/null | head -n1)"
+        if [ -n "$chromium_path" ]; then
+            "$add_fn" INFO "SNAPPDF" "Chromium path: $chromium_path"
+        fi
+    fi
+
+    if [[ "${SNAPPDF_SKIP_DOWNLOAD:-}" == "true" || "${SNAPPDF_SKIP_DOWNLOAD:-}" == "1" ]]; then
+        "$add_fn" INFO "SNAPPDF" "SNAPPDF_SKIP_DOWNLOAD=true"
+    fi
+
+    local probe_dir=""
+    local cache_local=""
+    local cache_global=""
+    if [ -n "${INM_CACHE_LOCAL_DIRECTORY:-}" ]; then
+        cache_local="$(expand_path_vars "$INM_CACHE_LOCAL_DIRECTORY")"
+    fi
+    if [ -n "${INM_CACHE_GLOBAL_DIRECTORY:-}" ]; then
+        cache_global="$(expand_path_vars "$INM_CACHE_GLOBAL_DIRECTORY")"
+    fi
+    preflight_pick_probe_dir probe_dir "$cache_local" "$cache_global" "/tmp"
+    if [[ -z "$probe_dir" ]]; then
+        "$add_fn" WARN "SNAPPDF" "Probe dir not writable; set INM_CACHE_LOCAL_DIRECTORY to a writable path."
+        return 0
+    fi
+
+    local tmp_pdf="${probe_dir%/}/snappdf_probe.pdf"
+    local php_exec="${INM_PHP_EXECUTABLE:-php}"
+    local probe_file=""
+    if ! preflight_write_probe_file "$probe_dir" "snappdf_probe" ".php" probe_file; then
+        "$add_fn" WARN "SNAPPDF" "Failed to create probe file; cannot verify snappdf."
+        return 0
+    fi
+    cat > "$probe_file" <<PHP
+<?php
+require '${INM_INSTALLATION_PATH%/}/vendor/autoload.php';
+if (class_exists('Beganovich\\Snappdf\\Snappdf')) {
+    try {
+        \$pdf = new Beganovich\\Snappdf\\Snappdf;
+        if (method_exists(\$pdf, 'setHtml')) {
+            \$pdf->setHtml('<h1>probe</h1>');
+        }
+        if (method_exists(\$pdf, 'save')) {
+            \$pdf->save('${tmp_pdf}');
+            if (is_file('${tmp_pdf}') && filesize('${tmp_pdf}') > 0) {
+                echo 'OK';
+            } else {
+                echo 'ERR:save did not create file';
+            }
+        } elseif (method_exists(\$pdf, 'generate')) {
+            \$out = \$pdf->generate();
+            if (!is_string(\$out) || \$out === '') {
+                echo 'ERR:generate returned empty';
+            } elseif (file_put_contents('${tmp_pdf}', \$out) === false) {
+                echo 'ERR:write failed';
+            } else {
+                echo 'OK';
+            }
+        } else {
+            echo 'ERR:No save/generate method';
+        }
+    } catch (Throwable \$e) {
+        echo 'ERR:' . \$e->getMessage();
+    }
+} else {
+    echo 'ERR:Snappdf class not found';
+}
+PHP
+    local php_probe=""
+    if [[ "${DEBUG:-false}" == true ]]; then
+        php_probe=$("$php_exec" "$probe_file" 2>&1 || true)
+    else
+        php_probe=$("$php_exec" "$probe_file" 2>/dev/null || true)
+    fi
+    log debug "[SNAPPDF] Probe output: ${php_probe:-<empty>}"
+    rm -f "$probe_file" 2>/dev/null || true
+
+    if echo "$php_probe" | grep -q "^OK"; then
+        if [ -s "$tmp_pdf" ]; then
+            "$add_fn" OK "SNAPPDF" "Render ok (probe at ${tmp_pdf})"
+            rm -f "$tmp_pdf"
+        else
+            "$add_fn" WARN "SNAPPDF" "Probe returned OK but output missing (probe dir writable: ${probe_dir}). See https://github.com/beganovich/snappdf (use --debug for details)"
+            snappdf_warn_missing_libs "$add_fn" "$chromium_path"
+        fi
+    elif [[ "$php_probe" == ERR:* ]]; then
+        "$add_fn" WARN "SNAPPDF" "Render failed (${php_probe}). See https://github.com/beganovich/snappdf (use --debug for details)"
+        snappdf_warn_missing_libs "$add_fn" "$chromium_path"
+    else
+        "$add_fn" WARN "SNAPPDF" "Render failed (no output). See https://github.com/beganovich/snappdf (use --debug for details)"
+        snappdf_warn_missing_libs "$add_fn" "$chromium_path"
+    fi
+    rm -f "$tmp_pdf" 2>/dev/null || true
 }

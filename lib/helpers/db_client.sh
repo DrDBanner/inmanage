@@ -6,11 +6,10 @@ __HELPER_DB_CLIENT_LOADED=1
 
 # ---------------------------------------------------------------------
 # select_db_client()
-# Picks a MySQL-compatible client available on the system.
-# Args:
-#   $1 = allow_prompt (true/false)
-#   $2 = db_config_present (true/false)
-# Outputs: mysql|mariadb|"" (empty if none)
+# Pick a MySQL-compatible client available on the system.
+# Consumes: args: allow_prompt, db_config_present; env: INM_DB_CLIENT; deps: prompt_var.
+# Computes: mysql/mariadb selection.
+# Returns: prints client name or empty string.
 # ---------------------------------------------------------------------
 select_db_client() {
     local allow_prompt="${1:-false}"
@@ -53,10 +52,10 @@ select_db_client() {
 
 # ---------------------------------------------------------------------
 # select_db_dump()
-# Picks a MySQL-compatible dump tool.
-# Args:
-#   $1 = db_client (optional)
-# Outputs: mysqldump|mariadb-dump|"" (empty if none)
+# Pick a MySQL-compatible dump tool.
+# Consumes: args: db_client.
+# Computes: dump binary selection.
+# Returns: prints dump tool name or empty string.
 # ---------------------------------------------------------------------
 select_db_dump() {
     local db_client="${1:-}"

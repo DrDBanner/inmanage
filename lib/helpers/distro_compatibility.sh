@@ -6,7 +6,10 @@ __HELPER_COMPAT_LOADED=1
 
 # ---------------------------------------------------------------------
 # compat_init()
-# Detects distro traits and sets compatibility defaults.
+# Detect distro traits and set compatibility defaults.
+# Consumes: /etc/os-release, uname, tar/sed/sha256/sudo availability.
+# Computes: INM_OS_ID, INM_OS_VERSION, INM_SED_EXT_FLAG, INM_SHA256_MODE, INM_TAR_EXTRACT_FLAGS, INM_SUDO_BIN.
+# Returns: 0 after initialization.
 # ---------------------------------------------------------------------
 compat_init() {
     [[ -n ${__INM_COMPAT_INITIALIZED:-} ]] && return 0
@@ -71,6 +74,13 @@ compat_init() {
     fi
 }
 
+# ---------------------------------------------------------------------
+# compat_compute_sha256()
+# Compute a SHA256 hash using the available tool.
+# Consumes: args: file; env: INM_SHA256_MODE.
+# Computes: SHA256 checksum.
+# Returns: prints checksum or non-zero on failure.
+# ---------------------------------------------------------------------
 compat_compute_sha256() {
     local file="$1"
     case "$INM_SHA256_MODE" in
@@ -81,6 +91,13 @@ compat_compute_sha256() {
     esac
 }
 
+# ---------------------------------------------------------------------
+# compat_write_sha256_file()
+# Write a .sha256 file for a given file.
+# Consumes: args: file, out (optional); deps: compat_compute_sha256.
+# Computes: checksum file content.
+# Returns: 0 on success, 1 on failure.
+# ---------------------------------------------------------------------
 compat_write_sha256_file() {
     local file="$1"
     local out="${2:-${file}.sha256}"

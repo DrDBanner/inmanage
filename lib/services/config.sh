@@ -5,7 +5,11 @@
 __SERVICE_CONFIG_LOADED=1
 
 # ---------------------------------------------------------------------
-# write_config_setting()
+# _config_escape_value()
+# Escape a config value for inclusion in .env files.
+# Consumes: args: value.
+# Computes: escaped value string.
+# Returns: prints escaped value to stdout.
 # ---------------------------------------------------------------------
 _config_escape_value() {
     local value="$1"
@@ -18,6 +22,13 @@ _config_escape_value() {
     printf "%s" "$out"
 }
 
+# ---------------------------------------------------------------------
+# write_config_setting()
+# Write a single config key/value to INM_SELF_ENV_FILE.
+# Consumes: args: key; globals: default_settings/default_inline_comments; env: INM_SELF_ENV_FILE.
+# Computes: rendered config line.
+# Returns: 0 after writing.
+# ---------------------------------------------------------------------
 write_config_setting() {
     local key="$1"
     local value="${default_settings[$key]}"
@@ -47,6 +58,10 @@ write_config_setting() {
 
 # ---------------------------------------------------------------------
 # write_config_defaults()
+# Write all default settings into INM_SELF_ENV_FILE.
+# Consumes: globals: default_settings/default_settings_order.
+# Computes: ordered config output.
+# Returns: 0 after writing.
 # ---------------------------------------------------------------------
 write_config_defaults() {
     local key
@@ -77,6 +92,10 @@ write_config_defaults() {
 
 # ---------------------------------------------------------------------
 # persist_derived_config()
+# Persist derived defaults to a config file when enabled.
+# Consumes: env: INM_SELF_ENV_FILE, INM_DEFAULT_SELF_ENV_FILE, INM_CLI_ENV_MODE; globals: NAMED_ARGS.
+# Computes: config file creation and defaults write.
+# Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 persist_derived_config() {
     log debug "[PDC] Attempting to persist default configuration"
@@ -112,13 +131,21 @@ persist_derived_config() {
         echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$INM_SELF_ENV_FILE"
     fi
 
-    chmod 644 "$INM_SELF_ENV_FILE" 2>/dev/null
+    local cli_env_mode="${INM_CLI_ENV_MODE:-600}"
+    chmod "$cli_env_mode" "$INM_SELF_ENV_FILE" 2>/dev/null
     log ok "[PDC] Config persisted successfully"
     warn_cli_config_owner_mismatch "$INM_SELF_ENV_FILE"
 
     return 0
 }
 
+# ---------------------------------------------------------------------
+# _config_read_value()
+# Read a key value from a config file without eval.
+# Consumes: args: key, file.
+# Computes: raw value from file.
+# Returns: prints value or empty string.
+# ---------------------------------------------------------------------
 _config_read_value() {
     local key="$1"
     local file="$2"
@@ -133,6 +160,13 @@ _config_read_value() {
     printf "%s" "$val"
 }
 
+# ---------------------------------------------------------------------
+# config_expected_owner()
+# Determine expected owner/group from CLI config values.
+# Consumes: args: config_file; deps: _config_read_value.
+# Computes: expected owner:group string.
+# Returns: prints owner:group or empty string.
+# ---------------------------------------------------------------------
 config_expected_owner() {
     local config_file="$1"
     local user group
@@ -148,6 +182,13 @@ config_expected_owner() {
     printf "%s:%s" "$user" "$group"
 }
 
+# ---------------------------------------------------------------------
+# warn_cli_config_owner_mismatch()
+# Warn when CLI config file owner differs from expected.
+# Consumes: args: config_file; deps: config_expected_owner/_fs_get_owner.
+# Computes: ownership mismatch message.
+# Returns: 0 after check.
+# ---------------------------------------------------------------------
 warn_cli_config_owner_mismatch() {
     local config_file="$1"
     if [[ -z "$config_file" || ! -f "$config_file" ]]; then
@@ -158,11 +199,7 @@ warn_cli_config_owner_mismatch() {
     if [[ -z "$expected" ]]; then
         return 0
     fi
-    if declare -F _fs_get_owner >/dev/null 2>&1; then
-        current="$(_fs_get_owner "$config_file")"
-    else
-        current="$(stat -c '%U:%G' "$config_file" 2>/dev/null || stat -f '%Su:%Sg' "$config_file" 2>/dev/null || echo "")"
-    fi
+    current="$(_fs_get_owner "$config_file")"
     if [[ -n "$current" && "$current" != "$expected" ]]; then
         log warn "[CFG] Config owner mismatch: $config_file (owner=$current, expected=$expected). Consider: sudo chown $expected \"$config_file\""
     fi
@@ -170,6 +207,10 @@ warn_cli_config_owner_mismatch() {
 
 # ---------------------------------------------------------------------
 # create_own_config()
+# Interactive wizard to create or recreate CLI config.
+# Consumes: env: INM_SELF_ENV_FILE/INM_DEFAULT_SELF_ENV_FILE; globals: NAMED_ARGS/prompt_order.
+# Computes: config file creation and prompts.
+# Returns: 0 on success, exits on fatal errors.
 # ---------------------------------------------------------------------
 create_own_config() {
     log debug "[COC] init."
@@ -251,7 +292,8 @@ create_own_config() {
         echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$INM_SELF_ENV_FILE"
     fi
 
-    chmod 644 "$INM_SELF_ENV_FILE" 2>/dev/null
+    local cli_env_mode="${INM_CLI_ENV_MODE:-600}"
+    chmod "$cli_env_mode" "$INM_SELF_ENV_FILE" 2>/dev/null
     log ok "$INM_SELF_ENV_FILE has been created and configured."
 
     load_env_file_raw "$INM_SELF_ENV_FILE"
@@ -266,21 +308,91 @@ create_own_config() {
     log debug "[COC] INM_ENV_EXAMPLE_FILE set to $INM_ENV_EXAMPLE_FILE"
 
     log info "[COC] Downloading .env.example for provisioning"
-    curl -sL ${CURL_AUTH_FLAG:+$CURL_AUTH_FLAG} \
-        "https://raw.githubusercontent.com/invoiceninja/invoiceninja/v5-stable/.env.example" \
-        -o "$INM_ENV_EXAMPLE_FILE" || {
+    local env_example_contents=""
+    local -a auth_args=()
+    gh_auth_args auth_args
+    http_fetch_with_args "https://raw.githubusercontent.com/invoiceninja/invoiceninja/v5-stable/.env.example" \
+        env_example_contents false -L "${auth_args[@]}" || {
             log err "[COC] Failed to download .env.example"
             exit 1
         }
+    printf "%s" "$env_example_contents" > "$INM_ENV_EXAMPLE_FILE"
 
     if [ -f "$INM_ENV_EXAMPLE_FILE" ]; then
-        local sed_expr='/^DB_PORT=/a DB_ELEVATED_USERNAME=\nDB_ELEVATED_PASSWORD='
-        if ! sed -i '' -e "$sed_expr" "$INM_ENV_EXAMPLE_FILE" 2>/dev/null; then
-            sed -i -e "$sed_expr" "$INM_ENV_EXAMPLE_FILE" 2>/dev/null || {
-                log warn "[COC] Failed to update DB_ELEVATED_* entries in $INM_ENV_EXAMPLE_FILE"
-            }
+        if ! grep -q '^DB_ELEVATED_USERNAME=' "$INM_ENV_EXAMPLE_FILE" 2>/dev/null; then
+            local sed_expr='/^DB_PORT=/a DB_ELEVATED_USERNAME=\nDB_ELEVATED_PASSWORD='
+            if ! sed -i '' -e "$sed_expr" "$INM_ENV_EXAMPLE_FILE" 2>/dev/null; then
+                sed -i -e "$sed_expr" "$INM_ENV_EXAMPLE_FILE" 2>/dev/null || {
+                    log warn "[COC] Failed to update DB_ELEVATED_* entries in $INM_ENV_EXAMPLE_FILE"
+                }
+            fi
         fi
     fi
 
     check_provision_file
+}
+
+# ---------------------------------------------------------------------
+# spawn_cli_config()
+# Create a CLI config file from defaults and --INM_* overrides.
+# Consumes: NAMED_ARGS (INM_* keys, config, force); defaults from core config.
+# Computes: config file on disk.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
+spawn_cli_config() {
+    local target="${NAMED_ARGS[config]:-${INM_SELF_ENV_FILE:-$INM_DEFAULT_SELF_ENV_FILE}}"
+    local force="${NAMED_ARGS[force]:-false}"
+    local target_dir
+    target_dir="$(dirname "$target")"
+
+    if [[ -f "$target" && "$force" != true ]]; then
+        log err "[CFG] Config already exists: $target (use --force to overwrite)."
+        return 1
+    fi
+    mkdir -p "$target_dir" 2>/dev/null || {
+        log err "[CFG] Could not create config target directory: $target_dir"
+        return 1
+    }
+    : > "$target" 2>/dev/null || {
+        log err "[CFG] Failed to create config file: $target"
+        return 1
+    }
+
+    local prev_env_file="${INM_SELF_ENV_FILE:-}"
+    INM_SELF_ENV_FILE="$target"
+
+    local -A saved_defaults=()
+    local -a extra_keys=()
+    local key
+    for key in "${!NAMED_ARGS[@]}"; do
+        [[ "$key" == INM_* ]] || continue
+        if [[ -n "${default_settings[$key]+_}" ]]; then
+            saved_defaults["$key"]="${default_settings[$key]}"
+            default_settings["$key"]="${NAMED_ARGS[$key]}"
+        else
+            extra_keys+=("$key")
+        fi
+    done
+
+    write_config_defaults
+    if ! grep -q "^INM_CLI_COMPATIBILITY=" "$INM_SELF_ENV_FILE"; then
+        echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$INM_SELF_ENV_FILE"
+    fi
+
+    for key in "${extra_keys[@]}"; do
+        local escaped
+        escaped="$(_config_escape_value "${NAMED_ARGS[$key]}")"
+        printf '%s="%s"\n' "$key" "$escaped" >> "$INM_SELF_ENV_FILE"
+    done
+
+    for key in "${!saved_defaults[@]}"; do
+        default_settings["$key"]="${saved_defaults[$key]}"
+    done
+
+    local cli_env_mode="${INM_CLI_ENV_MODE:-600}"
+    chmod "$cli_env_mode" "$INM_SELF_ENV_FILE" 2>/dev/null
+    log ok "[CFG] Config written: $INM_SELF_ENV_FILE"
+    warn_cli_config_owner_mismatch "$INM_SELF_ENV_FILE"
+    INM_SELF_ENV_FILE="$prev_env_file"
+    return 0
 }
