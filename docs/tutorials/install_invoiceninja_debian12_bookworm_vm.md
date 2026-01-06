@@ -1,6 +1,8 @@
 # Installation Guide: Invoice Ninja on a Debian 12.xx VM
 
-You'll learn how to install Invoice Ninja on a Debian 12.xx VM from scratch including everything and extended with a helper script for fast install, backups, and updates. It takes you about 5 to 15 minutes depending on your experience level.
+You'll learn how to install Invoice Ninja on a Debian 12.xx VM from scratch, including web server, database, and the INmanage CLI for fast installs, backups, and updates. It takes you about 5 to 15 minutes depending on your experience level.
+
+This guide uses the INmanage convenience flow: a single `.env.provision` drives the install, `APP_KEY` is generated automatically, and cron/heartbeat are installed automatically when SMTP + notify settings are provided.
 
 *If you already have a pre-configured webserver and database, you can fast forward to [Invoice Ninja installation](#9-invoice-ninja-installation). This part is independent from Debian and can be applied to any machine, where the requirements are met.*
 
@@ -135,7 +137,7 @@ You can now proceed with the tutorial – jump to [4. Name resolution (DNS)](#4-
 
 On WSL1 I was not able to get php-fpm properly working. In order to fix that you need to switch to a TCP based listener. Fortunately I created a script for that. Note: You need that with WSL1 only.
 
-*Copy and paste the following into your terminal to create the patch script. Run it as root after setting up the webserver and database, but before installing Invoice Ninja with inmanage.*
+*Copy and paste the following into your terminal to create the patch script. Run it as root after setting up the webserver and database, but before installing Invoice Ninja with INmanage.*
 
 ```bash
 cat > patch_phpfpm_socket_wsl1.sh <<'EOF'
@@ -213,8 +215,8 @@ chmod +x patch_phpfpm_socket_wsl1.sh
 
 #### SNAPPDF on WSL1
 
-*Snappdf seems not to work on WSL 1 VM's*
-So, leave the variable in the .env file like this when you configure the provision file:
+*Snappdf seems not to work on WSL 1 VMs.*
+Set the variable in `.env.provision` before running the provisioned install:
 ```text
 PDF_GENERATOR=hosted_ninja
 ```
@@ -577,459 +579,123 @@ You may optionally run `mysql_secure_installation` to improve database security,
 Paste this to install other **mandatory** software:
 
 ```bash
-sudo apt install unzip git composer jq libxcomposite1 libxdamage1 libxrandr2 libxss1 libasound2 libnss3 libatk1.0-0 libatk-bridge2.0-0 libx11-xcb1 libxext6 libdrm2 libgbm1 libpango-1.0-0 libxshmfence1 libgtk-3-0 libcups2 libxfixes3 libglib2.0-0 libxcb1 libx11-6 libxrender1 libxcursor1 libxi6 libxtst6 fonts-liberation libappindicator3-1 libdbus-1-3 lsb-release xdg-utils wget curl ca-certificates gnupg xvfb -y
+sudo apt install unzip zip rsync git composer jq libxcomposite1 libxdamage1 libxrandr2 libxss1 libasound2 libnss3 libatk1.0-0 libatk-bridge2.0-0 libx11-xcb1 libxext6 libdrm2 libgbm1 libgbm-dev libpango-1.0-0 libxshmfence1 libxshmfence-dev libgtk-3-0 libcups2 libxfixes3 libglib2.0-0 libxcb1 libx11-6 libxrender1 libxcursor1 libxi6 libxtst6 fonts-liberation libappindicator3-1 libdbus-1-3 lsb-release xdg-utils wget curl ca-certificates gnupg xvfb -y
 ```
 
 ## 9. Invoice Ninja Installation
 
-### 9.1. Inmanage script installation
+### 9.1. Install INmanage CLI
 
-Previously you have successfully setup a webserver, a database, and installed some mandatory additional packages. Now the fun begins. Install the Inmanage CLI and bootstrap the project config + provision template:
+You already set up the web server and database. Now install the INmanage CLI:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash -s -- --mode system
-
-cd /var/www/billing.debian12vm.local
-sudo -u www-data inmanage core provision spawn
 ```
 
-The CLI setup prompts for the basic config (base directory, install dir, backup settings, etc.). You can go with the defaults by pressing [enter] each, except for `Include DB password in backup`. You answer with `Y` instead.
+The installer creates global symlinks (`inm`, `inmanage`) in `/usr/local/bin`.
 
-```text
-    _____   __                                       __
-   /  _/ | / /___ ___  ____ _____  ____ _____ ____  / /
-   / //  |/ / __ `__ \/ __ `/ __ \/ __ `/ __ `/ _ \/ /
- _/ // /|  / / / / / / /_/ / / / / /_/ / /_/ /  __/_/
-/___/_/ |_/_/ /_/ /_/\__,_/_/ /_/\__,_/\__, /\___(_)
-                                      /____/
-INVOICE NINJA - MANAGEMENT SCRIPT
-
-
-
-2025-07-16 13:32:31 [NOTE] [ENV] Project config file not found.
-2025-07-16 13:32:31 [INFO] [COC] Creating configuration in: /var/www/billing.debian12vm.local/.inmanage/.env.inmanage
-
-========== Install Wizard ==========
-
-2025-07-16 13:32:31 Just press [ENTER] to accept default values.
-
-BASE_DIRECTORY: This will contain your Invoice Ninja app directory (next step). It's not webserver's docroot. Define your desired location or keep.
-[/var/www/billing.debian12vm.local/] >
-
-INSTALLATION_DIRECTORY: Invoice Ninja App directory. The web-server usually serves from <INSTALLATION_DIRECTORY>/public. Define your desired location or keep.
-[./invoiceninja] >
-
-KEEP_BACKUPS: Backup retention? Set to 2 to keep 2 backups in the past at a time. Ensure enough disk space and keep the backup frequency in mind.
-[2] >
-
-FORCE_READ_DB_PW: Include DB password in CLI? (Y): Convenient, but may expose the password to other server users during runtime. (N): Assumes a secure .my.cnf file with credentials to avoid exposure.
-[N] > Y
-
-ENFORCED_USER: Correct setting helps to mitigate permission issues. Usually the webserver user. On shared hosting often your current user. If current is true, you can leave this empty.
-[www-data] >
-
-GitHub API credentials may be required on shared hosting. Use the format username:password or token:x-oauth. If provided, all curl commands will use these credentials;
-[] >
-
-2025-07-16 13:33:40 [OK] .inmanage/.env.inmanage has been created and configured.
- [INFO] [COC] Downloading .env.example for provisioning
-```
-
-Done. The CLI is installed and the project config is created.
-
-#### 9.1.1. CLI is ready
-
-The installer already created global symlinks (`inmanage`, `inm`) in `/usr/local/bin`.
-
-### 9.2. Inmanage script provision
-
-`core provision spawn` opens your editor automatically so you can edit the generated provision template right away. If you need to reopen it later:
+Pick the user that should own and run the app files. Common values are `www-data`, `nginx`, `apache`, or `httpd`. On shared hosting, use your login user (for example `username` or `web234355`). The commands below use `www-data`.
 
 ```bash
-sudo -u www-data nano .env.provision
+cd /var/www/billing.debian12vm.local
+sudo -u www-data inm                       # create CLI config
 ```
 
-Full [Provisioning Readme](https://github.com/DrDBanner/inmanage/#provisioned-invoice-ninja-installation)
+When prompted, accept the defaults and set **FORCE_READ_DB_PW** to `Y` (read DB password from the app `.env`).
 
-Mandatory settings to adjust:
+### 9.2. Provisioned install (single file)
+
+Run the installer and pick **provisioned** when asked. If no provision file exists, it will offer to create one and open it in your editor. After you save and exit, the install continues automatically.
+
+```bash
+sudo -u www-data inm core install --force
+```
+
+If a provision file already exists, you can choose to use it or create a fresh one. The editor opens only when a new file is created.
+
+Non-interactive automation (no editor): create `.inmanage/.env.provision` first, then run:
+
+```bash
+sudo -u www-data inm core install --provision --force
+```
+
+Notes:
+- We use `--force` because the nginx setup already created the app directory. This acknowledges the destructive nature of a provisioned install.
+- `APP_KEY` is generated automatically; do not set it in `.env.provision`.
+- You can put any `INM_*` keys into `.env.provision`. They are copied into `.inmanage/.env.inmanage` and stripped from the app `.env`. See the full CLI config reference in the main docs: <https://github.com/DrDBanner/inmanage/blob/main/docs/index.md#cli-config-reference-envinmanage>
+- A health check runs automatically during installation.
+
+Minimal `.env.provision` example:
 
 ```env
 APP_URL=https://billing.debian12vm.local
-DB_PASSWORD=yourNewInvoiceninjaDBPassword
+DB_HOST=localhost
+DB_PORT=3306
+DB_DATABASE=ninja
+DB_USERNAME=ninja
+DB_PASSWORD=change-me
+
 DB_ELEVATED_USERNAME=root
 DB_ELEVATED_PASSWORD=YOUR_PASSWORD3556757
-PDF_GENERATOR=snappdf
-PDF_PAGE_NUMBER_X=0
-PDF_PAGE_NUMBER_Y=-6
-MAIL_HOST=smtp.yourmailhost.com
+
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.example.com
 MAIL_PORT=587
-MAIL_USERNAME="your_email_address@yourmailhost.com"
-MAIL_PASSWORD="your_password_dont_forget_the_quotes!"
+MAIL_USERNAME=ops@example.com
+MAIL_PASSWORD=change-me
 MAIL_ENCRYPTION=tls
-MAIL_FROM_ADDRESS="your_email_address@yourmailhost.com"
-MAIL_FROM_NAME="Full Name With Double Quotes"
+MAIL_FROM_ADDRESS=ops@example.com
+MAIL_FROM_NAME=Billing
+
+INM_NOTIFY_ENABLED=true
+INM_NOTIFY_TARGETS=email
+INM_NOTIFY_EMAIL_TO=ops@example.com
+INM_NOTIFY_HEARTBEAT_ENABLED=true
+INM_NOTIFY_HEARTBEAT_LEVEL=WARN
+INM_NOTIFY_HEARTBEAT_TIME=06:00
 ```
 
-Optionally, you can set any additional configuration that's desired. You can find all options in the [Invoice Ninja Manual -.env variables](https://invoiceninja.github.io/en/env-variables/). Use [CTRL]+[X] to save an exit the `nano` editor once you are satisfied with your settings.
+If your MariaDB root user uses socket auth, set `DB_ELEVATED_PASSWORD=auth_socket` instead of a password and run the install with sudo.
 
-### 9.3. Install Invoice Ninja
+When you include valid `MAIL_*` SMTP settings and the minimum notification keys (`INM_NOTIFY_ENABLED`, `INM_NOTIFY_TARGETS`, `INM_NOTIFY_HEARTBEAT_ENABLED`, `INM_NOTIFY_HEARTBEAT_LEVEL`), the installer auto-installs the heartbeat cron job and sends a test mail. Otherwise, it installs only the essential cron jobs (artisan + backup).
 
-Previously you have installed the `inmanage` script and you have prepopulated a configuration for provisioning. Now it's time to start the installation procedure:
+After you confirm the install, you should see a "Setup Complete!" summary with the app URL and default admin credentials. When you are satisfied, delete the provision file because it contains secrets:
 
 ```bash
-inmanage core install --provision --force
+sudo -u www-data rm /var/www/billing.debian12vm.local/.inmanage/.env.provision
 ```
 
-The caution message is correct (*The path was already created to circumvent a webserver error.*) and you can easily enter `yes` in order to carry on.
-
-```text
-   _____   __                                       __
-   /  _/ | / /___ ___  ____ _____  ____ _____ ____  / /
-   / //  |/ / __ `__ \/ __ `/ __ \/ __ `/ __ `/ _ \/ /
- _/ // /|  / / / / / / /_/ / / / / /_/ / /_/ /  __/_/
-/___/_/ |_/_/ /_/ /_/\__,_/_/ /_/\__,_/\__, /\___(_)
-                                      /____/
-INVOICE NINJA - MANAGEMENT SCRIPT
-
-
-
-2025-07-16 13:39:30 [OK] Loaded settings from .inmanage/.env.inmanage.
-2025-07-16 13:39:30 [OK] Provision file loaded. Installation starts now.
- [INFO] Elevated SQL user root found in .inmanage/.env.provision.
-2025-07-16 13:39:30 [OK] Elevated credentials: Connection successful.
-ERROR 1049 (42000) at line 1: Unknown database 'ninja'
-2025-07-16 13:39:30 [WARN] Connection Possible. Database does not exist.
- [INFO] Trying to create database now.
-2025-07-16 13:39:30 [OK] Database and user created successfully. If they already existed, they were untouched. Privileges were granted.
- [INFO] Removed DB_ELEVATED_USERNAME and DB_ELEVATED_PASSWORD from .inmanage/.env.provision if they were there.
-2025-07-16 13:39:31 [WARN] Caution: Installation directory already exists! Current installation directory will get renamed. Proceed with installation? (yes/no):
-yes
-```
-
-*The created provision file gets automatically recognized. Time to relax. The heavy lifting is done.*
-
-```log
- [INFO] Installation starts now
- [INFO] Downloading Invoice Ninja version 5.12.8.
-2025-07-16 13:50:51 [OK] Download successful.
- [INFO] Unpacking tar
- [INFO] Generating Key
-
-   INFO  Application key set successfully.
-
-
-   INFO  Caching framework bootstrap, configuration, and metadata.
-
-  config ........................................................................................................... 125.51ms DONE
-  events ............................................................................................................. 2.92ms DONE
-  routes ........................................................................................................... 423.35ms DONE
-  views ................................................................................................................. 17s DONE
-
-
-   INFO  Application is already up.
-
-
-   INFO  Preparing database.
-
-  Creating migration table ......................................................................................... 100.38ms DONE
-
-   INFO  Loading stored database schemas.
-
-  database/schema/mysql-schema.sql ....................................................................................... 1s DONE
-
-   INFO  Running migrations.
-
-  2019_15_12_112000_create_elastic_migrations_table ................................................................. 38.56ms DONE
-  2024_10_08_034355_add_account_e_invoice_quota ..................................................................... 16.63ms DONE
-  2024_10_09_220533_invoice_gateway_fee ............................................................................. 15.53ms DONE
-  2024_10_11_151650_create_e_invoice_tokens_table ................................................................... 63.28ms DONE
-  2024_10_11_153311_add_e_invoicing_token ........................................................................... 13.82ms DONE
-  2024_10_14_214658_add_routing_id_to_vendors_table ................................................................. 43.22ms DONE
-  2024_10_18_211558_updated_currencies ............................................................................. 373.87ms DONE
-  2024_11_11_043923_kill_switch_licenses_table ...................................................................... 15.25ms DONE
-  2024_11_19_020259_add_entity_set_to_licenses_table ................................................................ 17.39ms DONE
-  2024_11_21_011625_add_e_invoicing_logs_table ...................................................................... 39.05ms DONE
-  2024_11_28_054808_add_referral_earning_column_to_users_table ...................................................... 14.97ms DONE
-  2024_12_18_023826_2024_12_18_enforce_tax_data_model ............................................................... 72.82ms DONE
-  2025_01_08_024611_2025_01_07_design_updates ....................................................................... 70.54ms DONE
-  2025_01_15_222249_2025_01_16_zim_currency_change ................................................................... 1.71ms DONE
-  2025_01_18_012550_2025_01_16_wst_currency .......................................................................... 1.46ms DONE
-  2025_01_22_013047_2025_01_22_add_verification_setting_to_gocardless ............................................... 54.12ms DONE
-  2025_02_12_000757_change_inr_currency_symbol ....................................................................... 3.67ms DONE
-  2025_02_12_035916_create_sync_column_for_payments ................................................................. 29.53ms DONE
-  2025_02_16_213917_add_e_invoice_column_to_recurring_invoices_table ................................................ 21.33ms DONE
-  2025_02_20_224129_entity_location_schema ......................................................................... 603.40ms DONE
-  2025_03_09_084919_add_payment_unapplied_pdf_variabels .............................................................. 5.18ms DONE
-  2025_03_11_044138_update_blockonomics_help_url ..................................................................... 0.85ms DONE
-  2025_03_13_073151_update_blockonomics .............................................................................. 0.64ms DONE
-  2025_03_21_032428_add_sync_column_for_quotes ...................................................................... 17.17ms DONE
-  2025_04_29_225412_add_guiler_currency .............................................................................. 1.39ms DONE
-  2025_05_14_035605_add_signature_key_to_auth_net .................................................................... 0.69ms DONE
-  2025_05_31_055839_add_docuninja_num_users ......................................................................... 14.46ms DONE
-  2025_06_02_233158_update_date_format_for_d_m_y .................................................................... 26.57ms DONE
-
-
-   INFO  Seeding database.
-
-Running DatabaseSeeder
-  Database\Seeders\ConstantsSeeder ....................................................................................... RUNNING
-  Database\Seeders\ConstantsSeeder ................................................................................... 151 ms DONE
-
-  Database\Seeders\PaymentLibrariesSeeder ................................................................................ RUNNING
-  Database\Seeders\PaymentLibrariesSeeder ............................................................................ 301 ms DONE
-
-  Database\Seeders\BanksSeeder ........................................................................................... RUNNING
-  Database\Seeders\BanksSeeder ....................................................................................... 845 ms DONE
-
-  Database\Seeders\CurrenciesSeeder ...................................................................................... RUNNING
-  Database\Seeders\CurrenciesSeeder .................................................................................. 258 ms DONE
-
-  Database\Seeders\LanguageSeeder ........................................................................................ RUNNING
-  Database\Seeders\LanguageSeeder .................................................................................... 158 ms DONE
-
-  Database\Seeders\CountriesSeeder ....................................................................................... RUNNING
-  Database\Seeders\CountriesSeeder ................................................................................... 417 ms DONE
-
-  Database\Seeders\IndustrySeeder ........................................................................................ RUNNING
-  Database\Seeders\IndustrySeeder ..................................................................................... 72 ms DONE
-
-  Database\Seeders\PaymentTypesSeeder .................................................................................... RUNNING
-  Database\Seeders\PaymentTypesSeeder ................................................................................. 59 ms DONE
-
-  Database\Seeders\GatewayTypesSeeder .................................................................................... RUNNING
-  Database\Seeders\GatewayTypesSeeder ................................................................................. 64 ms DONE
-
-  Database\Seeders\DateFormatsSeeder ..................................................................................... RUNNING
-  Database\Seeders\DateFormatsSeeder .................................................................................. 47 ms DONE
-
-  Database\Seeders\DesignSeeder .......................................................................................... RUNNING
-  Database\Seeders\DesignSeeder ...................................................................................... 365 ms DONE
-
-Wed, 16 Jul 2025 11:53:17 +0000 Create Single Account...
-
-========================================
-Setup Complete!
-
-Login: https://billing.debian12vm.local
-Username: admin@admin.com
-Password: admin
-========================================
-
-Open your browser at https://billing.debian12vm.local to access the application.
-The database and user are configured.
-
-It's a good time to make your first backup now!
-
-Cron installed (artisan + backup).
-
-dd@win81:/var/www/billing.debian12vm.local$
-
-```
-
-### 9.4. First Invoice Ninja Backup
-
-Remember? You can just enter:
+If you want to adjust the provision file later and re-run, reopen it with:
 
 ```bash
-inmanage core backup
+sudo -u www-data nano /var/www/billing.debian12vm.local/.inmanage/.env.provision
 ```
 
-The first backup in your hand.
+If you chose the wrong enforced user during first run, fix it like this:
 
-```text
-All required commands are available.
-Environment check starts.
-Self configuration found
-All settings are present in .inmanage/.env.inmanage.
-No provision.
-Proceeding without GH credentials authentication. If update fails, try to add credentials.
-Creating backup directory.
-Dumping database... Done.
-Compressing Data. This may take a while. Hang on...
-Cleaning up old backups.
-insgesamt 182068
-drwxr-xr-x 2 www-data www-data      4096  8. Jun 20:22 .
-drwxr-xr-x 6 www-data www-data      4096  8. Jun 20:22 ..
--rw-r--r-- 1 www-data www-data 186428310  8. Jun 20:22 InvoiceNinja_20250608_202223.tar.gz
+```bash
+sudo inm env set cli INM_ENFORCED_USER www-data
+sudo inm core health --fix-permissions --override-enforced-user
 ```
 
-Snappdf is handled during the install flow. Cronjobs are installed automatically during provisioned installs (unless you disabled them).
+### 9.3. First Invoice Ninja Backup
 
-### 9.5. Health check
+Run your first backup:
+
+```bash
+sudo -u www-data inm core backup
+```
+
+### 9.4. Health check
 
 Run a quick health check:
 
 ```bash
-inm core health
+sudo -u www-data inm core health
 ```
 
-Example output (sample data):
+Use `--compact` if you prefer a short section summary instead of the full table output.
 
-```text
-2025-12-28 09:41:50 [INFO] [HEALTH] Starting system checks
-
-== System ==
-Subject        | Status | Detail
---------------------------------
-System         | INFO   | Host: primary | OS: Ubuntu 24.04.2 LTS
-System         | INFO   | Kernel: 6.8.0-90-generic | Arch: x86_64 | CPU cores: 2 | RAM: 1.9G
-System         | INFO   | IPv4: 192.168.64.5
-System         | INFO   | IPv6: fd0b:91b3:161a:be12:5054:ff:fe34:4c5f
-System         | INFO   | Container: not detected
-
-== Filesystem ==
-Subject        | Status | Detail
---------------------------------
-Filesystem     | INFO   | avail:2.9G used:16G mount:/ (Disk @base)
-Filesystem     | OK     | Writable: /usr/share/nginx/local.invoiceninja.vm/ (Base dir)
-Filesystem     | OK     | Writable: /usr/share/nginx/local.invoiceninja.vm/./invoiceninja (App dir) (Size: 1.6G)
-Filesystem     | OK     | Writable: ./.backups (Backup dir) (Size: 371M)
-Filesystem     | INFO   | Not writable: /home/ubuntu/.inmanage/cache (Cache global) or set INM_CACHE_GLOBAL_DIRECTORY to an accessible path. (local cache writable; consider fixing global cache for shared use)
-Filesystem     | OK     | Writable: ./.cache (Cache local)
-
-== App ==
-Subject        | Status | Detail
---------------------------------
-App            | OK     | App structure looks complete at /usr/share/nginx/local.invoiceninja.vm/./invoiceninja
-App            | OK     | Languages loaded: 45
-
-== ENV CLI ==
-Subject        | Status | Detail
---------------------------------
-ENV CLI        | INFO   | INM_ENFORCED_USER=www-data
-ENV CLI        | INFO   | INM_BASE_DIRECTORY=/usr/share/nginx/local.invoiceninja.vm/
-ENV CLI        | INFO   | INM_INSTALLATION_DIRECTORY=./invoiceninja
-ENV CLI        | INFO   | INM_BACKUP_DIRECTORY=./.backups
-ENV CLI        | INFO   | INM_CACHE_GLOBAL_DIRECTORY=/home/ubuntu/.inmanage/cache
-ENV CLI        | INFO   | INM_CACHE_LOCAL_DIRECTORY=./.cache
-
-== ENV APP ==
-Subject        | Status | Detail
---------------------------------
-ENV APP        | INFO   | APP_NAME=InvoiceNinja
-ENV APP        | INFO   | APP_URL=https://billing.invoiceninja.local
-ENV APP        | INFO   | PDF_GENERATOR=snappdf
-ENV APP        | INFO   | APP_DEBUG=false
-
-== CLI ==
-Subject        | Status | Detail
---------------------------------
-CLI            | INFO   | CLI: /usr/local/share/inmanage
-CLI            | INFO   | Source: git checkout (branch=unknown commit=unknown)
-CLI            | INFO   | Install mode: system (switch with: inm self switch-mode)
-CLI            | INFO   | Newest file mtime: 2025-12-28 08:49:52 (lib/core/checks.sh)
-CLI            | INFO   | inmanage.sh modified: 2025-12-28 07:59:24
-
-== CLI Commands ==
-Subject        | Status | Detail
---------------------------------
-CLI Commands   | OK     | php
-CLI Commands   | OK     | git
-CLI Commands   | OK     | curl
-CLI Commands   | OK     | tar
-CLI Commands   | OK     | rsync
-CLI Commands   | OK     | zip
-CLI Commands   | OK     | unzip
-CLI Commands   | OK     | composer
-CLI Commands   | OK     | jq
-CLI Commands   | OK     | awk
-CLI Commands   | OK     | sed
-CLI Commands   | OK     | find
-CLI Commands   | OK     | xargs
-CLI Commands   | OK     | touch
-CLI Commands   | OK     | tee
-CLI Commands   | OK     | sha256sum
-CLI Commands   | OK     | DB client: mysql (both installed) (mysql + mariadb available)
-CLI Commands   | OK     | DB dump: mysqldump (mysqldump + mariadb-dump available)
-
-== Web Server ==
-Subject        | Status | Detail
---------------------------------
-Web Server     | INFO   | Nginx nginx/1.24.0 (Ubuntu)
-Web Server     | INFO   | php-fpm running
-Web Server     | INFO   | Port 80 open
-Web Server     | INFO   | Port 443 open
-
-== PHP CLI ==
-Subject        | Status | Detail
---------------------------------
-PHP CLI        | OK     | CLI 8.2.27
-PHP CLI        | INFO   | CLI ini: /etc/php/8.2/cli/php.ini
-PHP CLI        | OK     | >= 8.1
-PHP CLI        | OK     | memory_limit unlimited (-1)
-PHP CLI        | OK     | max_input_vars 5000
-PHP CLI        | OK     | OPcache enabled
-
-== PHP Web ==
-Subject        | Status | Detail
---------------------------------
-PHP Web        | INFO   | Version 8.2.27 (CLI 8.2.27)
-PHP Web        | INFO   | php.ini /etc/php/8.2/fpm/php.ini
-PHP Web        | INFO   | .user.ini <none>
-PHP Web        | INFO   | memory_limit 1G
-PHP Web        | INFO   | max_input_vars 10000
-PHP Web        | INFO   | OPcache enabled
-PHP Web        | INFO   | max_execution_time 30
-PHP Web        | INFO   | post_max_size 8M
-PHP Web        | INFO   | upload_max_filesize 2M
-
-== PHP Extensions ==
-Subject        | Status | Detail
---------------------------------
-PHP Extensions | OK     | pdo_mysql
-PHP Extensions | OK     | openssl
-PHP Extensions | OK     | tokenizer
-PHP Extensions | OK     | xml
-PHP Extensions | OK     | gd
-PHP Extensions | OK     | mbstring
-PHP Extensions | OK     | bcmath
-PHP Extensions | OK     | curl
-PHP Extensions | OK     | zip
-PHP Extensions | OK     | fileinfo
-PHP Extensions | OK     | intl
-
-== Network ==
-Subject        | Status | Detail
---------------------------------
-Network        | OK     | GitHub reachable
-Network        | INFO   | DNS resolves: billing.invoiceninja.local
-Network        | INFO   | Webserver certificate matches URL: https://billing.invoiceninja.local
-
-== Mail Route ==
-Subject        | Status | Detail
---------------------------------
-Mail Route     | INFO   | Mail: not configured (MAIL_MAILER/MAIL_HOST unset)
-
-== Database ==
-Subject        | Status | Detail
---------------------------------
-Database       | INFO   | Loaded DB vars from /usr/share/nginx/local.invoiceninja.vm/./invoiceninja/.env
-Database       | INFO   | Target: host=localhost port=3306 db=indb user=indb
-Database       | INFO   | Client: mysql
-Database       | OK     | Connection ok to localhost:3306
-Database       | INFO   | Server: 10.11.13-MariaDB-0ubuntu0.24.04.1 Ubuntu 24.04
-Database       | INFO   | innodb_file_per_table=1
-Database       | INFO   | max_allowed_packet=16777216
-Database       | INFO   | charset=utf8mb4 collation=utf8mb4_general_ci
-Database       | INFO   | sql_mode=STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
-Database       | OK     | Database 'indb' exists.
-
-== Cron ==
-Subject        | Status | Detail
---------------------------------
-Cron           | OK     | Scheduler service present
-Cron           | OK     | artisan schedule:run present
-Cron           | OK     | backup cron present (03:24)
-
-== Snappdf ==
-Subject        | Status | Detail
---------------------------------
-Snappdf        | INFO   | Chromium path: /usr/share/nginx/local.invoiceninja.vm/./invoiceninja/vendor/beganovich/snappdf/versions/ungoogled/chrome-linux/chrome
-Snappdf        | OK     | Render ok (probe at ./.cache/snappdf_probe.pdf)
-
-2025-12-28 09:41:57 [INFO] [HEALTH] Completed: OK=48 WARN=0 ERR=0
-2025-12-28 09:41:57 [INFO] [HEALTH] Aggregate status: OK
-```
 
 ## 10. Login to your Invoice Ninja installation
 

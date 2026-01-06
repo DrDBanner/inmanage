@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect x="0" y="0" width="960" height="540" fill="#f8fafc"/>
+  <rect x="40" y="36" width="880" height="468" rx="12" fill="#ffffff" stroke="#e5e7eb"/>
+
+  <text x="72" y="86" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#111827">Heartbeat</text>
+  <text x="72" y="110" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#6b7280">Host: example.foo.bar | 2026-01-02 06:00:28</text>
+
+  <text x="72" y="142" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#6b7280" letter-spacing="0.5">EVENT</text>
+  <text x="220" y="142" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#111827">Heartbeat</text>
+
+  <text x="72" y="166" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#6b7280" letter-spacing="0.5">STATUS</text>
+  <rect x="220" y="154" width="64" height="18" rx="9" fill="#ffedd5" stroke="#fdba74"/>
+  <text x="252" y="163" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#9a3412" text-anchor="middle" dy="0.35em">WARN</text>
+
+  <text x="72" y="190" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#6b7280" letter-spacing="0.5">COUNTS</text>
+  <rect x="220" y="178" width="160" height="18" rx="6" fill="#f3f4f6" stroke="#e5e7eb"/>
+  <text x="300" y="187" font-family="Courier New, Courier, monospace" font-size="11" fill="#111827" text-anchor="middle" dy="0.35em">OK=76 WARN=4 ERR=0</text>
+
+  <text x="72" y="214" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#6b7280" letter-spacing="0.5">HOST</text>
+  <text x="220" y="214" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#111827">example.foo.bar</text>
+
+  <text x="72" y="238" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#6b7280" letter-spacing="0.5">APP_URL</text>
+  <text x="220" y="238" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#1d4ed8">https://billing.example.test</text>
+
+  <text x="72" y="262" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#6b7280" letter-spacing="0.5">TIMESTAMP</text>
+  <text x="220" y="262" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#111827">2026-01-02 06:00:28</text>
+
+  <text x="72" y="292" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#111827">Checks</text>
+  <text x="72" y="314" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#111827">Status</text>
+  <text x="180" y="314" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#111827">Detail</text>
+  <line x1="72" y1="320" x2="888" y2="320" stroke="#e5e7eb"/>
+
+  <rect x="72" y="328" width="816" height="20" fill="#f3f4f6"/>
+  <text x="80" y="342" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#111827">System</text>
+
+  <rect x="72" y="352" width="52" height="18" rx="9" fill="#dbeafe" stroke="#93c5fd"/>
+  <text x="98" y="361" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1e40af" text-anchor="middle" dy="0.35em">INFO</text>
+  <text x="180" y="364" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#111827">Host: example.foo.bar | OS: FreeBSD 14.2-RELEASE-p7</text>
+
+  <rect x="72" y="376" width="52" height="18" rx="9" fill="#dbeafe" stroke="#93c5fd"/>
+  <text x="98" y="385" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1e40af" text-anchor="middle" dy="0.35em">INFO</text>
+  <text x="180" y="388" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#111827">Kernel: 14.2-RELEASE-p7 | Arch: amd64 | CPU cores: 4 | RAM: 6.0G</text>
+
+  <rect x="72" y="400" width="52" height="18" rx="9" fill="#dbeafe" stroke="#93c5fd"/>
+  <text x="98" y="409" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1e40af" text-anchor="middle" dy="0.35em">INFO</text>
+  <text x="180" y="412" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#111827">IPv4: 83.138.84.241</text>
+
+  <rect x="72" y="424" width="52" height="18" rx="9" fill="#dbeafe" stroke="#93c5fd"/>
+  <text x="98" y="433" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1e40af" text-anchor="middle" dy="0.35em">INFO</text>
+  <text x="180" y="436" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#111827">Container: not detected</text>
+
+  <rect x="72" y="448" width="816" height="20" fill="#f3f4f6"/>
+  <text x="80" y="462" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#111827">Filesystem</text>
+
+  <rect x="72" y="472" width="52" height="18" rx="9" fill="#ffedd5" stroke="#fdba74"/>
+  <text x="98" y="481" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#9a3412" text-anchor="middle" dy="0.35em">WARN</text>
+  <text x="180" y="484" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#111827">Disk: avail 165G | used 21G | mount / (Disk @base)</text>
+</svg>

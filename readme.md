@@ -1,25 +1,67 @@
-# INMANAGE – Invoice Ninja CLI
+# INmanage – Invoice Ninja CLI
 
-inmanage (inm) – CLI for Invoice Ninja
+INmanage (inm) – CLI for Invoice Ninja
 
 **Backup. Update. Install. Done.**
 
-Inmanage is the CLI for self-hosted Invoice Ninja. Focus: **save time**, **less stress**, **certainty**, **convenience**. Installation takes 2–3 minutes and will save you many hours of manual work maintaining your Invoice Ninja instance.
+INmanage is the CLI for self-hosted Invoice Ninja. Focus: **save time**, **less stress**, **certainty**, **convenience**. Installation takes 2–3 minutes and will save you many hours of manual work maintaining your Invoice Ninja instance.
 
-**Full documentation:**
-<https://github.com/DrDBanner/inmanage/blob/main/docs/index.md>
+> [!TIP]
+> Docs:
+> - Cheat sheet: [cheatsheet.md](./cheatsheet.md)
+> - Full documentation: <https://github.com/DrDBanner/inmanage/blob/main/docs/index.md>
+> - Containers/VMs onboarding: <https://github.com/DrDBanner/inmanage/blob/main/docs/index.md#containers--vms-onboarding>
+> - Install CLI: <https://github.com/DrDBanner/inmanage/blob/main/docs/index.md#install-cli>
+> - Health checks: <https://github.com/DrDBanner/inmanage/blob/main/docs/index.md#health-checks-inmanage>
+> - Cron jobs: <https://github.com/DrDBanner/inmanage/blob/main/docs/index.md#cron-jobs-inmanage>
 
-Things you need
+## Things You Need
 
-- Bash shell
-- A working webserver (Apache or Nginx)
-- The user that owns the Invoice Ninja files (often the webserver user)
-- Database credentials (from `.env` or `.my.cnf`)
-- Common CLI tools (git, curl, tar, rsync, php, jq, composer, zip/unzip, etc.)
+| Requirement | Notes |
+| --- | --- |
+| Bash | Required shell. |
+| Webserver | Apache or Nginx. |
+| File owner user | User that owns the Invoice Ninja files (often the webserver user). |
+| DB credentials | From `.env` or `.my.cnf`. |
+| CLI tools | git, curl, tar, rsync, php, jq, composer, zip/unzip. |
 
-## Invoice Ninja CLI - Installation Procedure
+## Install the CLI
 
-Per user:
+Base directory = the folder that contains your Invoice Ninja app folder (or will contain it) (e.g. `/var/www/billing.yourdomain.com`), see [Directory Structure](#directory-structure).
+Example: base directory `/var/www/billing.yourdomain.com`, app directory `/var/www/billing.yourdomain.com/invoiceninja`.
+
+Quick Start (3 steps):
+
+```bash
+# 1) Install the CLI
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | bash
+
+# 2) First run from your base directory (creates the CLI config file)
+cd /path/to/your/invoiceninja_basedirectory
+sudo -u www-data inm
+
+# 3) Run a health check (verifies system/app/DB/cron readiness)
+inm core health
+```
+
+> [!NOTE]
+> Replace `www-data` with your webserver user if needed. See [First Run](#first-run).
+
+Most common commands:
+
+```bash
+inm core health
+inm core install --provision
+inm core update
+inm core backup
+inm core restore --file=/path/to/bundle.tar.gz --force
+```
+
+### Install Options (system/user/project)
+
+Use these if you need system or project installs.
+
+#### Per user
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | bash
@@ -31,24 +73,20 @@ The installer auto-selects the install mode (system when run as root, otherwise 
 - User install: default without sudo; installs to `~/.local/share/inmanage`, symlinks in `~/.local/bin`.
 - Project install: run from your base directory; installs to `./.inmanage/cli`, symlinks in the project root.
 
-Optional for system installs:
-- `--install-owner USER:GROUP` to set ownership (e.g. `root:vuser`)
-- `--install-perms DIR:FILE` to set permissions (e.g. `775:664`)
-
-Per project:
+#### Per project
 
 ```bash
 cd /path/to/your/invoiceninja_basedirectory
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | bash -s -- --mode project
 ```
 
-Per system:
+#### Per system
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash
 ```
 
-Per system with ownership/permissions (optional):
+#### Per system with ownership/permissions (optional)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash -s -- --mode system --install-owner=root:vuser --install-perms=775:664
@@ -57,7 +95,9 @@ curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inm
 
 
 
-First run (creates `.inmanage/.env.inmanage` and folders):
+### First Run
+
+Creates `.inmanage/.env.inmanage` and folders.
 
 ```bash
 cd /path/to/your/invoiceninja_basedirectory
@@ -78,23 +118,24 @@ inm
 
 If the installer created symlinks (system/user/project), you can use `inm` (short) or `inmanage`. Otherwise run the CLI from its install path with `./inm` or `./inmanage`.
 
-*Typical directory structure:*
+### Directory Structure
 
 ```text
-/var/www/billing.yourdomain.com/            # The base-directory
+/var/www/billing.yourdomain.com/            # Base directory
 ├── .inmanage/                              # The Project's CLI Configuration directory. (automatically created)
+│   ├── .env.inmanage                       # CLI config file (auto-created)
 │   └── cli/                                # Optional binaries folder if project wide installation
 ├── .cache/                                 # Optional. Local Project Cache.
 ├── .backup/                                # Backups go here.
-├── invoiceninja/                           # The current/future Invoice Ninja installation-directory
+├── invoiceninja/                           # The current/future Invoice Ninja app installation directory
 │   └── public/                             # Document root (set this as your web server root folder)
 ```
 
 
 
-## Recommended Invoice Ninja Installation Procedure (provisioned)
+## Recommended Invoice Ninja Install (Provisioned)
 
-Go to your `base-directory` and follow this procedure:
+Go to your base directory and follow this Invoice Ninja installation procedure:
 
 ```bash
 # 1. Check if your environment satisfies the dependencies
@@ -112,7 +153,7 @@ inm core install
 inm core install --provision
 ```
 
-## Core commands (examples)
+## Core Commands (Examples)
 
 ```bash
 inm core health
@@ -132,30 +173,33 @@ inm version
 inm core versions
 ```
 
-## Safety notes
+## Extended Docs
 
-- No silent deletes: old installs are moved aside.
-- Backups include checksums (SHA-256).
-- Provisioned installs are repeatable and auditable.
-- Hooks are available for pre/post install/update/backup (see docs).
+> [!TIP]
+> Docs:
+> - Full documentation: <https://github.com/DrDBanner/inmanage/blob/main/docs/index.md>
+> - Containers/VMs onboarding: <https://github.com/DrDBanner/inmanage/blob/main/docs/index.md#containers--vms-onboarding>
 
-## Extended docs
-
-Full documentation:
-<https://github.com/DrDBanner/inmanage/blob/main/docs/index.md>
-
-## What you get
+## What You Get (incl. safety notes)
 
 Short list below; each item is explained in the extended docs.
 
 - Fast CLI install (system, user, or project) with self‑update and uninstall.
 - Guided install wizard (clean or provisioned), plus fully unattended provision flow.
-- Safe updates with rollback directories and optional DB backups.
-- Full backups (app + DB) and restore (bundle or DB‑only).
+- Safe updates with rollback directories (no silent deletes), optional DB backups, and lower RAM usage than GUI updates.
+- Backups with checksums (SHA‑256) and restore (bundle or DB‑only).
+- DB tooling (create/import/purge/db-only backup) with .my.cnf support and prompts.
+- Provisioned installs are repeatable and auditable.
 - Health checks for system, app, PHP, DB, filesystem, cron, network, and more.
+- Snappdf/PDF readiness checks and setup helpers.
+- Heartbeat notifications (email/webhook) for non‑interactive failures.
 - Cron management (artisan scheduler, backup, heartbeat, test job).
-- Notification system (email/webhook) for non‑interactive failures and heartbeats.
 - Hooks before/after install, update, and backup for custom automation.
+- Environment helper (`inm env get/set`) for app and CLI config.
+- CLI config/provision helpers (generate config, provision file).
 - Permission enforcement and fix‑permissions helper for shared hosting.
+- Docker/VM onboarding, including sidecar guidance and cron placement.
+- Ops/history log for auditability of CLI actions.
 - Cache management for downloads and release pruning.
 - Version discovery for installed/latest/cached releases.
+- Cache-only release fetch (`core get app`) for preloading versions.
