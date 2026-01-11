@@ -312,11 +312,7 @@ gh_release_download() {
     local checksum_file="${target_file}.sha256"
     local expected_digest=""
     if [[ "${NAMED_ARGS[bypass_check_sha]:-false}" != true ]]; then
-        if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
-            log info "[${label}] Retrieving release digest for ${tag}..."
-        else
-            log debug "[${label}] Retrieving release digest for ${tag}..."
-        fi
+        log debug "[${label}] Retrieving release digest for ${tag}..."
         expected_digest="$(gh_release_fetch_digest "$repo" "$tag" "$digest_asset")"
         if [ -n "$expected_digest" ]; then
             if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
@@ -415,7 +411,7 @@ gh_release_download() {
         return 1
     fi
 
-    log debug "[${label}] Downloading ${repo} ${version}..."
+    log debug "[${label}] Fetching release archive for ${tag}..."
 
     local -a auth_args=()
     local auth_kind="none"
@@ -485,6 +481,7 @@ gh_release_download() {
     else
         if [ "$curl_rc" -eq 28 ]; then
             log err "[${label}] Download timed out (curl exit 28). Re-run to resume from partial."
+            log_hint "$label" "If downloads are consistently slow, set INM_GH_API_CREDENTIALS (token:x-oauth) or use a mirror/proxy."
         else
             log err "[${label}] Download failed via curl (exit $curl_rc). Please check network. Maybe you need GitHub credentials or --ipv4/--proxy."
         fi

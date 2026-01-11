@@ -21,7 +21,8 @@ expand_path_vars() {
     fi
     # Expand leading ~ and simple $HOME/${HOME} without eval, prefer resolved home base
     local home_base
-    home_base="$(resolve_home_base)"
+    resolve_home_base >/dev/null
+    home_base="$INM_HOME_RESOLVED_BASE"
     expanded="${expanded/#\~/$home_base}"
     expanded="${expanded//\$\{HOME\}/$home_base}"
     expanded="${expanded//\$HOME/$home_base}"

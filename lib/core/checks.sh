@@ -566,7 +566,7 @@ check_base_directory_valid_and_enter() {
 # ---------------------------------------------------------------------
 check_provision_file() {
     if [ ! -f "$INM_PROVISION_ENV_FILE" ]; then
-        log debug "[PVF] No provision file found. Skipping provisioning."
+        log debug "[PVF] No provision file found at ${INM_PROVISION_ENV_FILE} (cwd=${PWD}). Skipping provisioning."
         return 0
     fi
 

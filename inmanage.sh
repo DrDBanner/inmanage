@@ -609,9 +609,11 @@ dispatch_command() {
                     ops_log_end $?
                 else
                     if skip_if_dry_run "core update"; then return 0; fi
+                    export INM_HISTORY_LOG_VERBOSE="update"
                     ops_log_begin "update"
                     call_with_named_args run_update
                     ops_log_end $?
+                    unset INM_HISTORY_LOG_VERBOSE
                 fi
                 ;;
             info|health)

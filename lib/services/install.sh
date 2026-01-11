@@ -211,6 +211,7 @@ run_installation() {
     fi
 
     log info "[TAR] Installation begins"
+    log debug "[TAR] Preparing release archive (v${latest_version})"
 
     source_dir="$(download_ninja "$latest_version")" || {
         log err "[TAR] Download failed"
@@ -229,6 +230,7 @@ run_installation() {
     source_root="$(fs_resolve_single_root_dir "$extracted")"
 
     local temp_dir="${install_parent}/${install_name}_temp"
+    log debug "[TAR] Staging files for deployment"
     log debug "[TAR] Staging extracted files for atomic switch: $temp_dir (source: $source_dir/invoiceninja_v$latest_version.tar.gz)"
     if ! fs_stage_dir "$source_root" "$temp_dir" "$install_parent" move "debug"; then
         log err "[TAR] Failed to move/copy extracted files"
@@ -283,6 +285,7 @@ run_installation() {
         fi
     fi
 
+    log debug "[TAR] Deploying new installation"
     if ! fs_with_smo_log_level debug safe_move_or_copy_and_clean "${install_parent}/${install_name}_temp" "$install_path"; then
         log err "[TAR] Failed to deploy new installation"
         return 1

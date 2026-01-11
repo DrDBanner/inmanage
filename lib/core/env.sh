@@ -228,23 +228,21 @@ log() {
     fi
     msg="$(log_redact_emails "$msg")"
     local history_level=""
-    if [[ "${INM_HISTORY_LOG_VERBOSE:-}" == "install" && "${INM_OPS_LOG_ACTION:-}" == "install" ]]; then
-        case "$type" in
-            debug)
-                if [ "$DEBUG" = true ]; then
-                    history_level="DEBUG"
+    if [[ -n "${INM_HISTORY_LOG_VERBOSE:-}" && -n "${INM_OPS_LOG_ACTION:-}" ]]; then
+        if [[ "${INM_HISTORY_LOG_VERBOSE}" == "${INM_OPS_LOG_ACTION}" ]]; then
+            case "$type" in
+                debug) history_level="DEBUG" ;;
+                info) history_level="INFO" ;;
+                note|docs|bold) history_level="INFO" ;;
+                ok) history_level="OK" ;;
+                warn|important) history_level="WARN" ;;
+                err) history_level="ERR" ;;
+                *) history_level="" ;;
+            esac
+            if [[ -n "$history_level" ]]; then
+                if declare -F history_log_append >/dev/null 2>&1; then
+                    history_log_append "${INM_OPS_LOG_ACTION}:log" "$history_level" "$*"
                 fi
-                ;;
-            info) history_level="INFO" ;;
-            note|docs|bold) history_level="INFO" ;;
-            ok) history_level="OK" ;;
-            warn|important) history_level="WARN" ;;
-            err) history_level="ERR" ;;
-            *) history_level="" ;;
-        esac
-        if [[ -n "$history_level" ]]; then
-            if declare -F history_log_append >/dev/null 2>&1; then
-                history_log_append "install:log" "$history_level" "$*"
             fi
         fi
     fi

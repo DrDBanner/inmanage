@@ -232,6 +232,7 @@ resolve_env_paths() {
     elif [ -z "${INM_SELF_ENV_FILE:-}" ] || [ ! -f "$INM_SELF_ENV_FILE" ]; then
         local config_root="${NAMED_ARGS[config_root]:-${INM_CONFIG_ROOT:-.inmanage}}"
         local config_basename="${INM_SELF_ENV_BASENAME:-.env.inmanage}"
+        local provision_basename="${INM_PROVISION_ENV_BASENAME:-.env.provision}"
 
         # Anchor relative config root to detected base directory
         if [[ "$config_root" != /* ]]; then
@@ -251,6 +252,12 @@ resolve_env_paths() {
         # If none exist, default to preferred location next to config_root
         if [ -z "${INM_SELF_ENV_FILE:-}" ]; then
             INM_SELF_ENV_FILE="${config_root%/}/${config_basename}"
+        fi
+
+        if [[ -z "${INM_PROVISION_ENV_FILE:-}" ]]; then
+            INM_PROVISION_ENV_FILE="${config_root%/}/${provision_basename}"
+        elif [[ "$INM_PROVISION_ENV_FILE" != /* ]]; then
+            INM_PROVISION_ENV_FILE="${config_root%/}/${INM_PROVISION_ENV_FILE#/}"
         fi
     fi
 

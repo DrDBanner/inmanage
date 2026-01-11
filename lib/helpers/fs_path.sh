@@ -8,19 +8,21 @@
 # Returns: string on stdout.
 # ---------------------------------------------------------------------
 resolve_home_base() {
+    if [[ -n "${INM_HOME_RESOLVED_BASE:-}" ]]; then
+        return 0
+    fi
     if [[ -n "${INM_ORIGINAL_HOME:-}" ]]; then
-        log debug "[FS] Using INM_ORIGINAL_HOME: $INM_ORIGINAL_HOME"
-        printf "%s" "$INM_ORIGINAL_HOME"
+        INM_HOME_RESOLVED_BASE="$INM_ORIGINAL_HOME"
+        export INM_HOME_RESOLVED_BASE
+        log debug "[FS] Using INM_ORIGINAL_HOME: $INM_HOME_RESOLVED_BASE"
         return 0
     fi
     local candidate=""
     local user=""
     if [[ -n "${INM_ENFORCED_USER:-}" && "${INM_ENFORCED_USER}" != "root" ]]; then
         user="$INM_ENFORCED_USER"
-        log debug "[FS] Resolving HOME from INM_ENFORCED_USER: $user"
     elif [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
         user="$SUDO_USER"
-        log debug "[FS] Resolving HOME from SUDO_USER: $user"
     fi
     if [[ -n "$user" ]]; then
         if command -v getent >/dev/null 2>&1; then
@@ -29,13 +31,15 @@ resolve_home_base() {
             candidate="$(pw usershow "$user" 2>/dev/null | awk -F: '{print $9}')"
         fi
         if [[ -n "$candidate" && -d "$candidate" ]]; then
-            log debug "[FS] Resolved HOME via user lookup: $candidate"
-            printf "%s" "$candidate"
+            INM_HOME_RESOLVED_BASE="$candidate"
+            export INM_HOME_RESOLVED_BASE
+            log debug "[FS] Resolved HOME via user lookup: $INM_HOME_RESOLVED_BASE"
             return 0
         fi
     fi
-    log debug "[FS] Falling back to current HOME: ${HOME:-}"
-    printf "%s" "${HOME:-}"
+    INM_HOME_RESOLVED_BASE="${HOME:-}"
+    export INM_HOME_RESOLVED_BASE
+    log debug "[FS] Falling back to current HOME: ${INM_HOME_RESOLVED_BASE}"
     return 0
 }
 
@@ -47,7 +51,8 @@ expand_placeholders() {
         local var="${BASH_REMATCH[2]}"
         local val
         if [[ "$var" == "HOME" ]]; then
-            val="$(resolve_home_base)"
+            resolve_home_base >/dev/null
+            val="$INM_HOME_RESOLVED_BASE"
         else
             val="${!var}"
         fi
@@ -68,7 +73,8 @@ path_expand_no_eval() {
     [[ -z "$p" ]] && { printf "%s" "$p"; return; }
     p="$(expand_placeholders "$p")"
     local home_base
-    home_base="$(resolve_home_base)"
+    resolve_home_base >/dev/null
+    home_base="$INM_HOME_RESOLVED_BASE"
     p="${p/#\~/$home_base}"
     p="${p//\$\{HOME\}/$home_base}"
     p="${p//\$HOME/$home_base}"
