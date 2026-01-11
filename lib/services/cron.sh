@@ -92,6 +92,19 @@ cron_strip_all_inmanage() {
     ' "$infile" > "$outfile"
 }
 
+cron_read_crontab() {
+    local user="${1:-}"
+    if ! command -v crontab >/dev/null 2>&1; then
+        return 1
+    fi
+    if [[ -n "$user" ]]; then
+        crontab -l -u "$user" 2>/dev/null || true
+    else
+        crontab -l 2>/dev/null || true
+    fi
+    return 0
+}
+
 # ---------------------------------------------------------------------
 # install_cronjob()
 # Install cron jobs for scheduler/backup/heartbeat.
@@ -443,16 +456,13 @@ install_cronjob() {
             home_cronfile_writable=true
         fi
         local crontab_has_entries=false
-        if crontab -l >/dev/null 2>&1; then
-            if ! crontab -l > "$tmpfile" 2>/dev/null; then
-                log warn "[CRON] Failed to read existing user crontab; starting fresh."
-                : > "$tmpfile"
-            fi
+        local crontab_out=""
+        crontab_out="$(cron_read_crontab "")"
+        if [[ -n "$crontab_out" ]]; then
+            printf "%s\n" "$crontab_out" > "$tmpfile"
+            crontab_has_entries=true
         else
             : > "$tmpfile"
-        fi
-        if [[ -s "$tmpfile" ]]; then
-            crontab_has_entries=true
         fi
         if [[ "$crontab_has_entries" != true && -f "$home_cronfile" ]]; then
             if cp "$home_cronfile" "$tmpfile" 2>/dev/null; then
@@ -678,8 +688,10 @@ uninstall_cronjob() {
                 local tmpfile tmpclean
                 tmpfile="$(mktemp)"
                 tmpclean="${tmpfile}.clean"
-                if crontab -l >/dev/null 2>&1; then
-                    crontab -l > "$tmpfile"
+                local crontab_out=""
+                crontab_out="$(cron_read_crontab "")"
+                if [[ -n "$crontab_out" ]]; then
+                    printf "%s\n" "$crontab_out" > "$tmpfile"
                 else
                     : > "$tmpfile"
                 fi
@@ -749,8 +761,10 @@ uninstall_cronjob() {
             tmpfile="$(mktemp)"
             tmpclean="${tmpfile}.clean"
             tmporig="${tmpfile}.orig"
-            if crontab -l >/dev/null 2>&1; then
-                crontab -l > "$tmpfile"
+            local crontab_out=""
+            crontab_out="$(cron_read_crontab "")"
+            if [[ -n "$crontab_out" ]]; then
+                printf "%s\n" "$crontab_out" > "$tmpfile"
             else
                 : > "$tmpfile"
             fi
@@ -1015,16 +1029,16 @@ cron_emit_preflight() {
     }
 
     if command -v crontab >/dev/null 2>&1; then
-        if crontab -l >/dev/null 2>&1; then
-            local current_cron=""
-            current_cron="$(crontab -l 2>/dev/null)"
+        local current_cron=""
+        current_cron="$(cron_read_crontab "$current_user")"
+        if [[ -n "$current_cron" ]]; then
             cron_add_source "crontab:${current_user}"
             cron_add_lines "crontab:${current_user}" "$current_user" "$current_cron"
         fi
         if [[ -n "$enforced_user" && "$enforced_user" != "$current_user" && "$can_read_enforced" == true ]]; then
             local enforced_cron=""
             if [[ $EUID -eq 0 ]]; then
-                enforced_cron="$(crontab -l -u "$enforced_user" 2>/dev/null || true)"
+                enforced_cron="$(cron_read_crontab "$enforced_user")"
             elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
                 enforced_cron="$(sudo -n crontab -l -u "$enforced_user" 2>/dev/null || true)"
             fi
@@ -1034,7 +1048,7 @@ cron_emit_preflight() {
         if [[ -n "$invoked_user" && "$invoked_user" != "$current_user" && "$can_read_invoked" == true ]]; then
             local invoked_cron=""
             if [[ $EUID -eq 0 ]]; then
-                invoked_cron="$(crontab -l -u "$invoked_user" 2>/dev/null || true)"
+                invoked_cron="$(cron_read_crontab "$invoked_user")"
             elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
                 invoked_cron="$(sudo -n crontab -l -u "$invoked_user" 2>/dev/null || true)"
             fi

@@ -76,6 +76,7 @@ enforce_file_permissions() {
     local mode="${1:-}"
     shift || true
     local paths=("$@")
+    local had_fail=false
     if [[ -z "$mode" || ${#paths[@]} -eq 0 ]]; then
         log debug "[EPF] Mode or paths missing; skipping file chmod."
         return 0
@@ -84,13 +85,19 @@ enforce_file_permissions() {
         if [ -d "$path" ]; then
             if ! find "$path" -type f ! -perm -111 -exec chmod "$mode" {} + 2>/dev/null; then
                 log warn "[EPF] chmod failed for files in $path (wanted $mode)"
+                had_fail=true
             fi
         elif [ -f "$path" ]; then
             if ! chmod "$mode" "$path" 2>/dev/null; then
                 log warn "[EPF] chmod failed for $path (wanted $mode)"
+                had_fail=true
             fi
         fi
     done
+    if [[ "$had_fail" == true ]]; then
+        return 1
+    fi
+    return 0
 }
 
 # ---------------------------------------------------------------------
@@ -104,6 +111,7 @@ enforce_file_mode() {
     local mode="${1:-}"
     shift || true
     local files=("$@")
+    local had_fail=false
     if [[ -z "$mode" || ${#files[@]} -eq 0 ]]; then
         log debug "[EPF] Mode or files missing; skipping file chmod."
         return 0
@@ -118,9 +126,14 @@ enforce_file_mode() {
             fi
             if ! chmod "$mode" "$file" 2>/dev/null; then
                 log warn "[EPF] chmod failed for $file (wanted $mode)"
+                had_fail=true
             fi
         fi
     done
+    if [[ "$had_fail" == true ]]; then
+        return 1
+    fi
+    return 0
 }
 
 # ---------------------------------------------------------------------
@@ -322,7 +335,9 @@ fs_check_file_mode() {
     if [ -n "$current" ] && [ -n "$expected_mode" ] && [ "$current" != "$expected_mode" ]; then
         if [ "$fix_permissions" = true ]; then
             fs_emit_result "$report_fn" WARN "$tag" "Fixing ${safe_label} mode (was $current -> $expected_mode)"
-            enforce_file_mode "$expected_mode" "$path"
+            if ! enforce_file_mode "$expected_mode" "$path"; then
+                fs_emit_result "$report_fn" WARN "$tag" "${safe_label} mode fix failed (permission denied). Run as root or use --override-enforced-user."
+            fi
         else
             fs_emit_result "$report_fn" WARN "$tag" "${safe_label} mode mismatch (mode=$current, expected=$expected_mode). Use --fix-permissions to repair."
         fi
@@ -433,7 +448,9 @@ fs_emit_permissions_preflight() {
             if [ -n "$current_file_mode" ] && [ "$current_file_mode" != "$file_mode" ]; then
                 if [ "$fix_permissions" = true ]; then
                     perm_emit WARN "Fixing file modes under app dir (target $file_mode)"
-                    enforce_file_permissions "$file_mode" "${app_dir%/}"
+                    if ! enforce_file_permissions "$file_mode" "${app_dir%/}"; then
+                        perm_emit WARN "File mode fix failed for ${app_dir%/} (permission denied). Run as root or use --override-enforced-user."
+                    fi
                     file_mode_applied=true
                 else
                     perm_emit WARN "File mode mismatch (public/index.php=$current_file_mode, expected=$file_mode). Use --fix-permissions to repair."
@@ -441,7 +458,9 @@ fs_emit_permissions_preflight() {
             fi
         fi
         if [ "$fix_permissions" = true ] && [ "$file_mode_applied" = false ]; then
-            enforce_file_permissions "$file_mode" "${app_dir%/}"
+            if ! enforce_file_permissions "$file_mode" "${app_dir%/}"; then
+                perm_emit WARN "File mode fix failed for ${app_dir%/} (permission denied). Run as root or use --override-enforced-user."
+            fi
         fi
 
         fs_check_file_mode "${app_dir%/}/.env" "$env_mode" "$fix_permissions" ".env" "$add_fn" "PERM"
