@@ -589,6 +589,8 @@ provision_prebackup_db() {
     fi
     log debug "[PROV] Pre-provision backup saved: $target_file"
     enforce_ownership "$backup_dir"
+    local backup_dir_mode="${INM_BACKUP_DIR_MODE:-${INM_DIR_MODE:-2750}}"
+    enforce_permissions "$backup_dir_mode" "$backup_dir"
     cleanup_old_backups || log warn "[PROV] Backup cleanup failed."
     return 0
 }

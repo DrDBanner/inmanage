@@ -18,6 +18,38 @@ cron_strip_instance_block() {
     ' "$infile" > "$outfile"
 }
 
+cron_strip_instance_block_by_base() {
+    local infile="$1"
+    local outfile="$2"
+    local base="$3"
+    if [[ -z "$base" ]]; then
+        cat "$infile" > "$outfile"
+        return 0
+    fi
+    awk -v base="$base" '
+        BEGIN {in_block=0; keep=1; n=0}
+        function flush_block() {
+            for (i = 1; i <= n; i++) print buf[i]
+            n = 0
+        }
+        /^# INMANAGE INSTANCE / && / BEGIN$/ {
+            in_block=1; keep=1; n=0
+        }
+        {
+            if (in_block) {
+                n++; buf[n]=$0
+                if ($0 == "# INMANAGE INSTANCE BASE=" base) keep=0
+                if ($0 ~ /^# INMANAGE INSTANCE / && $0 ~ / END$/) {
+                    if (keep == 1) flush_block()
+                    in_block=0
+                }
+                next
+            }
+            print
+        }
+    ' "$infile" > "$outfile"
+}
+
 cron_escape_awk_re() {
     local re="$1"
     re="${re//\\/\\\\}"
@@ -476,15 +508,30 @@ install_cronjob() {
         elif [[ -f "$home_cronfile" && "$crontab_has_entries" == true ]]; then
             log debug "[CRON] User crontab has entries; ignoring existing cronfile: $home_cronfile"
         fi
+        local tmpbase="${tmpfile}.base"
         if ! cron_strip_instance_block "$tmpfile" "$tmpclean" "$instance_id"; then
             log err "[CRON] Failed to prepare user crontab."
-            rm -f "$tmpfile" "$tmpclean"
+            rm -f "$tmpfile" "$tmpclean" "$tmpbase"
             return 1
         fi
-        if ! mv -f "$tmpclean" "$tmpfile"; then
-            log err "[CRON] Failed to finalize user crontab."
-            rm -f "$tmpfile" "$tmpclean"
-            return 1
+        if [ -n "$base_clean" ]; then
+            if ! cron_strip_instance_block_by_base "$tmpclean" "$tmpbase" "$base_clean"; then
+                log err "[CRON] Failed to prepare user crontab."
+                rm -f "$tmpfile" "$tmpclean" "$tmpbase"
+                return 1
+            fi
+            if ! mv -f "$tmpbase" "$tmpfile"; then
+                log err "[CRON] Failed to finalize user crontab."
+                rm -f "$tmpfile" "$tmpclean" "$tmpbase"
+                return 1
+            fi
+            rm -f "$tmpclean"
+        else
+            if ! mv -f "$tmpclean" "$tmpfile"; then
+                log err "[CRON] Failed to finalize user crontab."
+                rm -f "$tmpfile" "$tmpclean" "$tmpbase"
+                return 1
+            fi
         fi
 
         if [[ -s "$tmpfile" ]]; then
@@ -520,6 +567,7 @@ install_cronjob() {
     fi
 
     local tmpclean="${tmpfile}.clean"
+    local tmpbase="${tmpfile}.base"
     if [[ -f "$cron_file" ]]; then
         cat "$cron_file" > "$tmpfile"
     elif [[ "$can_sudo" == true && $EUID -ne 0 ]]; then
@@ -533,15 +581,23 @@ install_cronjob() {
     fi
     if ! cron_strip_instance_block "$tmpfile" "$tmpclean" "$instance_id"; then
         log err "[CRON] Failed to update cron file."
-        rm -f "$tmpfile" "$tmpclean"
+        rm -f "$tmpfile" "$tmpclean" "$tmpbase"
         return 1
+    fi
+    if [ -n "$base_clean" ]; then
+        if ! cron_strip_instance_block_by_base "$tmpclean" "$tmpbase" "$base_clean"; then
+            log err "[CRON] Failed to update cron file."
+            rm -f "$tmpfile" "$tmpclean" "$tmpbase"
+            return 1
+        fi
+        mv -f "$tmpbase" "$tmpclean" 2>/dev/null || true
     fi
     if ! cron_strip_legacy_lines "$tmpclean" "$tmpfile" "$base_clean" "$env_clean"; then
         log err "[CRON] Failed to prepare cron file."
-        rm -f "$tmpfile" "$tmpclean"
+        rm -f "$tmpfile" "$tmpclean" "$tmpbase"
         return 1
     fi
-    rm -f "$tmpclean"
+    rm -f "$tmpclean" "$tmpbase"
     if [[ -s "$tmpfile" ]]; then
         printf "\n" >> "$tmpfile"
     fi

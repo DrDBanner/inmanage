@@ -295,6 +295,9 @@ run_installation() {
     if [[ -n "${INM_FILE_MODE:-}" ]]; then
         enforce_file_permissions "$INM_FILE_MODE" "$install_path"
     fi
+    if [[ -n "${INM_ENV_MODE:-}" ]]; then
+        enforce_file_mode "$INM_ENV_MODE" "${install_path%/}/.env"
+    fi
 
     if [ ! -x "$install_path/artisan" ]; then
         chmod +x "$install_path/artisan" || {

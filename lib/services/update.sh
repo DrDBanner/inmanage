@@ -192,6 +192,9 @@ run_update() {
     if [[ -n "${INM_FILE_MODE:-}" ]]; then
         enforce_file_permissions "$INM_FILE_MODE" "$install_path"
     fi
+    if [[ -n "${INM_ENV_MODE:-}" ]]; then
+        enforce_file_mode "$INM_ENV_MODE" "${install_path%/}/.env"
+    fi
 
     log info "[UPD] Running post-activation artisan tasks"
     if [[ "${DEBUG:-false}" == true || "${args[debug]:-false}" == true ]]; then

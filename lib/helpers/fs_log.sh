@@ -126,6 +126,15 @@ ops_log_write() {
     local log_file log_dir
     log_file="$(ops_log_path 2>/dev/null)" || return 1
     log_dir="$(dirname "$log_file")"
+    local current_user=""
+    current_user="$(id -un 2>/dev/null || true)"
+    local enforced_user="${INM_ENFORCED_USER:-}"
+    local prefer_enforced=false
+    if [[ -n "$enforced_user" && "$current_user" != "$enforced_user" ]]; then
+        if command -v sudo >/dev/null 2>&1 && sudo -n -u "$enforced_user" true 2>/dev/null; then
+            prefer_enforced=true
+        fi
+    fi
     local ts line
     ts="$(date '+%Y-%m-%d %H:%M:%S')"
     line="${ts} | ${action} | ${status} | rc=${rc}"
@@ -148,7 +157,7 @@ ops_log_write() {
         fi
     fi
 
-    if [[ "$direct_write" == true ]]; then
+    if [[ "$direct_write" == true && "$prefer_enforced" != true ]]; then
         mkdir -p "$log_dir" 2>/dev/null || return 1
         if [[ ! -f "$log_file" ]]; then
             touch "$log_file" 2>/dev/null || return 1
@@ -156,10 +165,15 @@ ops_log_write() {
         fi
         ops_log_rotate_if_needed "$log_file"
         printf '%s\n' "$line" >> "$log_file" 2>/dev/null || return 1
+        if [[ -n "$enforced_user" && "$current_user" == "root" ]]; then
+            enforce_ownership "$log_file" "$log_dir" || true
+        fi
     else
         local write_user=""
-        if [[ -n "${INM_ENFORCED_USER:-}" ]]; then
-            write_user="${INM_ENFORCED_USER}"
+        if [[ "$prefer_enforced" == true ]]; then
+            write_user="$enforced_user"
+        elif [[ -n "$enforced_user" ]]; then
+            write_user="$enforced_user"
         elif [[ -f "$log_file" ]]; then
             local og
             og="$(_fs_get_owner "$log_file")"
