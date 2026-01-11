@@ -506,6 +506,7 @@ self_update() {
     self_write_version_file "$root" "$root"
     log ok "[SELF] Update completed."
   else
+    self_write_version_file "$root" "$root"
     log err "[SELF] git pull failed; resolve manually."
     return 1
   fi

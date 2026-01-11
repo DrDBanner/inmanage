@@ -714,13 +714,29 @@ cron_emit_preflight() {
         cron_emit WARN "No cron service detected"
     fi
 
+    local can_read_enforced=false
+    if [[ -n "$enforced_user" && "$enforced_user" != "$current_user" ]]; then
+        if [[ $EUID -eq 0 ]]; then
+            can_read_enforced=true
+        elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+            can_read_enforced=true
+        fi
+        if [[ "$can_read_enforced" == true ]]; then
+            cron_emit INFO "Cron scope: current user (${current_user}) + enforced user (${enforced_user})"
+        else
+            cron_emit INFO "Cron scope: current user (${current_user}) only; enforced user (${enforced_user}) requires sudo/root"
+        fi
+    else
+        cron_emit INFO "Cron scope: current user (${current_user})"
+    fi
+
     local cron_file="/etc/cron.d/invoiceninja"
     local cron_lines=""
     if command -v crontab >/dev/null 2>&1; then
         if crontab -l >/dev/null 2>&1; then
             cron_lines="$(crontab -l 2>/dev/null)"
         fi
-        if [[ -n "$enforced_user" && "$enforced_user" != "$current_user" ]]; then
+        if [[ -n "$enforced_user" && "$enforced_user" != "$current_user" && "$can_read_enforced" == true ]]; then
             local enforced_cron=""
             if [[ $EUID -eq 0 ]]; then
                 enforced_cron="$(crontab -l -u "$enforced_user" 2>/dev/null || true)"
