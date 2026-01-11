@@ -30,7 +30,7 @@ cli_resolve_root() {
 # cli_parse_version_file()
 # Read VERSION metadata from the CLI root.
 # Consumes: args: root, out assoc name.
-# Computes: version line + parsed branch/commit.
+# Computes: version line + parsed branch/commit (VERSION or VERSION.json).
 # Returns: 0 on success, 1 if no VERSION file.
 # ---------------------------------------------------------------------
 cli_parse_version_file() {
@@ -43,15 +43,35 @@ cli_parse_version_file() {
     local version=""
     local version_branch=""
     local version_commit=""
-    if [ ! -r "$root/VERSION" ]; then
+    local json_version=""
+    local json_branch=""
+    local json_commit=""
+    if [ -r "$root/VERSION" ]; then
+        version="$(<"$root/VERSION")"
+        version_commit="$(printf "%s" "$version" | sed -nE 's/.*commit[:= ]+([0-9a-fA-F]{7,40}).*/\1/p' | head -n1)"
+        if [[ -z "$version_commit" && "$version" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+            version_commit="$version"
+        fi
+        version_branch="$(printf "%s" "$version" | sed -nE 's/.*branch[:= ]+([^ ]+).*/\1/p' | head -n1)"
+    elif [ ! -r "$root/VERSION.json" ]; then
         return 1
     fi
-    version="$(<"$root/VERSION")"
-    version_commit="$(printf "%s" "$version" | sed -nE 's/.*commit[:= ]+([0-9a-fA-F]{7,40}).*/\1/p' | head -n1)"
-    if [[ -z "$version_commit" && "$version" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
-        version_commit="$version"
+    if [ -r "$root/VERSION.json" ]; then
+        local json_raw=""
+        json_raw="$(<"$root/VERSION.json")"
+        json_version="$(printf "%s" "$json_raw" | sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n1)"
+        json_branch="$(printf "%s" "$json_raw" | sed -nE 's/.*"branch"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n1)"
+        json_commit="$(printf "%s" "$json_raw" | sed -nE 's/.*"commit"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n1)"
     fi
-    version_branch="$(printf "%s" "$version" | sed -nE 's/.*branch[:= ]+([^ ]+).*/\1/p' | head -n1)"
+    if [[ -z "$version" && -n "$json_version" ]]; then
+        version="$json_version"
+    fi
+    if [[ -z "$version_branch" && -n "$json_branch" ]]; then
+        version_branch="$json_branch"
+    fi
+    if [[ -z "$version_commit" && -n "$json_commit" ]]; then
+        version_commit="$json_commit"
+    fi
     [[ "$version_branch" == "unknown" ]] && version_branch=""
     [[ "$version_commit" == "unknown" ]] && version_commit=""
 

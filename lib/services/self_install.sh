@@ -58,9 +58,9 @@ self_resolve_path() {
 
 # ---------------------------------------------------------------------
 # self_write_version_file()
-# Write a VERSION file with branch/commit metadata for consistent reporting.
+# Write VERSION and VERSION.json for consistent reporting (git installs or release bundles).
 # Consumes: args: target_dir, source_dir; deps: git_collect_info.
-# Computes: VERSION file content.
+# Computes: VERSION and VERSION.json content.
 # Returns: 0 (best-effort).
 # ---------------------------------------------------------------------
 self_write_version_file() {
@@ -68,6 +68,7 @@ self_write_version_file() {
   local source_dir="$2"
   local branch="" commit="" dirty="" commit_date="" err=""
   local version_line=""
+  local version_value=""
 
   [[ -z "$target_dir" ]] && return 0
   [[ -z "$source_dir" ]] && source_dir="$target_dir"
@@ -90,12 +91,50 @@ self_write_version_file() {
     version_line="$(head -n1 "${target_dir%/}/VERSION" 2>/dev/null || true)"
   fi
 
+  if [[ -z "$branch" && "$version_line" =~ branch=([^ ]+) ]]; then
+    branch="${BASH_REMATCH[1]}"
+  fi
+  if [[ -z "$commit" && "$version_line" =~ commit=([0-9a-fA-F]{7,40}) ]]; then
+    commit="${BASH_REMATCH[1]}"
+  fi
+  if [[ -n "$version_line" && "$version_line" != *"branch="* && "$version_line" != *"commit="* ]]; then
+    version_value="$version_line"
+  fi
+
   if [[ -n "$version_line" ]]; then
     if ! printf "%s\n" "$version_line" > "${target_dir%/}/VERSION" 2>/dev/null; then
       log warn "[SELF] Failed to write VERSION file to ${target_dir%/}/VERSION"
       return 0
     fi
     chmod 0644 "${target_dir%/}/VERSION" 2>/dev/null || true
+  fi
+  if [[ -n "$version_line" || -n "$version_value" || -n "$branch" || -n "$commit" ]]; then
+    json_escape() {
+      local value="$1"
+      value="${value//\\/\\\\}"
+      value="${value//\"/\\\"}"
+      printf "%s" "$value"
+    }
+    local installed_at=""
+    installed_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')"
+    local source="unknown"
+    if [[ -n "$branch" || -n "$commit" ]]; then
+      source="git"
+    elif [[ -n "$version_value" ]]; then
+      source="release"
+    fi
+    local version_json
+    version_json=$(printf "{\"version\":\"%s\",\"branch\":\"%s\",\"commit\":\"%s\",\"source\":\"%s\",\"installed_at\":\"%s\"}\n" \
+      "$(json_escape "$version_value")" \
+      "$(json_escape "$branch")" \
+      "$(json_escape "$commit")" \
+      "$(json_escape "$source")" \
+      "$(json_escape "$installed_at")")
+    if ! printf "%s" "$version_json" > "${target_dir%/}/VERSION.json" 2>/dev/null; then
+      log warn "[SELF] Failed to write VERSION.json to ${target_dir%/}/VERSION.json"
+      return 0
+    fi
+    chmod 0644 "${target_dir%/}/VERSION.json" 2>/dev/null || true
   fi
   return 0
 }
