@@ -64,6 +64,7 @@ config_resolve_instance_id() {
 # ---------------------------------------------------------------------
 write_config_setting() {
     local key="$1"
+    local target_file="${2:-$INM_SELF_ENV_FILE}"
     local value="${default_settings[$key]}"
     local inline_comment=""
     if [ -n "${default_inline_comments[$key]+_}" ]; then
@@ -83,9 +84,9 @@ write_config_setting() {
     local escaped_value
     escaped_value="$(_config_escape_value "$value")"
     if [ -n "$inline_comment" ]; then
-        printf '%s="%s" # %s\n' "$key" "$escaped_value" "$inline_comment" >> "$INM_SELF_ENV_FILE"
+        printf '%s="%s" # %s\n' "$key" "$escaped_value" "$inline_comment" >> "$target_file"
     else
-        printf '%s="%s"\n' "$key" "$escaped_value" >> "$INM_SELF_ENV_FILE"
+        printf '%s="%s"\n' "$key" "$escaped_value" >> "$target_file"
     fi
 }
 
@@ -97,12 +98,13 @@ write_config_setting() {
 # Returns: 0 after writing.
 # ---------------------------------------------------------------------
 write_config_defaults() {
+    local target_file="${1:-$INM_SELF_ENV_FILE}"
     local key
     # shellcheck disable=SC2154
     if declare -p default_settings_order >/dev/null 2>&1 && [ "${#default_settings_order[@]}" -gt 0 ]; then
         for key in "${default_settings_order[@]}"; do
             if [ -n "${default_settings[$key]+_}" ]; then
-                write_config_setting "$key"
+                write_config_setting "$key" "$target_file"
             fi
         done
     fi
@@ -118,7 +120,7 @@ write_config_defaults() {
         local sorted_remaining=()
         mapfile -t sorted_remaining < <(printf '%s\n' "${remaining_keys[@]}" | sort)
         for key in "${sorted_remaining[@]}"; do
-            write_config_setting "$key"
+            write_config_setting "$key" "$target_file"
         done
     fi
 }
@@ -256,34 +258,11 @@ create_own_config() {
     log debug "[COC] init."
     INM_SELF_ENV_FILE="${NAMED_ARGS[target_file]:-${INM_SELF_ENV_FILE:-$INM_DEFAULT_SELF_ENV_FILE}}"
 
-    local target_dir
-    target_dir="$(dirname "$INM_SELF_ENV_FILE")"
-    mkdir -p "$target_dir" >/dev/null 2>&1 || {
-        log err "[COC] Could not create directory '$target_dir'"
-        exit 1
-    }
-
     # shellcheck disable=SC2154
     if [ -f "$INM_SELF_ENV_FILE" ] && [ "$force_update" != true ]; then
         log debug "[COC] Config file '$INM_SELF_ENV_FILE' already exists. Use create_config --force to recreate."
         return 0
     fi
-
-    if [ -f "$INM_SELF_ENV_FILE" ]; then
-        cp -f "$INM_SELF_ENV_FILE" "$INM_SELF_ENV_FILE.bak.$(date +%s)" >/dev/null 2>&1 || {
-            log warn "[COC] Could not create backup of existing config."
-        }
-        rm -f "$INM_SELF_ENV_FILE" >/dev/null 2>&1 || {
-            log err "[COC] Could not remove existing config file '$INM_SELF_ENV_FILE'. Aborting."
-            exit 1
-        }
-    fi
-
-    if ! touch "$INM_SELF_ENV_FILE"; then
-        log err "[COC] Error: Could not write to '$INM_SELF_ENV_FILE'. Aborting."
-        exit 1
-    fi
-
     log info "[COC] Creating configuration in: $INM_SELF_ENV_FILE"
     echo -e "\n${GREEN}========== Install Wizard ==========${NC}\n"
 
@@ -321,26 +300,119 @@ create_own_config() {
         fi
     done
 
-    write_config_defaults
+    local target_dir
+    target_dir="$(dirname "$INM_SELF_ENV_FILE")"
+    local enforced_user="${default_settings[INM_ENFORCED_USER]:-}"
+    local enforced_group="${default_settings[INM_ENFORCED_GROUP]:-}"
+    local current_user=""
+    current_user="$(id -un 2>/dev/null || true)"
+    if [[ -z "$enforced_user" ]]; then
+        enforced_user="$current_user"
+    fi
+    if [[ -z "$enforced_group" ]]; then
+        enforced_group="$(id -gn "$enforced_user" 2>/dev/null || true)"
+    fi
+    [[ -z "$enforced_group" ]] && enforced_group="$enforced_user"
 
+    local need_priv=false
+    local use_sudo=false
+    if [[ -n "$enforced_user" && "$enforced_user" != "$current_user" ]]; then
+        need_priv=true
+        if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+            use_sudo=false
+        elif command -v sudo >/dev/null 2>&1; then
+            if ! sudo -n true 2>/dev/null; then
+                if ! prompt_confirm "COC_SUDO" "no" "Create config as ${enforced_user} via sudo? [y/N]" false 60; then
+                    log err "[COC] Config must be created as ${enforced_user}. Run as that user or with sudo."
+                    exit 1
+                fi
+            fi
+            use_sudo=true
+        else
+            log err "[COC] Config must be created as ${enforced_user}. Run as that user or with sudo."
+            exit 1
+        fi
+    fi
+
+    if ! mkdir -p "$target_dir" >/dev/null 2>&1; then
+        if [[ "$use_sudo" == true ]]; then
+            sudo mkdir -p "$target_dir" >/dev/null 2>&1 || {
+                log err "[COC] Could not create directory '$target_dir'"
+                exit 1
+            }
+        else
+            log err "[COC] Could not create directory '$target_dir'"
+            exit 1
+        fi
+    fi
+
+    if [ -f "$INM_SELF_ENV_FILE" ]; then
+        if [[ "$use_sudo" == true ]]; then
+            sudo cp -f "$INM_SELF_ENV_FILE" "$INM_SELF_ENV_FILE.bak.$(date +%s)" >/dev/null 2>&1 || {
+                log warn "[COC] Could not create backup of existing config."
+            }
+            sudo rm -f "$INM_SELF_ENV_FILE" >/dev/null 2>&1 || {
+                log err "[COC] Could not remove existing config file '$INM_SELF_ENV_FILE'. Aborting."
+                exit 1
+            }
+        else
+            cp -f "$INM_SELF_ENV_FILE" "$INM_SELF_ENV_FILE.bak.$(date +%s)" >/dev/null 2>&1 || {
+                log warn "[COC] Could not create backup of existing config."
+            }
+            rm -f "$INM_SELF_ENV_FILE" >/dev/null 2>&1 || {
+                log err "[COC] Could not remove existing config file '$INM_SELF_ENV_FILE'. Aborting."
+                exit 1
+            }
+        fi
+    fi
+
+    local tmp_file
+    tmp_file="$(mktemp)" || {
+        log err "[COC] Error: Could not create temporary config file. Aborting."
+        exit 1
+    }
+
+    write_config_defaults "$tmp_file"
     for key in "${!NAMED_ARGS[@]}"; do
         if [ -z "${default_settings[$key]+_}" ]; then
-            echo "$key=\"${NAMED_ARGS[$key]}\"" >> "$INM_SELF_ENV_FILE"
+            echo "$key=\"${NAMED_ARGS[$key]}\"" >> "$tmp_file"
         fi
     done
-    if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+    if ! grep -q "^INM_INSTANCE_ID=" "$tmp_file"; then
         local inst_id
         inst_id="$(config_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}")"
-        if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
-            echo "INM_INSTANCE_ID=\"${inst_id}\"" >> "$INM_SELF_ENV_FILE"
+        if ! grep -q "^INM_INSTANCE_ID=" "$tmp_file"; then
+            echo "INM_INSTANCE_ID=\"${inst_id}\"" >> "$tmp_file"
         fi
     fi
-    if ! grep -q "^INM_CLI_COMPATIBILITY=" "$INM_SELF_ENV_FILE"; then
-        echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$INM_SELF_ENV_FILE"
+    if ! grep -q "^INM_CLI_COMPATIBILITY=" "$tmp_file"; then
+        echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$tmp_file"
     fi
 
-    local cli_env_mode="${INM_CLI_ENV_MODE:-600}"
-    chmod "$cli_env_mode" "$INM_SELF_ENV_FILE" 2>/dev/null
+    if [[ "$use_sudo" == true ]]; then
+        sudo mv "$tmp_file" "$INM_SELF_ENV_FILE" >/dev/null 2>&1 || {
+            rm -f "$tmp_file" >/dev/null 2>&1 || true
+            log err "[COC] Error: Could not write to '$INM_SELF_ENV_FILE'. Aborting."
+            exit 1
+        }
+        sudo chown "${enforced_user}:${enforced_group}" "$INM_SELF_ENV_FILE" 2>/dev/null || true
+    else
+        mv "$tmp_file" "$INM_SELF_ENV_FILE" >/dev/null 2>&1 || {
+            rm -f "$tmp_file" >/dev/null 2>&1 || true
+            log err "[COC] Error: Could not write to '$INM_SELF_ENV_FILE'. Aborting."
+            exit 1
+        }
+        if [[ "$need_priv" == true ]]; then
+            chown "${enforced_user}:${enforced_group}" "$INM_SELF_ENV_FILE" 2>/dev/null || true
+        fi
+    fi
+
+    local cli_env_mode="${default_settings[INM_CLI_ENV_MODE]:-${INM_CLI_ENV_MODE:-600}}"
+    if [[ "$use_sudo" == true ]]; then
+        sudo chmod "$cli_env_mode" "$INM_SELF_ENV_FILE" 2>/dev/null || true
+    else
+        chmod "$cli_env_mode" "$INM_SELF_ENV_FILE" 2>/dev/null || true
+    fi
     log ok "$INM_SELF_ENV_FILE has been created and configured."
 
     load_env_file_raw "$INM_SELF_ENV_FILE"
