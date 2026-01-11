@@ -680,7 +680,11 @@ preflight_emit_filesystem() {
             preflight_warn_cache_world_writable "global" "$gc_path" "$cache_global_mode"
         fi
     elif [ "$cache_global_state" = "missing" ]; then
-        fs_emit WARN "$cache_global_detail"
+        if [ "$cache_local_state" = "ok" ]; then
+            fs_emit INFO "Cache global not present: $gc_path (local cache OK)"
+        else
+            fs_emit WARN "$cache_global_detail"
+        fi
     elif [ "$cache_global_state" = "fail" ]; then
         if [ "$cache_any_ok" = true ]; then
             fs_emit INFO "${cache_global_detail} (local cache writable; consider fixing global cache for shared use)"
@@ -695,7 +699,11 @@ preflight_emit_filesystem() {
             preflight_warn_cache_world_writable "local" "$lc_path" "$cache_local_mode"
         fi
     elif [ "$cache_local_state" = "missing" ]; then
-        fs_emit WARN "$cache_local_detail"
+        if [ "$cache_global_state" = "ok" ]; then
+            fs_emit INFO "Cache local not present: $lc_path (global cache OK)"
+        else
+            fs_emit WARN "$cache_local_detail"
+        fi
     elif [ "$cache_local_state" = "fail" ]; then
         if [ "$cache_any_ok" = true ]; then
             fs_emit INFO "${cache_local_detail} (global cache writable; consider fixing local cache for speed)"

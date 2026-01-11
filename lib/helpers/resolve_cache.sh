@@ -123,6 +123,12 @@ resolve_cache_directory() {
     if check_global_cache_permissions; then
         echo "$global_path"
     else
+        if [[ -n "$local_path" && ! -d "$local_path" ]]; then
+            mkdir -p "$local_path" 2>/dev/null || true
+        fi
+        if [[ -n "$local_path" && -d "$local_path" ]]; then
+            apply_cache_dir_mode "$local_path"
+        fi
         echo "$local_path"
     fi
 }

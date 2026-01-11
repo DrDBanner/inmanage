@@ -97,11 +97,13 @@ cron_read_crontab() {
     if ! command -v crontab >/dev/null 2>&1; then
         return 1
     fi
-    if [[ -n "$user" ]]; then
-        crontab -l -u "$user" 2>/dev/null || true
-    else
+    local current_user
+    current_user="$(id -un 2>/dev/null || true)"
+    if [[ -z "$user" || "$user" == "$current_user" ]]; then
         crontab -l 2>/dev/null || true
+        return 0
     fi
+    crontab -l -u "$user" 2>/dev/null || true
     return 0
 }
 
