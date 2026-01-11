@@ -375,8 +375,7 @@ app_log_rollback_hint() {
     local rollback_dir="$3"
     local rollback_name rollback_cmd
     app_build_rollback_hint "$action" "$rollback_dir" "inm" rollback_name rollback_cmd
-    log info "[${tag}] Rollback available: ${rollback_name}"
-    log info "[${tag}] Rollback: ${rollback_cmd}"
+    log info "[${tag}] Rollback: ${rollback_name} (run: ${rollback_cmd})"
 }
 
 # ---------------------------------------------------------------------
@@ -395,7 +394,7 @@ app_preserve_path() {
     local src="${src_root%/}/$rel"
     local dst="${dst_root%/}/$rel"
     if [[ -d "$src" ]]; then
-        if ! fs_sync_dir "$tag preserve" "$src" "$dst" false normal "$tag" --ignore-existing; then
+        if ! fs_sync_dir "$tag preserve" "$src" "$dst" false debug "$tag" --ignore-existing; then
             log warn "[${tag}] Failed to preserve directory: $rel"
         fi
         return 0

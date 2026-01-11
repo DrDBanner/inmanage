@@ -151,7 +151,7 @@ cleanup_cache() {
         log info "[DRY-RUN] Skipping cache cleanup."
         return 0
     fi
-    log info "[CC] Cleaning up old cached Invoice Ninja versions..."
+    log debug "[CC] Cleaning up old cached Invoice Ninja versions..."
 
     local cache_dir
     cache_dir=$(resolve_cache_directory)
@@ -168,7 +168,7 @@ cleanup_cache() {
             rm -f "$file"
         done
 
-    log ok "[CC] Cleanup of cached versions completed."
+    log debug "[CC] Cleanup of cached versions completed."
 }
 
 # ---------------------------------------------------------------------

@@ -101,7 +101,7 @@ do_snappdf() {
             cache_versions="${cache_dir%/}/versions"
         fi
         if [[ -n "$cache_versions" && -d "$cache_versions" ]]; then
-            log info "[SNAP] Restoring Chromium from cache: $cache_versions"
+            log debug "[SNAP] Restoring Chromium from cache: $cache_versions"
             safe_move_or_copy_and_clean "$cache_versions" "$snappdf_versions" copy || log warn "[SNAP] Failed to restore cached Chromium."
             existing_bin="$(find_snappdf_chromium "$snappdf_versions")"
         fi
