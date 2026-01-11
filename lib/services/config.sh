@@ -418,6 +418,52 @@ create_own_config() {
     load_env_file_raw "$INM_SELF_ENV_FILE"
     warn_cli_config_owner_mismatch "$INM_SELF_ENV_FILE"
 
+    local history_file=""
+    if [[ -n "${INM_HISTORY_LOG_FILE:-}" ]]; then
+        if declare -F path_expand_no_eval >/dev/null 2>&1; then
+            history_file="$(path_expand_no_eval "$INM_HISTORY_LOG_FILE")"
+        else
+            history_file="$INM_HISTORY_LOG_FILE"
+        fi
+        if [[ "$history_file" != /* && -n "${INM_BASE_DIRECTORY:-}" ]]; then
+            history_file="${INM_BASE_DIRECTORY%/}/${history_file#/}"
+        fi
+    elif [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
+        history_file="${INM_BASE_DIRECTORY%/}/.inmanage/history.log"
+    fi
+    if [[ -n "$history_file" ]]; then
+        local history_dir
+        history_dir="$(dirname "$history_file")"
+        if [[ -d "$history_dir" ]]; then
+            local expected_owner="${enforced_user}:${enforced_group}"
+            if [[ -e "$history_file" ]]; then
+                local current_owner
+                current_owner="$(_fs_get_owner "$history_file")"
+                if [[ -n "$current_owner" && -n "$expected_owner" && "$current_owner" != "$expected_owner" ]]; then
+                    if [[ -w "$history_dir" ]]; then
+                        local ts
+                        ts="$(date +%s)"
+                        mv -f "$history_file" "${history_file}.bak.${ts}" 2>/dev/null || true
+                    fi
+                fi
+            fi
+            if [[ ! -e "$history_file" && -w "$history_dir" ]]; then
+                : > "$history_file" 2>/dev/null || true
+                chmod 600 "$history_file" 2>/dev/null || true
+            fi
+            if [[ "$use_sudo" == true && -n "$enforced_user" && -e "$history_file" ]]; then
+                sudo -n -u "$enforced_user" sh -c '
+history_file="$1"
+if [ -f "$history_file" ]; then
+  chmod 600 "$history_file" 2>/dev/null || true
+fi
+' sh "$history_file" >/dev/null 2>&1 || true
+            elif [[ -n "$enforced_user" && -e "$history_file" ]]; then
+                enforce_ownership "$history_file" "$history_dir" || true
+            fi
+        fi
+    fi
+
     if [ -z "$INM_BASE_DIRECTORY" ]; then
         log err "[COC] 'INM_BASE_DIRECTORY' is empty. Aborting."
         exit 1
