@@ -190,9 +190,9 @@ resolve_env_paths() {
             if [ -n "${INM_BASE_DIRECTORY:-}" ] && [ -n "${INM_INSTALLATION_DIRECTORY:-}" ]; then
                 INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
                 INM_ENV_FILE="${INM_INSTALLATION_PATH%/}/.env"
-                log warn "[RES] No .env found; deriving path: $INM_ENV_FILE"
+                res_log_missing_env "[RES] No .env found; deriving path: $INM_ENV_FILE"
             else
-                log warn "[RES] Could not find a usable .env file. Please specify --ninja-location=…"
+                res_log_missing_env "[RES] Could not find a usable .env file. Please specify --ninja-location=…"
                 return 0
             fi
         fi

@@ -488,7 +488,7 @@ fi
             local sed_expr='/^DB_PORT=/a DB_ELEVATED_USERNAME=\nDB_ELEVATED_PASSWORD='
             if ! sed -i '' -e "$sed_expr" "$INM_ENV_EXAMPLE_FILE" 2>/dev/null; then
                 sed -i -e "$sed_expr" "$INM_ENV_EXAMPLE_FILE" 2>/dev/null || {
-                    log warn "[COC] Failed to update DB_ELEVATED_* entries in $INM_ENV_EXAMPLE_FILE"
+                    log debug "[COC] Failed to update DB_ELEVATED_* entries in $INM_ENV_EXAMPLE_FILE"
                 }
             fi
         fi
