@@ -334,8 +334,15 @@ fs_check_file_mode() {
     local safe_label="${label:-file}"
     if [ -n "$current" ] && [ -n "$expected_mode" ] && [ "$current" != "$expected_mode" ]; then
         if [ "$fix_permissions" = true ]; then
-            fs_emit_result "$report_fn" WARN "$tag" "Fixing ${safe_label} mode (was $current -> $expected_mode)"
-            if ! enforce_file_mode "$expected_mode" "$path"; then
+            if enforce_file_mode "$expected_mode" "$path"; then
+                local updated_mode
+                updated_mode="$(_fs_get_mode "$path")"
+                if [[ -n "$updated_mode" && "$updated_mode" == "$expected_mode" ]]; then
+                    fs_emit_result "$report_fn" OK "$tag" "Fixed ${safe_label} mode (was $current -> $expected_mode)"
+                else
+                    fs_emit_result "$report_fn" WARN "$tag" "${safe_label} mode still mismatched (now=$updated_mode, expected=$expected_mode). Run as root or use --override-enforced-user."
+                fi
+            else
                 fs_emit_result "$report_fn" WARN "$tag" "${safe_label} mode fix failed (permission denied). Run as root or use --override-enforced-user."
             fi
         else

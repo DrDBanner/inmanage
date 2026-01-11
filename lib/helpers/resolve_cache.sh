@@ -19,8 +19,9 @@ expand_path_vars() {
     if [[ "$expanded" == *'${'* ]]; then
         expanded="$(expand_placeholders "$expanded")"
     fi
-    # Expand leading ~ and simple $HOME/${HOME} without eval, prefer original home if preserved
-    local home_base="${INM_ORIGINAL_HOME:-$HOME}"
+    # Expand leading ~ and simple $HOME/${HOME} without eval, prefer resolved home base
+    local home_base
+    home_base="$(resolve_home_base)"
     expanded="${expanded/#\~/$home_base}"
     expanded="${expanded//\$\{HOME\}/$home_base}"
     expanded="${expanded//\$HOME/$home_base}"

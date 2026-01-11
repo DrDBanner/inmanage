@@ -7,6 +7,38 @@
 # Computes: placeholder-expanded string.
 # Returns: string on stdout.
 # ---------------------------------------------------------------------
+resolve_home_base() {
+    if [[ -n "${INM_ORIGINAL_HOME:-}" ]]; then
+        log debug "[FS] Using INM_ORIGINAL_HOME: $INM_ORIGINAL_HOME"
+        printf "%s" "$INM_ORIGINAL_HOME"
+        return 0
+    fi
+    local candidate=""
+    local user=""
+    if [[ -n "${INM_ENFORCED_USER:-}" && "${INM_ENFORCED_USER}" != "root" ]]; then
+        user="$INM_ENFORCED_USER"
+        log debug "[FS] Resolving HOME from INM_ENFORCED_USER: $user"
+    elif [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        user="$SUDO_USER"
+        log debug "[FS] Resolving HOME from SUDO_USER: $user"
+    fi
+    if [[ -n "$user" ]]; then
+        if command -v getent >/dev/null 2>&1; then
+            candidate="$(getent passwd "$user" 2>/dev/null | cut -d: -f6)"
+        elif command -v pw >/dev/null 2>&1; then
+            candidate="$(pw usershow "$user" 2>/dev/null | awk -F: '{print $9}')"
+        fi
+        if [[ -n "$candidate" && -d "$candidate" ]]; then
+            log debug "[FS] Resolved HOME via user lookup: $candidate"
+            printf "%s" "$candidate"
+            return 0
+        fi
+    fi
+    log debug "[FS] Falling back to current HOME: ${HOME:-}"
+    printf "%s" "${HOME:-}"
+    return 0
+}
+
 expand_placeholders() {
     local input="$1"
     local output="$input"
@@ -14,8 +46,8 @@ expand_placeholders() {
         local full="${BASH_REMATCH[1]}"
         local var="${BASH_REMATCH[2]}"
         local val
-        if [[ "$var" == "HOME" && -n "${INM_ORIGINAL_HOME:-}" ]]; then
-            val="$INM_ORIGINAL_HOME"
+        if [[ "$var" == "HOME" ]]; then
+            val="$(resolve_home_base)"
         else
             val="${!var}"
         fi
@@ -35,7 +67,8 @@ path_expand_no_eval() {
     local p="$1"
     [[ -z "$p" ]] && { printf "%s" "$p"; return; }
     p="$(expand_placeholders "$p")"
-    local home_base="${INM_ORIGINAL_HOME:-$HOME}"
+    local home_base
+    home_base="$(resolve_home_base)"
     p="${p/#\~/$home_base}"
     p="${p//\$\{HOME\}/$home_base}"
     p="${p//\$HOME/$home_base}"
