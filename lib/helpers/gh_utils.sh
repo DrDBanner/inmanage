@@ -448,21 +448,14 @@ gh_release_download() {
         log debug "[${label}] Resuming download (partial file found)."
     fi
     local curl_rc=0
-    local trace_guard=false
-    if declare -F trace_can_guard >/dev/null 2>&1 && trace_can_guard && [[ -n "${auth_args[*]}" ]]; then
-        trace_suspend && trace_guard=true
-    fi
     if [ "$use_spinner" = true ]; then
         spinner_start "Fetching release archive..."
-        curl "${curl_opts[@]}" "${resume_flag[@]}" "$download_url" -o "$temp_file"
+        http_curl "$label" "$download_url" "${curl_opts[@]}" "${resume_flag[@]}" -o "$temp_file"
         curl_rc=$?
         spinner_stop
     else
-        curl "${curl_opts[@]}" "${resume_flag[@]}" "$download_url" -o "$temp_file"
+        http_curl "$label" "$download_url" "${curl_opts[@]}" "${resume_flag[@]}" -o "$temp_file"
         curl_rc=$?
-    fi
-    if [[ "$trace_guard" == true ]]; then
-        trace_resume
     fi
     if [ "$curl_rc" -eq 0 ]; then
         if [ "$(wc -c < "$temp_file")" -gt "$min_bytes" ]; then

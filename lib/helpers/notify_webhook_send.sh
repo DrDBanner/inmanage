@@ -26,9 +26,10 @@ notify_send_webhook() {
     local content_type payload
     content_type="$(notify_webhook_content_type)"
     payload="$(notify_webhook_payload "$subject" "$body")"
-    if ! curl -sS -X POST -H "Content-Type: ${content_type}" \
+    http_curl "WEBHOOK" "$url" -s -X POST -H "Content-Type: ${content_type}" \
         -H "X-Inmanage-Subject: ${subject}" \
-        --data-raw "$payload" "$url" >/dev/null 2>&1; then
+        --data-raw "$payload" -o /dev/null
+    if [[ $? -ne 0 ]]; then
         log warn "[NOTIFY] Webhook delivery failed."
         return 1
     fi

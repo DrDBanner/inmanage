@@ -281,7 +281,11 @@ preflight_emit_cli_info() {
             local local_commit_full remote_commit remote_short local_short
             if git_origin_url "$cli_root" "" >/dev/null; then
                 git_local_head "$cli_root" local_commit_full || local_commit_full=""
-                git_remote_head "$cli_root" "${cli_info[branch]:-HEAD}" remote_commit || remote_commit=""
+                local ref="${cli_info[branch]:-}"
+                if [[ -z "$ref" || "$ref" == "unknown" ]]; then
+                    ref="HEAD"
+                fi
+                git_remote_head "$cli_root" "$ref" remote_commit || remote_commit=""
                 if [ -n "$local_commit_full" ] && [ -n "$remote_commit" ]; then
                     if [ "$local_commit_full" != "$remote_commit" ]; then
                         remote_short="${remote_commit:0:7}"

@@ -5,13 +5,13 @@
 __HELPER_HTTP_UTILS_LOADED=1
 
 # ---------------------------------------------------------------------
-# http_status()
-# Fetch HTTP status code with https->insecure fallback.
+# http_status_raw()
+# Fetch HTTP status code with https->insecure fallback (no logging).
 # Consumes: args: url, insecure_var; tools: curl.
 # Computes: status code and optional insecure flag.
 # Returns: status code on stdout.
 # ---------------------------------------------------------------------
-http_status() {
+http_status_raw() {
     local url="$1"
     local insecure_var="$2"
     local insecure=false
@@ -27,6 +27,86 @@ http_status() {
         printf -v "$insecure_var" "%s" "$insecure"
     fi
     printf "%s" "$status_code"
+}
+
+# ---------------------------------------------------------------------
+# http_status()
+# Wrapper for http_status_raw().
+# ---------------------------------------------------------------------
+http_status() {
+    http_status_raw "$@"
+}
+
+# ---------------------------------------------------------------------
+# http_sanitize_url()
+# Strip credentials and query params for safe logging.
+# Consumes: args: url; tools: sed (optional).
+# Returns: sanitized url on stdout.
+# ---------------------------------------------------------------------
+http_sanitize_url() {
+    local url="$1"
+    local clean="${url%%\?*}"
+    if command -v sed >/dev/null 2>&1; then
+        clean="$(printf "%s" "$clean" | sed -E 's#(https?://)[^/@]+@#\\1#')"
+    fi
+    printf "%s" "$clean"
+}
+
+# ---------------------------------------------------------------------
+# http_log_failure()
+# Log a compact diagnostics line for failed HTTP requests.
+# Consumes: args: label, url, rc; deps: http_status_raw/http_sanitize_url.
+# ---------------------------------------------------------------------
+http_log_failure() {
+    local label="${1:-HTTP}"
+    local url="$2"
+    local rc="${3:-1}"
+    local insecure=false
+    local status_code
+    status_code="$(http_status_raw "$url" insecure)"
+    local clean_url
+    clean_url="$(http_sanitize_url "$url")"
+    local suffix=""
+    [[ "$insecure" == true ]] && suffix=" insecure"
+    if [[ "$status_code" == "000" || -z "$status_code" ]]; then
+        log warn "[HTTP] ${label} request failed (rc=${rc} status=none${suffix}): ${clean_url}"
+    else
+        log warn "[HTTP] ${label} request failed (rc=${rc} status=${status_code}${suffix}): ${clean_url}"
+    fi
+}
+
+# ---------------------------------------------------------------------
+# http_curl()
+# Execute curl and log diagnostics on failure.
+# Consumes: args: label, url, curl args; tools: curl.
+# Returns: curl exit code.
+# ---------------------------------------------------------------------
+http_curl() {
+    local label="$1"
+    local url="$2"
+    shift 2
+    local -a args=("$@")
+    local trace_guard=false
+    if declare -F trace_can_guard >/dev/null 2>&1 && trace_can_guard; then
+        local arg
+        for arg in "${args[@]}"; do
+            case "$arg" in
+                -u*|--user*|Authorization:*|authorization:*|*Authorization:*|*authorization:*)
+                    trace_suspend && trace_guard=true
+                    break
+                    ;;
+            esac
+        done
+    fi
+    curl "${args[@]}" "$url"
+    local rc=$?
+    if [[ "$trace_guard" == true ]]; then
+        trace_resume
+    fi
+    if [[ $rc -ne 0 ]]; then
+        http_log_failure "$label" "$url" "$rc"
+    fi
+    return "$rc"
 }
 
 # ---------------------------------------------------------------------
@@ -122,7 +202,11 @@ http_fetch_with_args() {
         printf "%s" "$out"
     fi
     if [[ -z "$out" ]]; then
+        http_log_failure "HTTP" "$url" "$rc"
         return 1
+    fi
+    if [[ "$rc" -ne 0 ]]; then
+        http_log_failure "HTTP" "$url" "$rc"
     fi
     return "$rc"
 }

@@ -52,6 +52,26 @@ git_collect_info() {
             err="$out"
         fi
 
+        if [[ -z "$branch" ]]; then
+            out="$(git -c safe.directory="$root" -C "$root" symbolic-ref -q --short HEAD 2>&1)"
+            rc=$?
+            if [ "$rc" -eq 0 ]; then
+                branch="$out"
+            elif [ -z "$err" ]; then
+                err="$out"
+            fi
+        fi
+
+        if [[ -z "$commit" ]]; then
+            out="$(git -c safe.directory="$root" -C "$root" log -1 --format=%H 2>&1)"
+            rc=$?
+            if [ "$rc" -eq 0 ]; then
+                commit="$out"
+            elif [ -z "$err" ]; then
+                err="$out"
+            fi
+        fi
+
         git -c safe.directory="$root" -C "$root" status --porcelain >/dev/null 2>&1 && \
             git -c safe.directory="$root" -C "$root" status --porcelain | grep -q . && dirty="*"
 
