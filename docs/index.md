@@ -35,6 +35,8 @@ INmanage is the CLI for self-hosted Invoice Ninja. Focus: **convenience**, **cer
 - **Environments**
   - [Containers \& VMs onboarding (Invoice Ninja and INmanage)](#containers--vms-onboarding-invoice-ninja-and-inmanage)
   - [Recipes \& Tutorials (Environments)](#recipes--tutorials-environments)
+- **Other**
+  - [Licensing](#licensing)
 
 ## Project layout (INmanage)
 
@@ -848,6 +850,16 @@ Args:
 ----
 Docs:
   https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
+
+----
+
+INmanage is free to use and built for professional operations where time savings and operational safety matter.
+
+If you use INmanage as part of a paid or commercial service, supporting the
+project with a Commercial Support License is voluntary, appreciated, and considered professional best practice.
+
+See https://github.com/DrDBanner/inmanage/blob/main/LICENSING.md for details.
+
 ```
 <!-- END_CLI_HELP -->
 
@@ -1182,33 +1194,45 @@ env commands:
 
 This section is about the app itself (not the CLI).
 
-### Provisioned install (recommended)
+### Provisioned install (default)
 
 Repeatable and unattended. Best for staging/production.
 
-> [!WARNING]
-> Provisioned installs are **destructive** (app + DB). A backup is created by default. `--force` is required for non‑wizard runs to confirm the risk; the wizard handles confirmation interactively. Avoid `--no-backup` unless you fully understand the impact.
-
-1. Generate a provision file with the wizard:
+1. Start the installer:
    ```bash
    inm core install
    ```
-   The wizard offers to create `.env.provision`, opens it in your editor, and can continue straight into the install.
-   If the file includes valid `MAIL_*` SMTP settings plus the minimum `INM_NOTIFY_*` keys (`INM_NOTIFY_ENABLED`, `INM_NOTIFY_TARGETS`, `INM_NOTIFY_HEARTBEAT_ENABLED`, `INM_NOTIFY_HEARTBEAT_LEVEL`), the installer will auto‑install the heartbeat cron job.
-   You can also add **any** `INM_` keys while editing. They are applied to `.inmanage/.env.inmanage` during install and stripped before the final app `.env` is written. Full list: [CLI config reference (.env.inmanage)](#cli-config-reference-envinmanage).
+2. Choose **provisioned**. The wizard uses `.inmanage/.env.provision`; if it is missing, it offers to create it and opens it for editing.
+   - Fill the usual app `.env` keys (APP_URL, DB_*, MAIL_*).
+   - Add as many `INM_*` fields you like for CLI config; `DB_ELEVATED_*` only if the installer should create the DB/user.
+   - Tip: Add these to setup your mail route and heartbeat cron in one batch.
+     ```text
+     INM_NOTIFY_ENABLED="true"
+     INM_NOTIFY_TARGETS="email"
+     INM_NOTIFY_HEARTBEAT_ENABLED="true"
+     INM_NOTIFY_HEARTBEAT_LEVEL="WARN"
+     INM_NOTIFY_EMAIL_TO="you@example.com"
+     INM_NOTIFY_MAIL_FROM_NAME="Heartbeat - Your Company"
 
-   > [!NOTE]
-   > Automation/dev alternative:
-   > ```bash
-   > inm spawn provision-file
-   > ```
-   > `spawn` creates a ready-to-edit `.env.provision` from the bundled `.env.example` (or app `.env` if present). Most setups can stick with the wizard.
-2. If you already have a prepared `.env.provision`, place it in `.inmanage/.env.provision`.
-   - `DB_ELEVATED_USERNAME` and `DB_ELEVATED_PASSWORD` are only used to create the DB/user if needed and are removed after success.
-3. Execute installation:
-   ```bash
-   inm core install --provision
-   ```
+     MAIL_MAILER="smtp"
+     MAIL_HOST="smtp.example.com"
+     MAIL_PORT="587"
+     MAIL_USERNAME="user"
+     MAIL_PASSWORD="pass"
+     MAIL_ENCRYPTION="tls"
+     MAIL_FROM_ADDRESS="your@email.com"
+     MAIL_FROM_NAME="Billing - Your Company"
+     ```
+   - Save and exit; the installer continues with what you saved.
+   - Result: `.env.provision` becomes the app `.env` (INM_* stripped), the app is installed and seeded, and the default admin user is created.
+3. **End result**: you get the login URL and default credentials (`admin@admin.com` / `admin`) so you can log in immediately; delete `.env.provision` once you are satisfied.
+
+---
+
+Standalone: if you already have `.inmanage/.env.provision` and want no prompts, run:
+```bash
+inm core install --provision
+```
 
 Install switches (`inm core install`):
 
@@ -1623,3 +1647,12 @@ Example (full environment, Debian/Ubuntu) playbook snippets:
 - **Debian 12 (Bookworm) VM, full stack**: [./tutorials/install_invoiceninja_debian12_bookworm_vm.md](./tutorials/install_invoiceninja_debian12_bookworm_vm.md)
 - **Ansible full environment (Debian/Ubuntu)**: [./tutorials/ansible_full_environment.md](./tutorials/ansible_full_environment.md)
 - **Docker + INmanage (3 paths)**: [./tutorials/docker_inmanage.md](./tutorials/docker_inmanage.md)
+
+## Licensing
+
+INmanage is free to use and built for professional operations where time savings and operational safety matter.
+
+Commercial usage is permitted; supporting the project with
+a Commercial Support License is voluntary, appreciated, and considered professional best practice.
+
+Details: see [LICENSING](../LICENSING.md)

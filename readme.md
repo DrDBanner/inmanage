@@ -203,3 +203,13 @@ Short list below; each item is explained in the extended docs.
 - Cache management for downloads and release pruning.
 - Version discovery for installed/latest/cached releases.
 - Cache-only release fetch (`core get app`) for preloading versions.
+
+## Licensing
+
+INmanage is free to use and built for professional operations where time savings and operational safety matter.
+
+If you use INmanage as part of a **paid or commercial service**, supporting
+the project with a Commercial Support License is voluntary, appreciated, and
+considered professional best practice.
+
+Details: see <https://github.com/DrDBanner/inmanage/blob/main/LICENSING.md>

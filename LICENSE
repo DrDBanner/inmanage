@@ -1,103 +1,89 @@
-Inmanage License 1.1 (based on Elastic License 2.0)
+INmanage Fair Commercial License (FCL)
+Version 1.0 – January 2026
 
-Copyright (c) 2024 DrDBanner
+Copyright (c) 2026 INmanage contributors
 
-Acceptance
-By using the software, you agree to all of the terms and conditions below.
+1. Purpose
 
-Copyright License
-The licensor grants you a non-exclusive, royalty-free, worldwide,
-non-sublicensable, non-transferable license to use, copy, distribute,
-make available, and prepare derivative works of the software, in each case
-subject to the limitations and conditions below.
+This license is designed to allow free use of INmanage while ensuring
+fair and sustainable usage in professional and commercial environments.
 
-Commercial Support License (Request)
-If you use the software as part of a paid service (for example maintenance,
-hosting, provisioning, or operating Invoice Ninja installations for clients),
-we ask that you support the project with a Commercial Support License or
-another paid agreement with the licensor. This request is based on
-professional fairness and trust, and it is not enforced by DRM or feature
-gating.
+It is based on trust and professional responsibility rather than
+technical enforcement.
 
-Limitations
-You may not alter, remove, or obscure any licensing, copyright, or other
-notices of the licensor in the software. Any use of the licensor's
-trademarks is subject to applicable law.
+2. Permitted Use
 
-Telemetry Notice
-The software may include a minimal call-home mechanism that sends
-anonymous, non-identifying metadata such as version, install type, and
-high-level usage signals. It does not send customer data, invoice data,
-database contents, credentials or secrets, hostnames, domains, or IP
-addresses. Telemetry can be disabled via configuration as documented.
+INmanage may be used free of charge in private, internal, evaluation,
+and commercial contexts.
 
-Patents
-The licensor grants you a license, under any patent claims the licensor
-can license, or becomes able to license, to make, have made, use, sell,
-offer for sale, import and have imported the software, in each case
-subject to the limitations and conditions in this license. This license
-does not cover any patent claims that you cause to be infringed by
-modifications or additions to the software. If you or your company make
-any written claim that the software infringes or contributes to
-infringement of any patent, your patent license for the software granted
-under these terms ends immediately. If your company makes such a claim,
-your patent license ends immediately for work on behalf of your company.
+3. Commercial Use
 
-Notices
-You must ensure that anyone who gets a copy of any part of the software
-from you also gets a copy of these terms.
+Commercial use is permitted. Supporting the project with a Commercial
+Support License is appreciated and considered best practice.
 
-If you modify the software, you must include in any modified copies of the
-software prominent notices stating that you have modified the software.
+Commercial use includes, but is not limited to:
 
-No Other Rights
-These terms do not imply any licenses other than those expressly granted
-in these terms.
+- Offering INmanage as part of paid services
+- Using INmanage in client projects
+- Internal use within a for-profit organization
+- Managed hosting, maintenance, or provisioning services
+- Operating INmanage for third parties for compensation
 
-Termination
-If you use the software in violation of these terms, such use is not
-licensed, and your licenses will automatically terminate. If the licensor
-provides you with a notice of your violation, and you cease all violation
-of this license no later than 30 days after you receive that notice, your
-licenses will be reinstated retroactively. However, if you violate these
-terms after such reinstatement, any additional violation of these terms
-will cause your licenses to terminate automatically and permanently.
+Supporting the project provides legal clarity for such usage.
 
-No Liability
-As far as the law allows, the software comes as is, without any warranty
-or condition, and the licensor will not be liable to you for any damages
-arising out of these terms or the use or nature of the software, under any
-kind of legal claim.
+4. Commercial Support License
 
-Definitions
-The licensor is the entity offering these terms, and the software is the
-software the licensor makes available under these terms, including any
-portion of it.
+A Commercial Support License is obtained by financially supporting the
+project via the official support channels.
 
-you refers to the individual or entity agreeing to these terms.
+The license:
+- Is voluntary and not technically enforced
+- Does not require a license key at this stage
+- Is based on professional fairness and good faith
+- Can be one-off or recurring, at your discretion
 
-your company is any legal entity, sole proprietorship, or other kind of
-organization that you work for, plus all organizations that have control
-over, are under the control of, or are under common control with that
-organization. control means ownership of substantially all the assets of
-an entity, or the power to direct its management and policies by vote,
-contract, or otherwise. Control can be direct or indirect.
+Details are described in LICENSING.md.
 
-your licenses are all the licenses granted to you for the software under
-these terms.
+5. Redistribution and Modification
 
-use means anything you do with the software requiring one of your
-licenses.
+You may modify and redistribute INmanage, provided that:
 
-trademark means trademarks, service marks, and similar rights.
+- This license text remains included
+- The origin of the software is not misrepresented
+- Modifications are clearly marked
 
-Commercial Use means use of the software to provide paid services or to
-receive remuneration or other commercial advantage, including offering
-maintenance, hosting, provisioning, installation, automation, or
-operation of the software for third parties or for multiple third-party
-instances. Commercial Use does not include use of the software solely for
-your own internal business operations, provided you do not offer the
-software or its functionality to third parties.
+Redistribution does not alter the support model described above.
 
-Commercial Support License means a paid support license issued by the
-licensor.
+6. No DRM, No Call-Home
+
+INmanage does not include DRM, license enforcement, or mandatory
+call-home mechanisms.
+
+Any future telemetry or enforcement mechanisms will be documented
+clearly and transparently and will not be retroactively applied.
+
+7. Warranty and Liability
+
+INmanage is provided "AS IS", without warranty of any kind.
+
+In no event shall the authors or contributors be liable for any claim,
+damages, or other liability arising from the use of the software.
+
+8. Future Licensing Model Changes
+
+The authors reserve the right to offer INmanage under additional or
+alternative licenses in the future, including:
+
+- Open-source licenses
+- Dual licensing models
+- Commercial licenses
+
+Such changes will:
+- Not retroactively affect versions already released under this license
+- Not invalidate previously granted usage rights
+- Be clearly documented at the time of change
+
+9. Acceptance
+
+By using, copying, modifying, or distributing INmanage, you agree to
+the terms of this license.
