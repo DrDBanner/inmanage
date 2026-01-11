@@ -19,11 +19,11 @@ git_collect_info() {
     local date_var="$5"
     local err_var="$6"
 
-    local branch=""
-    local commit=""
-    local dirty=""
-    local commit_date=""
-    local err=""
+    local branch_val=""
+    local commit_val=""
+    local dirty_val=""
+    local commit_date_val=""
+    local err_val=""
     local out rc
     local git_dir=""
     local fallback_used=false
@@ -39,48 +39,60 @@ git_collect_info() {
         out="$(git -c safe.directory="$root" -C "$root" rev-parse --abbrev-ref HEAD 2>&1)"
         rc=$?
         if [ "$rc" -eq 0 ]; then
-            branch="$out"
+            branch_val="$out"
         else
-            err="$out"
+            err_val="$out"
+        fi
+        if [[ "$DEBUG" == true ]]; then
+            log debug "[GIT] rev-parse --abbrev-ref HEAD rc=$rc out=$out"
         fi
 
         out="$(git -c safe.directory="$root" -C "$root" rev-parse --short HEAD 2>&1)"
         rc=$?
         if [ "$rc" -eq 0 ]; then
-            commit="$out"
-        elif [ -z "$err" ]; then
-            err="$out"
+            commit_val="$out"
+        elif [ -z "$err_val" ]; then
+            err_val="$out"
+        fi
+        if [[ "$DEBUG" == true ]]; then
+            log debug "[GIT] rev-parse --short HEAD rc=$rc out=$out"
         fi
 
-        if [[ -z "$branch" ]]; then
+        if [[ -z "$branch_val" ]]; then
             out="$(git -c safe.directory="$root" -C "$root" symbolic-ref -q --short HEAD 2>&1)"
             rc=$?
             if [ "$rc" -eq 0 ]; then
-                branch="$out"
-            elif [ -z "$err" ]; then
-                err="$out"
+                branch_val="$out"
+            elif [ -z "$err_val" ]; then
+                err_val="$out"
+            fi
+            if [[ "$DEBUG" == true ]]; then
+                log debug "[GIT] symbolic-ref --short HEAD rc=$rc out=$out"
             fi
         fi
 
-        if [[ -z "$commit" ]]; then
+        if [[ -z "$commit_val" ]]; then
             out="$(git -c safe.directory="$root" -C "$root" log -1 --format=%H 2>&1)"
             rc=$?
             if [ "$rc" -eq 0 ]; then
-                commit="$out"
-            elif [ -z "$err" ]; then
-                err="$out"
+                commit_val="$out"
+            elif [ -z "$err_val" ]; then
+                err_val="$out"
+            fi
+            if [[ "$DEBUG" == true ]]; then
+                log debug "[GIT] log -1 --format=%H rc=$rc out=$out"
             fi
         fi
 
         git -c safe.directory="$root" -C "$root" status --porcelain >/dev/null 2>&1 && \
-            git -c safe.directory="$root" -C "$root" status --porcelain | grep -q . && dirty="*"
+            git -c safe.directory="$root" -C "$root" status --porcelain | grep -q . && dirty_val="*"
 
-        commit_date="$(git -c safe.directory="$root" -C "$root" log -1 --format=%cd --date=iso 2>/dev/null || true)"
+        commit_date_val="$(git -c safe.directory="$root" -C "$root" log -1 --format=%cd --date=iso 2>/dev/null || true)"
     else
-        err="git not found"
+        err_val="git not found"
     fi
 
-    if [[ -z "$branch" || -z "$commit" ]]; then
+    if [[ -z "$branch_val" || -z "$commit_val" ]]; then
         git_dir="$root/.git"
         if [ -f "$git_dir" ]; then
             local git_file
@@ -96,39 +108,71 @@ git_collect_info() {
             if [[ "$head" =~ ^ref:\ (.+)$ ]]; then
                 ref="${BASH_REMATCH[1]}"
                 ref_path="$git_dir/$ref"
-                [[ -z "$branch" ]] && branch="${ref##refs/heads/}"
+                [[ -z "$branch_val" ]] && branch_val="${ref##refs/heads/}"
                 if [ -f "$ref_path" ]; then
                     ref_commit="$(cat "$ref_path" 2>/dev/null || true)"
                 elif [ -f "$git_dir/packed-refs" ]; then
                     ref_commit="$(awk -v ref="$ref" '$2==ref {print $1; exit}' "$git_dir/packed-refs")"
                 fi
-                if [[ -z "$commit" && -n "$ref_commit" ]]; then
-                    commit="$ref_commit"
+                if [[ -z "$commit_val" && -n "$ref_commit" ]]; then
+                    commit_val="$ref_commit"
                     fallback_used=true
                 fi
             else
-                if [[ -z "$commit" && -n "$head" ]]; then
-                    commit="$head"
+                if [[ -z "$commit_val" && -n "$head" ]]; then
+                    commit_val="$head"
                     fallback_used=true
                 fi
             fi
         fi
     fi
 
-    if [[ -n "$commit" && "${#commit}" -gt 7 ]]; then
-        commit="${commit:0:7}"
+    if [[ -n "$commit_val" && "${#commit_val}" -gt 7 ]]; then
+        commit_val="${commit_val:0:7}"
     fi
 
-    [[ -n "$branch_var" ]] && printf -v "$branch_var" "%s" "${branch:-unknown}"
-    [[ -n "$commit_var" ]] && printf -v "$commit_var" "%s" "${commit:-unknown}"
-    [[ -n "$dirty_var" ]] && printf -v "$dirty_var" "%s" "$dirty"
-    [[ -n "$date_var" ]] && printf -v "$date_var" "%s" "$commit_date"
+    if [[ "$DEBUG" == true && ( -z "$branch_val" || -z "$commit_val" ) ]]; then
+        git_debug_report "$root"
+    fi
+
+    [[ -n "$branch_var" ]] && printf -v "$branch_var" "%s" "${branch_val:-unknown}"
+    [[ -n "$commit_var" ]] && printf -v "$commit_var" "%s" "${commit_val:-unknown}"
+    [[ -n "$dirty_var" ]] && printf -v "$dirty_var" "%s" "$dirty_val"
+    [[ -n "$date_var" ]] && printf -v "$date_var" "%s" "$commit_date_val"
     if [[ -n "$err_var" ]]; then
         if [[ "$fallback_used" == true ]]; then
-            printf -v "$err_var" "%s" "${err:-}"
+            printf -v "$err_var" "%s" "${err_val:-}"
         else
-            printf -v "$err_var" "%s" "$err"
+            printf -v "$err_var" "%s" "$err_val"
         fi
+    fi
+}
+
+# ---------------------------------------------------------------------
+# git_debug_report()
+# Emit detailed diagnostics for git collection issues.
+# Consumes: args: root; tools: git, id, ls.
+# Returns: 0 always.
+# ---------------------------------------------------------------------
+git_debug_report() {
+    local root="$1"
+    local user="" uid="" gid="" git_bin="" git_ver=""
+    user="$(id -un 2>/dev/null || true)"
+    uid="$(id -u 2>/dev/null || true)"
+    gid="$(id -g 2>/dev/null || true)"
+    git_bin="$(command -v git 2>/dev/null || true)"
+    if [[ -n "$git_bin" ]]; then
+        git_ver="$(git --version 2>/dev/null || true)"
+    fi
+    log debug "[GIT] Debug: user=${user:-unknown} uid=${uid:-?} gid=${gid:-?}"
+    log debug "[GIT] Debug: root=${root} git_bin=${git_bin:-missing} git_ver=${git_ver:-unknown}"
+    log debug "[GIT] Debug: GIT_DIR=${GIT_DIR:-} GIT_WORK_TREE=${GIT_WORK_TREE:-}"
+    if [[ -d "$root/.git" || -f "$root/.git" ]]; then
+        local perms=""
+        perms="$(ls -ld "$root" "$root/.git" "$root/.git/HEAD" 2>/dev/null | tr '\n' '; ' || true)"
+        [[ -n "$perms" ]] && log debug "[GIT] Debug: perms=${perms}"
+    else
+        log debug "[GIT] Debug: .git missing at ${root}/.git"
     fi
 }
 
