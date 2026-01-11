@@ -113,6 +113,14 @@ else
     exit 1
 fi
 
+if [ -f "${LIB_DIR}/helpers/update_notice.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/helpers/update_notice.sh"
+else
+    echo "[ERR] Missing update notice helper: ${LIB_DIR}/helpers/update_notice.sh" >&2
+    exit 1
+fi
+
 if declare -F ops_log_on_error >/dev/null 2>&1; then
     trap 'ops_log_on_error' ERR
 fi
@@ -521,6 +529,24 @@ if [[ "$skip_clear_logo" != true ]]; then
 fi
 
 log debug "Context: ${CMD_CONTEXT:-<none>} Action: ${CMD_ACTION:-<none>} Legacy: ${LEGACY_CMD:-<none>} Force: $force_update | Debug: $DEBUG | Dry-Run (not implemented): $DRY_RUN"
+
+startup_update_notice() {
+    local enabled="${INM_AUTO_UPDATE_CHECK:-false}"
+    if [[ -n "${NAMED_ARGS[check_updates]:-}" || -n "${NAMED_ARGS[check-updates]:-}" ]]; then
+        enabled="${NAMED_ARGS[check_updates]:-${NAMED_ARGS[check-updates]:-}}"
+    fi
+    args_is_true "$enabled" || return 0
+    case "${CMD_CONTEXT:-}:${CMD_ACTION:-}:${LEGACY_CMD:-}" in
+        core:health:*|core:info:*|core:update:*|core:versions:*|core:version:*|core:backup:*|core:restore:*|db:backup:*|files:backup:*|self:update:*|self:install:*|self:version:*|help:*|*:help:*|*:*:help|*:backup:*|*:restore:*)
+            return 0
+            ;;
+    esac
+    if declare -F update_notice_emit >/dev/null 2>&1; then
+        update_notice_emit
+    fi
+}
+
+startup_update_notice
 
 # Helper to pass current NAMED_ARGS to a function along with optional positional args.
 call_with_named_args() {

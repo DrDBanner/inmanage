@@ -397,6 +397,9 @@ history_log_append() {
     if declare -F log_redact_emails >/dev/null 2>&1; then
         message="$(log_redact_emails "$message")"
     fi
+    if [[ -n "${INM_INSTANCE_ID:-}" && "$message" != *"[instance=${INM_INSTANCE_ID}]"* ]]; then
+        message="[instance=${INM_INSTANCE_ID}] ${message}"
+    fi
     line="${ts} | ${action} | ${level} | ${message}"
     # Avoid sensitive values in history details.
     if printf '%s' "$line" | grep -Eqi '(PASSWORD=|PASS=|_PASSWORD|MAIL_PASSWORD|DB_PASSWORD|API_KEY|SECRET|TOKEN)'; then

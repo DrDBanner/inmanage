@@ -33,6 +33,42 @@ detect_mysql_collation() {
 }
 
 # ---------------------------------------------------------------------
+# _db_env_file()
+# Resolve app .env path for DB operations.
+# ---------------------------------------------------------------------
+_db_env_file() {
+    local env_file="${INM_ENV_FILE:-}"
+    if [ -z "$env_file" ] && [ -n "${INM_INSTALLATION_PATH:-}" ]; then
+        env_file="${INM_INSTALLATION_PATH%/}/.env"
+    fi
+    if [ -n "$env_file" ]; then
+        env_file="$(expand_path_vars "$env_file")"
+    fi
+    printf "%s" "$env_file"
+}
+
+_db_env_read_state() {
+    local env_file="$1"
+    if [[ -z "$env_file" ]]; then
+        echo "missing"
+        return 0
+    fi
+    if declare -F file_read_state >/dev/null 2>&1; then
+        file_read_state "$env_file"
+        return 0
+    fi
+    if [[ -r "$env_file" ]]; then
+        echo "readable"
+        return 0
+    fi
+    if [[ -e "$env_file" ]]; then
+        echo "exists_unreadable"
+        return 0
+    fi
+    echo "missing"
+}
+
+# ---------------------------------------------------------------------
 # db_emit_preflight()
 # Emit database connectivity and schema info for preflight output.
 # Consumes: args: add_fn, db_tag, app_tag; env: DB_*, INM_ENV_FILE/INM_INSTALLATION_PATH; deps: load_env_file_raw/select_db_client/expand_path_vars.
@@ -209,11 +245,15 @@ import_database() {
     # Hydrate DB vars from app env if not set
     local env_file=""
     env_file="$(_db_env_file)"
-    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ -n "$env_file" ] && [ -f "$env_file" ]; then
+    local env_state=""
+    env_state="$(_db_env_read_state "$env_file")"
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ "$env_state" = "readable" ]; then
         log debug "[import_db] Loading DB vars from app env: ${env_file}"
         if ! load_env_file_raw "${env_file}"; then
             log warn "[import_db] Failed to parse app env: ${env_file}"
         fi
+    elif [[ "$env_state" = "exists_unreadable" || "$env_state" = "permission" ]]; then
+        log warn "[import_db] App .env not readable at ${env_file} (permission issue)."
     fi
     local db_config_present=false
     if [[ -n "${DB_HOST:-}" || -n "${DB_USERNAME:-}" || -n "${DB_DATABASE:-}" ]]; then
@@ -367,11 +407,15 @@ purge_database() {
     # Hydrate DB vars from app env if not set
     local env_file=""
     env_file="$(_db_env_file)"
-    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ -n "$env_file" ] && [ -f "$env_file" ]; then
+    local env_state=""
+    env_state="$(_db_env_read_state "$env_file")"
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ] || [ -z "${DB_PASSWORD:-}" ]; } && [ "$env_state" = "readable" ]; then
         log debug "[db purge] Loading DB vars from app env: ${env_file}"
         if ! load_env_file_raw "${env_file}"; then
             log warn "[db purge] Failed to parse app env: ${env_file}"
         fi
+    elif [[ "$env_state" = "exists_unreadable" || "$env_state" = "permission" ]]; then
+        log warn "[db purge] App .env not readable at ${env_file} (permission issue)."
     fi
     local db_config_present=false
     if [[ -n "${DB_HOST:-}" || -n "${DB_USERNAME:-}" || -n "${DB_DATABASE:-}" ]]; then
@@ -512,11 +556,15 @@ db_table_count() {
     # Hydrate DB vars from app env if not set
     local env_file=""
     env_file="$(_db_env_file)"
-    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -n "$env_file" ] && [ -f "$env_file" ]; then
+    local env_state=""
+    env_state="$(_db_env_read_state "$env_file")"
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ "$env_state" = "readable" ]; then
         log debug "[db_count] Loading DB vars from app env: $env_file"
         if ! load_env_file_raw "$env_file"; then
             log warn "[db_count] Failed to parse app env: $env_file"
         fi
+    elif [[ "$env_state" = "exists_unreadable" || "$env_state" = "permission" ]]; then
+        log warn "[db_count] App .env not readable at ${env_file} (permission issue)."
     fi
 
     if [[ -z "${DB_DATABASE:-}" || -z "${DB_USERNAME:-}" ]]; then
@@ -568,11 +616,15 @@ dump_database() {
     # Hydrate DB vars from app env if not set
     local env_file=""
     env_file="$(_db_env_file)"
-    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -n "$env_file" ] && [ -f "$env_file" ]; then
+    local env_state=""
+    env_state="$(_db_env_read_state "$env_file")"
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ "$env_state" = "readable" ]; then
         log debug "[dump_db] Loading DB vars from app env: $env_file"
         if ! load_env_file_raw "$env_file"; then
             log warn "[dump_db] Failed to parse app env: $env_file"
         fi
+    elif [[ "$env_state" = "exists_unreadable" || "$env_state" = "permission" ]]; then
+        log warn "[dump_db] App .env not readable at ${env_file} (permission issue)."
     fi
 
     if [[ "${INM_QUIET_DUMP:-false}" != true ]]; then
@@ -599,7 +651,11 @@ dump_database() {
 
     if [[ "${INM_FORCE_READ_DB_PW^^}" == "Y" ]]; then
         if [[ -z "${DB_PASSWORD:-}" ]]; then
-            log err "[dump_db] INM_FORCE_READ_DB_PW=Y but DB_PASSWORD is empty; cannot proceed without prompting."
+            if [[ "$env_state" = "exists_unreadable" || "$env_state" = "permission" ]]; then
+                log err "[dump_db] INM_FORCE_READ_DB_PW=Y but app .env is not readable at ${env_file}; cannot proceed without prompting."
+            else
+                log err "[dump_db] INM_FORCE_READ_DB_PW=Y but DB_PASSWORD is empty; cannot proceed without prompting."
+            fi
             return 1
         fi
         log debug "[dump_db] INM_FORCE_READ_DB_PW=Y → Using .env password (no prompt)"

@@ -23,6 +23,39 @@ _config_escape_value() {
 }
 
 # ---------------------------------------------------------------------
+# config_resolve_instance_id()
+# Resolve a stable instance id during config creation.
+# Consumes: args: base, env; deps: env_resolve_instance_id (optional).
+# Computes: instance id string.
+# Returns: prints instance id.
+# ---------------------------------------------------------------------
+config_resolve_instance_id() {
+    local base="${1%/}"
+    local env="${2%/}"
+    if declare -F env_resolve_instance_id >/dev/null 2>&1; then
+        env_resolve_instance_id "$base" "$env"
+        return 0
+    fi
+    local seed="${base}|${env}"
+    local id=""
+    if command -v cksum >/dev/null 2>&1; then
+        id="$(printf "%s" "$seed" | cksum | awk '{print $1}')"
+    elif command -v sha256sum >/dev/null 2>&1; then
+        id="$(printf "%s" "$seed" | sha256sum | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        id="$(printf "%s" "$seed" | shasum -a 256 | awk '{print $1}')"
+    elif command -v sha256 >/dev/null 2>&1; then
+        id="$(printf "%s" "$seed" | sha256 -q 2>/dev/null)"
+    elif command -v uuidgen >/dev/null 2>&1; then
+        id="$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+    else
+        id="$(printf "%s" "$seed" | tr -cd '[:alnum:]' | cut -c1-16)"
+    fi
+    [[ -z "$id" ]] && id="unknown"
+    printf "inm-%s" "$id"
+}
+
+# ---------------------------------------------------------------------
 # write_config_setting()
 # Write a single config key/value to INM_SELF_ENV_FILE.
 # Consumes: args: key; globals: default_settings/default_inline_comments; env: INM_SELF_ENV_FILE.
@@ -127,6 +160,13 @@ persist_derived_config() {
     log info "[PDC] Writing derived config to: $INM_SELF_ENV_FILE"
 
     write_config_defaults
+    if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+        local inst_id
+        inst_id="$(config_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}")"
+        if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+            echo "INM_INSTANCE_ID=\"${inst_id}\"" >> "$INM_SELF_ENV_FILE"
+        fi
+    fi
     if ! grep -q "^INM_CLI_COMPATIBILITY=" "$INM_SELF_ENV_FILE"; then
         echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$INM_SELF_ENV_FILE"
     fi
@@ -288,6 +328,13 @@ create_own_config() {
             echo "$key=\"${NAMED_ARGS[$key]}\"" >> "$INM_SELF_ENV_FILE"
         fi
     done
+    if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+        local inst_id
+        inst_id="$(config_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}")"
+        if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+            echo "INM_INSTANCE_ID=\"${inst_id}\"" >> "$INM_SELF_ENV_FILE"
+        fi
+    fi
     if ! grep -q "^INM_CLI_COMPATIBILITY=" "$INM_SELF_ENV_FILE"; then
         echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$INM_SELF_ENV_FILE"
     fi
@@ -375,6 +422,13 @@ spawn_cli_config() {
     done
 
     write_config_defaults
+    if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+        local inst_id
+        inst_id="$(config_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}")"
+        if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+            echo "INM_INSTANCE_ID=\"${inst_id}\"" >> "$INM_SELF_ENV_FILE"
+        fi
+    fi
     if ! grep -q "^INM_CLI_COMPATIBILITY=" "$INM_SELF_ENV_FILE"; then
         echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$INM_SELF_ENV_FILE"
     fi

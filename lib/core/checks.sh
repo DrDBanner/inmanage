@@ -71,6 +71,17 @@ check_missing_settings() {
     else
         log debug "[CMS] Loaded settings from $INM_SELF_ENV_FILE."
     fi
+
+    if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+        local inst_id=""
+        if declare -F env_resolve_instance_id >/dev/null 2>&1; then
+            inst_id="$(env_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}")"
+        fi
+        if [[ -n "$inst_id" ]] && ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+            printf 'INM_INSTANCE_ID="%s"\n' "$inst_id" >> "$INM_SELF_ENV_FILE"
+            load_env_file_raw "$INM_SELF_ENV_FILE"
+        fi
+    fi
 }
 
 # ---------------------------------------------------------------------

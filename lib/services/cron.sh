@@ -4,6 +4,94 @@
 [[ -n ${__SERVICE_CRON_LOADED:-} ]] && return
 __SERVICE_CRON_LOADED=1
 
+cron_strip_instance_block() {
+    local infile="$1"
+    local outfile="$2"
+    local id="$3"
+    awk -v id="$id" '
+        BEGIN {skip=0}
+        $0 ~ "^# INMANAGE INSTANCE "id" BEGIN" {skip=1; next}
+        $0 ~ "^# INMANAGE INSTANCE "id" END" {skip=0; next}
+        $0 ~ "^# INMANAGE CRON BEGIN" {skip=1; next}
+        $0 ~ "^# INMANAGE CRON END" {skip=0; next}
+        !skip {print}
+    ' "$infile" > "$outfile"
+}
+
+cron_escape_awk_re() {
+    local re="$1"
+    re="${re//\\/\\\\}"
+    printf "%s" "$re"
+}
+
+cron_strip_legacy_lines() {
+    local infile="$1"
+    local outfile="$2"
+    local base="${3%/}"
+    local env="${4%/}"
+    local base_re=""
+    local env_re=""
+    if [[ -n "$base" ]]; then
+        base_re="$(escape_regex "$base")"
+    fi
+    if [[ -n "$env" ]]; then
+        env_re="$(escape_regex "$env")"
+    fi
+    local base_re_awk=""
+    local env_re_awk=""
+    base_re_awk="$(cron_escape_awk_re "$base_re")"
+    env_re_awk="$(cron_escape_awk_re "$env_re")"
+    awk -v base_re="$base_re_awk" -v env_re="$env_re_awk" '
+        BEGIN {
+            have_base=(base_re != "")
+            have_env=(env_re != "")
+        }
+        /^# Invoice Ninja cronjobs/ {next}
+        {
+            line=$0
+            match_scope=0
+            if (have_base && line ~ base_re) match_scope=1
+            if (have_env && line ~ env_re) match_scope=1
+            if (line ~ /INM_INSTANCE_ID=/) {print; next}
+            if (match_scope && line ~ /(inmanage(\.sh)?|inm(\.sh)?|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup)/) next
+            print
+        }
+    ' "$infile" > "$outfile"
+}
+
+cron_strip_instance_only() {
+    local infile="$1"
+    local outfile="$2"
+    local id="$3"
+    local id_re=""
+    id_re="$(cron_escape_awk_re "$(escape_regex "$id")")"
+    awk -v id_re="$id_re" '
+        BEGIN {skip=0}
+        $0 ~ "^# INMANAGE INSTANCE "id_re" BEGIN" {skip=1; next}
+        $0 ~ "^# INMANAGE INSTANCE "id_re" END" {skip=0; next}
+        skip {next}
+        $0 ~ "INM_INSTANCE_ID="id_re {next}
+        {print}
+    ' "$infile" > "$outfile"
+}
+
+cron_strip_all_inmanage() {
+    local infile="$1"
+    local outfile="$2"
+    awk '
+        BEGIN {skip=0}
+        /^# INMANAGE INSTANCE / && $0 ~ / BEGIN$/ {skip=1; next}
+        /^# INMANAGE INSTANCE / && $0 ~ / END$/ {skip=0; next}
+        /^# INMANAGE CRON BEGIN/ {skip=1; next}
+        /^# INMANAGE CRON END/ {skip=0; next}
+        skip {next}
+        /^# Invoice Ninja cronjobs/ {next}
+        /INM_INSTANCE_ID=/ {next}
+        /(inmanage(\.sh)?|inm(\.sh)?|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup)/ {next}
+        {print}
+    ' "$infile" > "$outfile"
+}
+
 # ---------------------------------------------------------------------
 # install_cronjob()
 # Install cron jobs for scheduler/backup/heartbeat.
@@ -39,12 +127,20 @@ install_cronjob() {
     jobs_raw="$(args_get args "essential" jobs cron_jobs)"
     local create_test_job
     create_test_job="$(args_get args "false" create_test_job)"
-    local cron_file="/etc/cron.d/invoiceninja"
     local remove_test_job
     remove_test_job="$(args_get args "false" remove_test_job)"
     local cron_mode
     cron_mode="$(args_get args "auto" cron_mode mode)"
     cron_mode="${cron_mode,,}"
+    local base_clean="${INM_BASE_DIRECTORY%/}"
+    if [[ -z "$base_clean" ]]; then
+        base_clean="$(pwd)"
+    fi
+    local env_clean="${INM_ENV_FILE%/}"
+    local instance_id
+    instance_id="$(env_resolve_instance_id "$base_clean" "$env_clean")"
+    local cron_file_default="/etc/cron.d/inmanage-${instance_id}"
+    local cron_file="$cron_file_default"
     local jobs="${jobs_raw,,}"
     local create_test_job_enabled=false
     local remove_test_job_enabled=false
@@ -171,11 +267,11 @@ install_cronjob() {
             log debug "[CRON] crontab command not available."
         fi
         if [[ -f "$cron_file" ]]; then
-            log info "[CRON] Existing cron file found at $cron_file (will be replaced)."
+            log info "[CRON] Existing cron file found at $cron_file (will be updated)."
             found=true
         elif [[ "$can_sudo" == true ]]; then
             if sudo -n test -f "$cron_file" 2>/dev/null; then
-                log info "[CRON] Existing cron file found at $cron_file (will be replaced)."
+                log info "[CRON] Existing cron file found at $cron_file (will be updated)."
                 found=true
             fi
         fi
@@ -276,10 +372,8 @@ install_cronjob() {
     fi
     local cli_cmd_escaped
     cli_cmd_escaped="$(escape_squote "$cli_cmd")"
-    local base_clean="${INM_BASE_DIRECTORY%/}"
-    if [[ -z "$base_clean" ]]; then
-        base_clean="$(pwd)"
-    fi
+    local instance_block_begin="# INMANAGE INSTANCE ${instance_id} BEGIN"
+    local instance_block_end="# INMANAGE INSTANCE ${instance_id} END"
     local base_clean_escaped
     base_clean_escaped="$(escape_squote "$base_clean")"
     local touch_cmd=""
@@ -290,25 +384,49 @@ install_cronjob() {
     fi
     local touch_cmd_escaped
     touch_cmd_escaped="$(escape_squote "$touch_cmd")"
-    detect_installed_jobs() {
-        local file="$1"
-        local -a jobs=()
-        if grep -qE 'schedule:run' "$file" 2>/dev/null; then
-            jobs+=("artisan")
+    local -a installed_jobs=()
+    if [[ "$job_artisan" == true ]]; then
+        installed_jobs+=("artisan")
+    fi
+    if [[ "$job_backup" == true ]]; then
+        installed_jobs+=("backup")
+    fi
+    if [[ "$job_heartbeat" == true ]]; then
+        installed_jobs+=("heartbeat")
+    fi
+    local installed_jobs_str=""
+    if (( ${#installed_jobs[@]} > 0 )); then
+        local IFS=,
+        installed_jobs_str="${installed_jobs[*]}"
+    fi
+    render_instance_block() {
+        local include_user="$1"
+        local cron_user="$2"
+        local user_prefix=""
+        if [[ "$include_user" == true && -n "$cron_user" ]]; then
+            user_prefix="${cron_user} "
         fi
-        if grep -qE 'inmanage(\.sh)? core backup|inm core backup' "$file" 2>/dev/null; then
-            jobs+=("backup")
+        echo "${instance_block_begin}"
+        echo "# INMANAGE INSTANCE BASE=${base_clean}"
+        if [[ "$job_artisan" == true ]]; then
+            echo "* * * * * ${user_prefix}$(artisan_cmd_string) schedule:run >> /dev/null 2>&1"
         fi
-        if grep -qE 'notify-heartbeat' "$file" 2>/dev/null; then
-            jobs+=("heartbeat")
+        if [[ "$job_backup" == true ]]; then
+            echo "${backup_cron_expr} ${user_prefix}$INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core backup' >> /dev/null 2>&1"
         fi
-        if [[ ${#jobs[@]} -gt 0 ]]; then
-            local IFS=,
-            printf "%s" "${jobs[*]}"
-        else
-            printf "%s" ""
+        if [[ "$job_heartbeat" == true ]]; then
+            echo "${heartbeat_cron_expr} ${user_prefix}$INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core health --notify-heartbeat' >> /dev/null 2>&1"
         fi
+        if [[ "$create_test_job_enabled" == true ]]; then
+            echo "# INMANAGE CRON TEST"
+            echo "* * * * * ${user_prefix}$INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${touch_cmd_escaped} crontestfile' >> /dev/null 2>&1"
+        fi
+        echo "${instance_block_end}"
     }
+    local cron_block_crontab
+    cron_block_crontab="$(render_instance_block false "")"
+    local cron_block_system
+    cron_block_system="$(render_instance_block true "$user")"
 
     if [[ "$use_user_crontab" == true ]]; then
         if ! command -v crontab >/dev/null 2>&1; then
@@ -324,7 +442,6 @@ install_cronjob() {
         if [[ -f "$home_cronfile" && -w "$home_cronfile" ]]; then
             home_cronfile_writable=true
         fi
-
         local crontab_has_entries=false
         if crontab -l >/dev/null 2>&1; then
             if ! crontab -l > "$tmpfile" 2>/dev/null; then
@@ -337,7 +454,6 @@ install_cronjob() {
         if [[ -s "$tmpfile" ]]; then
             crontab_has_entries=true
         fi
-
         if [[ "$crontab_has_entries" != true && -f "$home_cronfile" ]]; then
             if cp "$home_cronfile" "$tmpfile" 2>/dev/null; then
                 use_home_cronfile=true
@@ -348,8 +464,7 @@ install_cronjob() {
         elif [[ -f "$home_cronfile" && "$crontab_has_entries" == true ]]; then
             log debug "[CRON] User crontab has entries; ignoring existing cronfile: $home_cronfile"
         fi
-        if ! awk 'BEGIN{skip=0} /^# INMANAGE CRON BEGIN/{skip=1; next} /^# INMANAGE CRON END/{skip=0; next} !skip{print}' \
-            "$tmpfile" > "$tmpclean"; then
+        if ! cron_strip_instance_block "$tmpfile" "$tmpclean" "$instance_id"; then
             log err "[CRON] Failed to prepare user crontab."
             rm -f "$tmpfile" "$tmpclean"
             return 1
@@ -360,32 +475,19 @@ install_cronjob() {
             return 1
         fi
 
-        {
-            echo "# INMANAGE CRON BEGIN"
-            if [[ "$job_artisan" == true ]]; then
-                echo "* * * * * $(artisan_cmd_string) schedule:run >> /dev/null 2>&1"
-            fi
-            if [[ "$job_backup" == true ]]; then
-                echo "${backup_cron_expr} $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core backup' >> /dev/null 2>&1"
-            fi
-            if [[ "$job_heartbeat" == true ]]; then
-                echo "${heartbeat_cron_expr} $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core health --notify-heartbeat' >> /dev/null 2>&1"
-            fi
-            if [[ "$create_test_job_enabled" == true ]]; then
-                echo "# INMANAGE CRON TEST"
-                echo "* * * * * $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${touch_cmd_escaped} crontestfile' >> /dev/null 2>&1"
-            fi
-            echo "# INMANAGE CRON END"
-        } >> "$tmpfile"
+        if [[ -s "$tmpfile" ]]; then
+            printf "\n" >> "$tmpfile"
+        fi
+        printf "%s\n" "$cron_block_crontab" >> "$tmpfile"
 
         if [[ "${DEBUG:-false}" == true ]]; then
             log debug "[CRON] New cron block:"
-            sed -n '/^# INMANAGE CRON BEGIN/,/^# INMANAGE CRON END/p' "$tmpfile" >&2
+            sed -n "/^# INMANAGE INSTANCE ${instance_id} BEGIN/,/^# INMANAGE INSTANCE ${instance_id} END/p" "$tmpfile" >&2
         fi
 
         local crontab_out=""
         if crontab_out=$(crontab "$tmpfile" 2>&1); then
-            INM_CRON_INSTALLED_JOBS="$(detect_installed_jobs "$tmpfile")"
+            INM_CRON_INSTALLED_JOBS="$installed_jobs_str"
             INM_CRON_INSTALL_TARGET="crontab"
             log ok "[CRON] Installed cronjobs in user crontab"
             if [[ "$use_home_cronfile" == true ]]; then
@@ -405,26 +507,33 @@ install_cronjob() {
         return 0
     fi
 
-    if ! {
-        echo "# Invoice Ninja cronjobs"
-        if [[ "$job_artisan" == true ]]; then
-            echo "* * * * * $user $(artisan_cmd_string) schedule:run >> /dev/null 2>&1"
+    local tmpclean="${tmpfile}.clean"
+    if [[ -f "$cron_file" ]]; then
+        cat "$cron_file" > "$tmpfile"
+    elif [[ "$can_sudo" == true && $EUID -ne 0 ]]; then
+        if sudo -n test -f "$cron_file" 2>/dev/null; then
+            sudo cat "$cron_file" | tee "$tmpfile" >/dev/null
+        else
+            : > "$tmpfile"
         fi
-        if [[ "$job_backup" == true ]]; then
-            echo "${backup_cron_expr} $user $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core backup' >> /dev/null 2>&1"
-        fi
-        if [[ "$job_heartbeat" == true ]]; then
-            echo "${heartbeat_cron_expr} $user $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core health --notify-heartbeat' >> /dev/null 2>&1"
-        fi
-        if [[ "$create_test_job_enabled" == true ]]; then
-            echo "# INMANAGE CRON TEST"
-            echo "* * * * * $user $INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${touch_cmd_escaped} crontestfile' >> /dev/null 2>&1"
-        fi
-    } > "$tmpfile"; then
-        log err "[CRON] Failed to prepare cron file."
-        rm -f "$tmpfile"
+    else
+        : > "$tmpfile"
+    fi
+    if ! cron_strip_instance_block "$tmpfile" "$tmpclean" "$instance_id"; then
+        log err "[CRON] Failed to update cron file."
+        rm -f "$tmpfile" "$tmpclean"
         return 1
     fi
+    if ! cron_strip_legacy_lines "$tmpclean" "$tmpfile" "$base_clean" "$env_clean"; then
+        log err "[CRON] Failed to prepare cron file."
+        rm -f "$tmpfile" "$tmpclean"
+        return 1
+    fi
+    rm -f "$tmpclean"
+    if [[ -s "$tmpfile" ]]; then
+        printf "\n" >> "$tmpfile"
+    fi
+    printf "%s\n" "$cron_block_system" >> "$tmpfile"
 
     local tee_cmd=("tee" "$cron_file")
     if [[ $EUID -ne 0 ]]; then
@@ -447,7 +556,7 @@ install_cronjob() {
                 return 1
             fi
         fi
-        INM_CRON_INSTALLED_JOBS="$(detect_installed_jobs "$tmpfile")"
+        INM_CRON_INSTALLED_JOBS="$installed_jobs_str"
         INM_CRON_INSTALL_TARGET="$cron_file"
         log ok "[CRON] Installed cronjobs in $cron_file"
     else
@@ -489,19 +598,36 @@ uninstall_cronjob() {
     done
     parse_named_args args "${normalized_args[@]}"
 
-    local cron_file="/etc/cron.d/invoiceninja"
     local cron_mode
     cron_mode="$(args_get args "auto" cron_mode mode)"
     cron_mode="${cron_mode,,}"
+    local remove_test_job
+    remove_test_job="$(args_get args "false" remove_test_job)"
+    local remove_test_job_enabled=false
+    args_is_true "$remove_test_job" && remove_test_job_enabled=true
+    local remove_all
+    remove_all="$(args_get args "false" remove_all all purge)"
+    local remove_all_enabled=false
+    args_is_true "$remove_all" && remove_all_enabled=true
+    local instance_id_override=""
+    instance_id_override="$(args_get args "" instance_id instance uuid)"
+    local base_clean="${INM_BASE_DIRECTORY%/}"
+    if [[ -z "$base_clean" ]]; then
+        base_clean="$(pwd)"
+    fi
+    local env_clean="${INM_ENV_FILE%/}"
+    local instance_id
+    instance_id="$(env_resolve_instance_id "$base_clean" "$env_clean")"
+    if [[ -n "$instance_id_override" ]]; then
+        instance_id="$instance_id_override"
+    fi
+    local cron_file_default="/etc/cron.d/inmanage-${instance_id}"
+    local cron_file="$cron_file_default"
     local cron_file_arg=""
     cron_file_arg="$(args_get args "" cron_file)"
     if [[ -n "$cron_file_arg" ]]; then
         cron_file="$cron_file_arg"
     fi
-    local remove_test_job
-    remove_test_job="$(args_get args "false" remove_test_job)"
-    local remove_test_job_enabled=false
-    args_is_true "$remove_test_job" && remove_test_job_enabled=true
 
     local can_sudo=false
     if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
@@ -514,6 +640,10 @@ uninstall_cronjob() {
         if [[ $EUID -eq 0 || "$can_sudo" == true ]]; then
             system_cron_possible=true
         fi
+    fi
+    local remove_legacy=true
+    if [[ -n "$instance_id_override" ]]; then
+        remove_legacy=false
     fi
 
     local remove_user_crontab=false
@@ -615,26 +745,52 @@ uninstall_cronjob() {
         if ! command -v crontab >/dev/null 2>&1; then
             log warn "[CRON] crontab not available; skipping user crontab removal."
         else
-            local tmpfile tmpclean
+            local tmpfile tmpclean tmporig
             tmpfile="$(mktemp)"
             tmpclean="${tmpfile}.clean"
+            tmporig="${tmpfile}.orig"
             if crontab -l >/dev/null 2>&1; then
                 crontab -l > "$tmpfile"
             else
                 : > "$tmpfile"
             fi
-            awk 'BEGIN{skip=0} /^# INMANAGE CRON BEGIN/{skip=1; next} /^# INMANAGE CRON END/{skip=0; next} !skip{print}' \
-                "$tmpfile" > "$tmpclean"
-            if cmp -s "$tmpfile" "$tmpclean"; then
-                log info "[CRON] No INMANAGE block found in user crontab."
+            cp "$tmpfile" "$tmporig" 2>/dev/null || true
+            if [[ "$remove_all_enabled" == true ]]; then
+                cron_strip_all_inmanage "$tmpfile" "$tmpclean"
+                mv -f "$tmpclean" "$tmpfile"
+            elif [[ -n "$instance_id_override" ]]; then
+                cron_strip_instance_only "$tmpfile" "$tmpclean" "$instance_id"
+                mv -f "$tmpclean" "$tmpfile"
             else
-                if crontab "$tmpclean"; then
+                cron_strip_instance_block "$tmpfile" "$tmpclean" "$instance_id"
+                if [[ "$remove_legacy" == true ]]; then
+                    cron_strip_legacy_lines "$tmpclean" "$tmpfile" "$INM_BASE_DIRECTORY" "$INM_ENV_FILE"
+                else
+                    mv -f "$tmpclean" "$tmpfile"
+                fi
+            fi
+            if cmp -s "$tmporig" "$tmpfile"; then
+                if [[ -n "$instance_id_override" ]]; then
+                    log warn "[CRON] No matching instance id found in user crontab (id=${instance_id_override})."
+                else
+                    local has_inmanage=false
+                    if grep -Eq 'INM_INSTANCE_ID=|inmanage|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup' "$tmporig" 2>/dev/null; then
+                        has_inmanage=true
+                    fi
+                    if [[ "$has_inmanage" == true && "$remove_all_enabled" != true ]]; then
+                        log warn "[CRON] User crontab has INmanage entries for another instance; use --all to purge."
+                    else
+                        log info "[CRON] No INMANAGE block found in user crontab."
+                    fi
+                fi
+            else
+                if crontab "$tmpfile"; then
                     log ok "[CRON] Removed INMANAGE block from user crontab."
                 else
                     log err "[CRON] Failed to update user crontab."
                 fi
             fi
-            rm -f "$tmpfile" "$tmpclean"
+            rm -f "$tmpfile" "$tmpclean" "$tmporig"
         fi
     fi
 
@@ -647,30 +803,85 @@ uninstall_cronjob() {
             fi
             return 0
         fi
+        local tmpfile tmpclean tmporig
+        tmpfile="$(mktemp)"
+        tmpclean="${tmpfile}.clean"
+        tmporig="${tmpfile}.orig"
         if [[ -f "$cron_file" ]]; then
-            if [[ $EUID -ne 0 ]]; then
-                if [[ "$can_sudo" != true ]]; then
-                    log err "[CRON] Cannot remove $cron_file (need sudo/root)."
-                else
-                    sudo rm -f "$cron_file" && log ok "[CRON] Removed $cron_file"
-                fi
-            else
-                rm -f "$cron_file" && log ok "[CRON] Removed $cron_file"
-            fi
+            cat "$cron_file" > "$tmpfile"
         elif [[ "$can_sudo" == true && $EUID -ne 0 ]]; then
             if sudo -n test -f "$cron_file" 2>/dev/null; then
-                sudo rm -f "$cron_file" && log ok "[CRON] Removed $cron_file"
+                sudo cat "$cron_file" | tee "$tmpfile" >/dev/null
+            else
+                : > "$tmpfile"
             fi
-        elif [[ -d "$cron_dir" ]]; then
-            log info "[CRON] No cron file found at $cron_file."
+        else
+            : > "$tmpfile"
         fi
+        cp "$tmpfile" "$tmporig" 2>/dev/null || true
+        if [[ "$remove_all_enabled" == true ]]; then
+            cron_strip_all_inmanage "$tmpfile" "$tmpclean"
+            mv -f "$tmpclean" "$tmpfile"
+        elif [[ -n "$instance_id_override" ]]; then
+            cron_strip_instance_only "$tmpfile" "$tmpclean" "$instance_id"
+            mv -f "$tmpclean" "$tmpfile"
+        else
+            cron_strip_instance_block "$tmpfile" "$tmpclean" "$instance_id"
+            if [[ "$remove_legacy" == true ]]; then
+                cron_strip_legacy_lines "$tmpclean" "$tmpfile" "$base_clean" "$env_clean"
+            else
+                mv -f "$tmpclean" "$tmpfile"
+            fi
+        fi
+        if cmp -s "$tmporig" "$tmpfile"; then
+            if [[ -n "$instance_id_override" ]]; then
+                log warn "[CRON] No matching instance id found in ${cron_file} (id=${instance_id_override})."
+            else
+                local has_inmanage=false
+                if grep -Eq 'INM_INSTANCE_ID=|inmanage|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup' "$tmporig" 2>/dev/null; then
+                    has_inmanage=true
+                fi
+                if [[ "$has_inmanage" == true && "$remove_all_enabled" != true ]]; then
+                    log warn "[CRON] ${cron_file} has INmanage entries for another instance; use --all to purge."
+                else
+                    log info "[CRON] No INMANAGE block found in ${cron_file}."
+                fi
+            fi
+        else
+            local has_content=false
+            if grep -Eq '^[[:space:]]*[^#[:space:]]' "$tmpfile"; then
+                has_content=true
+            fi
+            if [[ "$has_content" == true ]]; then
+                local tee_cmd=("tee" "$cron_file")
+                if [[ $EUID -ne 0 && "$can_sudo" == true ]]; then
+                    tee_cmd=("sudo" "tee" "$cron_file")
+                fi
+                if cat "$tmpfile" | "${tee_cmd[@]}" >/dev/null; then
+                    log ok "[CRON] Removed INMANAGE block from ${cron_file}."
+                else
+                    log err "[CRON] Failed to update ${cron_file}."
+                fi
+            else
+                if [[ $EUID -ne 0 ]]; then
+                    if [[ "$can_sudo" != true ]]; then
+                        log err "[CRON] Cannot remove $cron_file (need sudo/root)."
+                    else
+                        sudo rm -f "$cron_file" && log ok "[CRON] Removed $cron_file"
+                    fi
+                else
+                    rm -f "$cron_file" && log ok "[CRON] Removed $cron_file"
+                fi
+            fi
+        fi
+        rm -f "$tmpfile" "$tmpclean" "$tmporig"
     fi
 }
 
 # ---------------------------------------------------------------------
 # cron_emit_preflight()
 # Emit cron/scheduler status for preflight output.
-# Consumes: args: add_fn, enforced_user, current_user; env: INM_BASE_DIRECTORY/INM_INSTALLATION_PATH/INM_NOTIFY_*.
+# Consumes: args: add_fn, enforced_user, current_user, invoked_user; env: INM_BASE_DIRECTORY/INM_INSTALLATION_PATH/INM_NOTIFY_*.
 # Computes: cron presence and job status lines.
 # Returns: 0 after emitting.
 # ---------------------------------------------------------------------
@@ -678,6 +889,10 @@ cron_emit_preflight() {
     local add_fn="$1"
     local enforced_user="${2:-${INM_ENFORCED_USER:-}}"
     local current_user="${3:-$(id -un 2>/dev/null || true)}"
+    local invoked_user="${4:-${INM_INVOKED_BY:-$current_user}}"
+    if [[ -z "${INM_INSTANCE_ID:-}" ]]; then
+        env_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}" >/dev/null 2>&1 || true
+    fi
     local emit_fn=""
     if [[ -n "$add_fn" ]] && declare -F "$add_fn" >/dev/null 2>&1; then
         emit_fn="$add_fn"
@@ -715,26 +930,96 @@ cron_emit_preflight() {
     fi
 
     local can_read_enforced=false
+    local can_read_invoked=false
+    local invoked_snapshot_used=false
     if [[ -n "$enforced_user" && "$enforced_user" != "$current_user" ]]; then
         if [[ $EUID -eq 0 ]]; then
             can_read_enforced=true
         elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
             can_read_enforced=true
         fi
-        if [[ "$can_read_enforced" == true ]]; then
-            cron_emit INFO "Cron scope: current user (${current_user}) + enforced user (${enforced_user})"
-        else
-            cron_emit INFO "Cron scope: current user (${current_user}) only; enforced user (${enforced_user}) requires sudo/root"
+    fi
+    if [[ -n "$invoked_user" && "$invoked_user" != "$current_user" ]]; then
+        if [[ $EUID -eq 0 ]]; then
+            can_read_invoked=true
+        elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+            can_read_invoked=true
         fi
-    else
-        cron_emit INFO "Cron scope: current user (${current_user})"
     fi
 
-    local cron_file="/etc/cron.d/invoiceninja"
-    local cron_lines=""
+    local cron_dir="/etc/cron.d"
+    local invoked_snapshot_file="${INM_INVOKED_CRON_SNAPSHOT:-}"
+    local -a cron_entry_source=()
+    local -a cron_entry_user=()
+    local -a cron_entry_line=()
+    local -a cron_sources=()
+
+    cron_format_source() {
+        local src="$1"
+        case "$src" in
+            crontab:*) printf "crontab(%s)" "${src#crontab:}" ;;
+            cron.d:*) printf "cron.d(%s)" "${src#cron.d:}" ;;
+            cronfile:*) printf "cronfile(%s)" "${src#cronfile:}" ;;
+            snapshot:*) printf "snapshot(%s)" "${src#snapshot:}" ;;
+            *) printf "%s" "$src" ;;
+        esac
+    }
+
+    cron_add_source() {
+        local src
+        src="$(cron_format_source "$1")"
+        local existing
+        for existing in "${cron_sources[@]}"; do
+            [[ "$existing" == "$src" ]] && return 0
+        done
+        cron_sources+=("$src")
+    }
+
+    cron_add_entry() {
+        cron_entry_source+=("$(cron_format_source "$1")")
+        cron_entry_user+=("$2")
+        cron_entry_line+=("$3")
+    }
+
+    cron_is_schedule_line() {
+        local line="$1"
+        local trimmed="${line#"${line%%[![:space:]]*}"}"
+        [[ -z "$trimmed" || "$trimmed" == \#* ]] && return 1
+        [[ "$trimmed" == @* ]] && return 0
+        local f1 f2 f3 f4 f5
+        read -r f1 f2 f3 f4 f5 _ <<< "$trimmed"
+        [[ -n "$f5" ]] || return 1
+        return 0
+    }
+
+    cron_add_lines() {
+        local source="$1"
+        local run_as="$2"
+        local content="$3"
+        local line trimmed entry_user
+        while IFS= read -r line; do
+            trimmed="${line#"${line%%[![:space:]]*}"}"
+            [[ -z "$trimmed" || "$trimmed" == \#* ]] && continue
+            cron_is_schedule_line "$trimmed" || continue
+            entry_user="$run_as"
+            if [[ -z "$entry_user" && "$source" == cron.d:* ]]; then
+                if [[ "$trimmed" == @* ]]; then
+                    entry_user="$(awk '{print $2}' <<< "$trimmed")"
+                else
+                    entry_user="$(awk '{print $6}' <<< "$trimmed")"
+                fi
+            fi
+            [[ -z "$entry_user" ]] && entry_user="unknown"
+            cron_add_entry "$source" "$entry_user" "$trimmed"
+        done <<< "$content"
+    }
+
     if command -v crontab >/dev/null 2>&1; then
         if crontab -l >/dev/null 2>&1; then
-            cron_lines="$(crontab -l 2>/dev/null)"
+            local current_cron=""
+            current_cron="$(crontab -l 2>/dev/null)"
+            cron_add_source "crontab:${current_user}"
+            cron_add_lines "crontab:${current_user}" "$current_user" "$current_cron"
         fi
         if [[ -n "$enforced_user" && "$enforced_user" != "$current_user" && "$can_read_enforced" == true ]]; then
             local enforced_cron=""
@@ -743,17 +1028,52 @@ cron_emit_preflight() {
             elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
                 enforced_cron="$(sudo -n crontab -l -u "$enforced_user" 2>/dev/null || true)"
             fi
-            if [[ -n "$enforced_cron" ]]; then
-                cron_lines+=$'\n'"$enforced_cron"
+            cron_add_source "crontab:${enforced_user}"
+            cron_add_lines "crontab:${enforced_user}" "$enforced_user" "$enforced_cron"
+        fi
+        if [[ -n "$invoked_user" && "$invoked_user" != "$current_user" && "$can_read_invoked" == true ]]; then
+            local invoked_cron=""
+            if [[ $EUID -eq 0 ]]; then
+                invoked_cron="$(crontab -l -u "$invoked_user" 2>/dev/null || true)"
+            elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+                invoked_cron="$(sudo -n crontab -l -u "$invoked_user" 2>/dev/null || true)"
             fi
+            cron_add_source "crontab:${invoked_user}"
+            cron_add_lines "crontab:${invoked_user}" "$invoked_user" "$invoked_cron"
         fi
     fi
-    if [[ -r "$cron_file" ]]; then
-        cron_lines+=$'\n'"$(cat "$cron_file")"
+    if [[ -n "$invoked_snapshot_file" && -r "$invoked_snapshot_file" ]]; then
+        cron_add_source "snapshot:${invoked_user}"
+        cron_add_lines "snapshot:${invoked_user}" "$invoked_user" "$(cat "$invoked_snapshot_file" 2>/dev/null || true)"
+        invoked_snapshot_used=true
+        rm -f "$invoked_snapshot_file" 2>/dev/null || true
     fi
+    local -a cron_d_files=()
+    if [[ -d "$cron_dir" ]]; then
+        local nullglob_was_set=0
+        shopt -q nullglob && nullglob_was_set=1
+        shopt -s nullglob
+        cron_d_files+=("$cron_dir"/inmanage-*)
+        if [[ -r "${cron_dir}/invoiceninja" ]]; then
+            cron_d_files+=("${cron_dir}/invoiceninja")
+        fi
+        if [[ "$nullglob_was_set" -eq 0 ]]; then
+            shopt -u nullglob
+        fi
+    fi
+    local cron_d_file
+    for cron_d_file in "${cron_d_files[@]}"; do
+        if [[ -r "$cron_d_file" ]]; then
+            local cron_label
+            cron_label="$(basename "$cron_d_file")"
+            cron_add_source "cron.d:${cron_label}"
+            cron_add_lines "cron.d:${cron_label}" "" "$(cat "$cron_d_file" 2>/dev/null || true)"
+        fi
+    done
     local home_cronfile="${HOME:-}/cronfile"
     if [[ -r "$home_cronfile" ]]; then
-        cron_lines+=$'\n'"$(cat "$home_cronfile")"
+        cron_add_source "cronfile:${current_user}"
+        cron_add_lines "cronfile:${current_user}" "$current_user" "$(cat "$home_cronfile" 2>/dev/null || true)"
     fi
     if [[ -n "$enforced_user" && "$enforced_user" != "$current_user" ]]; then
         local enforced_home=""
@@ -766,27 +1086,186 @@ cron_emit_preflight() {
         if [[ -n "$enforced_home" && "$enforced_home" != "~$enforced_user" ]]; then
             local enforced_cronfile="${enforced_home%/}/cronfile"
             if [[ -r "$enforced_cronfile" ]]; then
-                cron_lines+=$'\n'"$(cat "$enforced_cronfile")"
+                cron_add_source "cronfile:${enforced_user}"
+                cron_add_lines "cronfile:${enforced_user}" "$enforced_user" "$(cat "$enforced_cronfile" 2>/dev/null || true)"
             fi
         fi
     fi
-
-    local cron_scope="$cron_lines"
-    local base_clean="${INM_BASE_DIRECTORY%/}"
-    local app_clean="${INM_INSTALLATION_PATH%/}"
-    if [ -n "$base_clean" ] || [ -n "$app_clean" ]; then
-        local base_re="" app_re="" scope_re=""
-        [ -n "$base_clean" ] && base_re="$(escape_regex "$base_clean")"
-        [ -n "$app_clean" ] && app_re="$(escape_regex "$app_clean")"
-        if [ -n "$base_re" ] && [ -n "$app_re" ]; then
-            scope_re="${base_re}|${app_re}"
-        else
-            scope_re="${base_re}${app_re}"
+    if [[ -n "$invoked_user" && "$invoked_user" != "$current_user" && "$can_read_invoked" == true ]]; then
+        local invoked_home=""
+        if command -v getent >/dev/null 2>&1; then
+            invoked_home="$(getent passwd "$invoked_user" 2>/dev/null | cut -d: -f6)"
         fi
-        if [ -n "$scope_re" ]; then
-            cron_scope="$(printf "%s\n" "$cron_lines" | grep -E "$scope_re" || true)"
+        if [[ -z "$invoked_home" ]]; then
+            invoked_home="$(eval echo "~$invoked_user" 2>/dev/null || true)"
+        fi
+        if [[ -n "$invoked_home" && "$invoked_home" != "~$invoked_user" ]]; then
+            local invoked_cronfile="${invoked_home%/}/cronfile"
+            if [[ -r "$invoked_cronfile" ]]; then
+                cron_add_source "cronfile:${invoked_user}"
+                cron_add_lines "cronfile:${invoked_user}" "$invoked_user" "$(cat "$invoked_cronfile" 2>/dev/null || true)"
+            fi
         fi
     fi
+    if [[ "$invoked_snapshot_used" == true ]]; then
+        can_read_invoked=true
+    fi
+
+    if [[ -n "$invoked_user" && "$invoked_user" != "$current_user" ]]; then
+        if [[ "$can_read_invoked" == true ]]; then
+            local enforced_label="${enforced_user:-$current_user}"
+            cron_emit INFO "Cron scope: enforced=${enforced_label}, invoker=${invoked_user}"
+        else
+            local enforced_label="${enforced_user:-$current_user}"
+            cron_emit INFO "Cron scope: enforced=${enforced_label}; invoker=${invoked_user} not checked (need sudo/root)"
+        fi
+    elif [[ -n "$enforced_user" && "$enforced_user" != "$current_user" ]]; then
+        if [[ "$can_read_enforced" == true ]]; then
+            cron_emit INFO "Cron scope: current user (${current_user}) + enforced user (${enforced_user})"
+        else
+            cron_emit INFO "Cron scope: current user (${current_user}) only; enforced user ${enforced_user} not checked (need sudo/root)"
+        fi
+    else
+        cron_emit INFO "Cron scope: current user (${current_user})"
+    fi
+
+    if [[ ${#cron_sources[@]} -gt 0 ]]; then
+        local sources_joined=""
+        sources_joined="$(printf "%s, " "${cron_sources[@]}")"
+        sources_joined="${sources_joined%, }"
+        cron_emit INFO "Sources: ${sources_joined}"
+    fi
+    if [[ "${DEBUG:-false}" == true && -n "$instance_id" ]]; then
+        cron_emit INFO "Instance ID: ${instance_id}"
+    fi
+
+    local base_clean="${INM_BASE_DIRECTORY%/}"
+    local app_clean="${INM_INSTALLATION_PATH%/}"
+    local env_clean="${INM_ENV_FILE%/}"
+    local instance_id="${INM_INSTANCE_ID:-}"
+    local base_re="" app_re="" env_re="" scope_re=""
+    [ -n "$base_clean" ] && base_re="$(escape_regex "$base_clean")"
+    [ -n "$app_clean" ] && app_re="$(escape_regex "$app_clean")"
+    [ -n "$env_clean" ] && env_re="$(escape_regex "$env_clean")"
+    if [ -n "$base_re" ] && [ -n "$app_re" ]; then
+        scope_re="${base_re}|${app_re}"
+    else
+        scope_re="${base_re}${app_re}"
+    fi
+    local inmanage_re="(inmanage(\\.sh)?|inm(\\.sh)?|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup)"
+    cron_line_matches_scope() {
+        local line="$1"
+        if [[ "$line" =~ INM_INSTANCE_ID=([A-Za-z0-9._:-]+) ]]; then
+            if [[ -n "$instance_id" && "${BASH_REMATCH[1]}" == "$instance_id" ]]; then
+                return 0
+            fi
+            return 1
+        fi
+        if [[ -n "$scope_re" ]] && echo "$line" | grep -Eq "$scope_re"; then
+            return 0
+        fi
+        if [[ -n "$env_re" ]] && echo "$line" | grep -Eq "$env_re"; then
+            return 0
+        fi
+        if [[ -n "$base_re" ]] && echo "$line" | grep -Eq -- "--base-directory(=|[[:space:]])[\"']?${base_re}"; then
+            return 0
+        fi
+        if [[ -n "$env_re" ]] && echo "$line" | grep -Eq -- "--env-file(=|[[:space:]])[\"']?${env_re}"; then
+            return 0
+        fi
+        echo "$line" | grep -Eq "$inmanage_re"
+    }
+
+    cron_entry_schedule() {
+        local line="$1"
+        local f1 f2 f3 f4 f5
+        read -r f1 f2 f3 f4 f5 _ <<< "$line"
+        if [[ "$f1" == @* ]]; then
+            printf "%s" "$f1"
+            return 0
+        fi
+        if [[ -z "$f5" ]]; then
+            printf "?"
+            return 0
+        fi
+        if [[ "$f1" == "*" && "$f2" == "*" && "$f3" == "*" && "$f4" == "*" && "$f5" == "*" ]]; then
+            printf "every minute"
+            return 0
+        fi
+        if [[ "$f2" == "*" && "$f3" == "*" && "$f4" == "*" && "$f5" == "*" ]]; then
+            if [[ "$f1" =~ ^\\*/([0-9]+)$ ]]; then
+                printf "every %s min" "${BASH_REMATCH[1]}"
+                return 0
+            fi
+            if [[ "$f1" =~ ^[0-5]?[0-9]$ ]]; then
+                printf "hourly at :%02d" "$f1"
+                return 0
+            fi
+        fi
+        if [[ "$f3" == "*" && "$f4" == "*" && "$f5" == "*" && "$f1" =~ ^[0-5]?[0-9]$ && "$f2" =~ ^([01]?[0-9]|2[0-3])$ ]]; then
+            printf "daily at %02d:%02d" "$f2" "$f1"
+            return 0
+        fi
+        printf "%s %s %s %s %s" "$f1" "$f2" "$f3" "$f4" "$f5"
+    }
+
+    cron_entry_label() {
+        local line="$1"
+        local source="$2"
+        local run_as="$3"
+        local schedule
+        schedule="$(cron_entry_schedule "$line")"
+        local label="${source} @ ${schedule}"
+        if [[ "$source" == cron.d* && -n "$run_as" && "$run_as" != "unknown" ]]; then
+            label="${label} as ${run_as}"
+        fi
+        printf "%s" "$label"
+    }
+
+    cron_join_entries() {
+        local -a entries=("$@")
+        local joined=""
+        joined="$(printf "%s; " "${entries[@]}")"
+        printf "%s" "${joined%; }"
+    }
+    cron_entry_instance_hint() {
+        local line="$1"
+        local hint=""
+        if [[ "$line" =~ INM_INSTANCE_ID=([A-Za-z0-9._:-]+) ]]; then
+            printf "id=%s" "${BASH_REMATCH[1]}"
+            return 0
+        fi
+        if [[ "$line" =~ --base-directory(=|[[:space:]])([^[:space:]]+) ]]; then
+            hint="${BASH_REMATCH[2]}"
+        elif [[ "$line" =~ --env-file(=|[[:space:]])([^[:space:]]+) ]]; then
+            hint="${BASH_REMATCH[2]}"
+        elif [[ "$line" =~ [[:space:]]cd[[:space:]]+([^&;]+) ]]; then
+            hint="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ (/[^[:space:]]+/artisan) ]]; then
+            hint="${BASH_REMATCH[1]%/artisan}"
+        fi
+        hint="${hint#"${hint%%[![:space:]]*}"}"
+        hint="${hint%"${hint##*[![:space:]]}"}"
+        hint="${hint%/}"
+        hint="${hint#\"}"
+        hint="${hint%\"}"
+        hint="${hint#\'}"
+        hint="${hint%\'}"
+        printf "%s" "$hint"
+    }
+    cron_entry_label_unknown() {
+        local line="$1"
+        local source="$2"
+        local run_as="$3"
+        local label
+        label="$(cron_entry_label "$line" "$source" "$run_as")"
+        local hint
+        hint="$(cron_entry_instance_hint "$line")"
+        if [[ -n "$hint" ]]; then
+            label="${label} -> ${hint}"
+        fi
+        printf "%s" "$label"
+    }
 
     local scheduler_work_running=false
     if command -v pgrep >/dev/null 2>&1; then
@@ -795,62 +1274,143 @@ cron_emit_preflight() {
         # shellcheck disable=SC2009
         ps -ef 2>/dev/null | grep -q "[a]rtisan schedule:work" && scheduler_work_running=true
     fi
-    if echo "$cron_scope" | grep -q "artisan schedule:run"; then
-        cron_emit OK "artisan schedule:run present"
-    elif [[ "$scheduler_work_running" == true ]]; then
-        cron_emit OK "artisan scheduler running (schedule:work)"
-    else
-        cron_emit WARN "artisan schedule missing; run: inm core cron install --jobs=artisan"
-    fi
 
-    # shellcheck disable=SC2034
-    PREFLIGHT_CONTAINER_HINT=false
-    if [ -f /proc/1/cgroup ] && grep -qiE 'docker|lxc|podman' /proc/1/cgroup; then
-        # shellcheck disable=SC2034
-        PREFLIGHT_CONTAINER_HINT=true
-    fi
-    cron_emit_missing() {
-        local label="$1"
-        local default_time="$2"
-        local install_cmd="$3"
-        if [[ "${PREFLIGHT_CONTAINER_HINT:-false}" == true ]]; then
-            cron_emit INFO "${label} cron not detected inside container; use host cron or a sidecar (default ${default_time})"
-        else
-            cron_emit WARN "${label} cron missing; run: ${install_cmd}"
+    local -a artisan_entries=()
+    local -a backup_entries=()
+    local -a heartbeat_entries=()
+    local -a artisan_unknown=()
+    local -a backup_unknown=()
+    local -a heartbeat_unknown=()
+    local unknown_hint_needed=false
+    local idx line source run_as
+    cron_line_in_scope() {
+        local line="$1"
+        if [[ "$line" =~ INM_INSTANCE_ID=([A-Za-z0-9._:-]+) ]]; then
+            if [[ -n "$instance_id" && "${BASH_REMATCH[1]}" == "$instance_id" ]]; then
+                return 0
+            fi
+            return 1
         fi
+        if [[ -n "$scope_re" ]] && echo "$line" | grep -Eq "$scope_re"; then
+            return 0
+        fi
+        if [[ -n "$env_re" ]] && echo "$line" | grep -Eq "$env_re"; then
+            return 0
+        fi
+        if [[ -n "$base_re" ]] && echo "$line" | grep -Eq -- "--base-directory(=|[[:space:]])[\"']?${base_re}"; then
+            return 0
+        fi
+        if [[ -n "$env_re" ]] && echo "$line" | grep -Eq -- "--env-file(=|[[:space:]])[\"']?${env_re}"; then
+            return 0
+        fi
+        return 1
     }
 
-    if echo "$cron_scope" | grep -Eq "(inmanage(\\.sh)?|inm(\\.sh)?) core backup"; then
-        local backup_line backup_time
-        backup_line="$(echo "$cron_scope" | grep -E "(inmanage(\\.sh)?|inm(\\.sh)?) core backup" | head -n1)"
-        backup_time="$(extract_cron_time "$backup_line")"
-        if [[ -n "$backup_time" ]]; then
-            cron_emit OK "backup cron present (${backup_time})"
-        else
-            cron_emit OK "backup cron present"
+    cron_job_match() {
+        local job="$1"
+        local line="$2"
+        case "$job" in
+            artisan)
+                if echo "$line" | grep -Eq "artisan[[:space:]]+schedule:run"; then
+                    return 0
+                fi
+                if cron_line_matches_scope "$line" && echo "$line" | grep -Eq "schedule:run"; then
+                    return 0
+                fi
+                ;;
+            backup)
+                if echo "$line" | grep -Eq "(inmanage(\\.sh)?|inm(\\.sh)?) .*core[[:space:]]+backup"; then
+                    return 0
+                fi
+                if cron_line_matches_scope "$line" && echo "$line" | grep -Ei "core[[:space:]]+backup"; then
+                    return 0
+                fi
+                ;;
+            heartbeat)
+                if echo "$line" | grep -Eq "notify-heartbeat"; then
+                    return 0
+                fi
+                if cron_line_matches_scope "$line" && echo "$line" | grep -Ei "notify-heartbeat"; then
+                    return 0
+                fi
+                ;;
+        esac
+        return 1
+    }
+    for idx in "${!cron_entry_line[@]}"; do
+        line="${cron_entry_line[$idx]}"
+        source="${cron_entry_source[$idx]}"
+        run_as="${cron_entry_user[$idx]}"
+        if cron_job_match "artisan" "$line"; then
+            if cron_line_in_scope "$line"; then
+                artisan_entries+=("$(cron_entry_label "$line" "$source" "$run_as")")
+            else
+                artisan_unknown+=("$(cron_entry_label_unknown "$line" "$source" "$run_as")")
+            fi
         fi
+        if cron_job_match "backup" "$line"; then
+            if cron_line_in_scope "$line"; then
+                backup_entries+=("$(cron_entry_label "$line" "$source" "$run_as")")
+            else
+                backup_unknown+=("$(cron_entry_label_unknown "$line" "$source" "$run_as")")
+            fi
+        fi
+        if cron_job_match "heartbeat" "$line"; then
+            if cron_line_in_scope "$line"; then
+                heartbeat_entries+=("$(cron_entry_label "$line" "$source" "$run_as")")
+            else
+                heartbeat_unknown+=("$(cron_entry_label_unknown "$line" "$source" "$run_as")")
+            fi
+        fi
+    done
+
+    if (( ${#artisan_entries[@]} > 0 )); then
+        if (( ${#artisan_entries[@]} > 1 )); then
+            cron_emit WARN "artisan schedule: concurrent jobs detected (${#artisan_entries[@]}): $(cron_join_entries "${artisan_entries[@]}")"
+        else
+            cron_emit OK "artisan schedule:run detected: ${artisan_entries[0]}"
+        fi
+    elif [[ "$scheduler_work_running" == true ]]; then
+        cron_emit OK "artisan scheduler running (schedule:work)"
+    elif (( ${#artisan_unknown[@]} > 0 )); then
+        cron_emit WARN "artisan schedule: jobs for another instance (${#artisan_unknown[@]}): $(cron_join_entries "${artisan_unknown[@]}")"
+        unknown_hint_needed=true
     else
-        local default_time="${INM_CRON_BACKUP_TIME:-03:24}"
-        cron_emit_missing "backup" "$default_time" "inm core cron install --jobs=backup --backup-time=${default_time}"
+        cron_emit WARN "artisan schedule: no jobs detected"
     fi
 
-    if echo "$cron_scope" | grep -qE "notify-heartbeat"; then
-        local heartbeat_line heartbeat_time
-        heartbeat_line="$(echo "$cron_scope" | grep -E "notify-heartbeat" | head -n1)"
-        heartbeat_time="$(extract_cron_time "$heartbeat_line")"
-        if [[ -n "$heartbeat_time" ]]; then
-            cron_emit OK "heartbeat cron present (${heartbeat_time})"
+    if (( ${#backup_entries[@]} > 0 )); then
+        if (( ${#backup_entries[@]} > 1 )); then
+            cron_emit WARN "backup: concurrent jobs detected (${#backup_entries[@]}): $(cron_join_entries "${backup_entries[@]}")"
         else
-            cron_emit OK "heartbeat cron present"
+            cron_emit OK "backup detected: ${backup_entries[0]}"
         fi
+    elif (( ${#backup_unknown[@]} > 0 )); then
+        cron_emit WARN "backup: jobs for another instance (${#backup_unknown[@]}): $(cron_join_entries "${backup_unknown[@]}")"
+        unknown_hint_needed=true
     else
-        local hb_default_time="${INM_NOTIFY_HEARTBEAT_TIME:-06:00}"
+        cron_emit WARN "backup: no jobs detected"
+    fi
+
+    if (( ${#heartbeat_entries[@]} > 0 )); then
+        if (( ${#heartbeat_entries[@]} > 1 )); then
+            cron_emit WARN "heartbeat: concurrent jobs detected (${#heartbeat_entries[@]}): $(cron_join_entries "${heartbeat_entries[@]}")"
+        else
+            cron_emit OK "heartbeat detected: ${heartbeat_entries[0]}"
+        fi
+    elif (( ${#heartbeat_unknown[@]} > 0 )); then
+        cron_emit WARN "heartbeat: jobs for another instance (${#heartbeat_unknown[@]}): $(cron_join_entries "${heartbeat_unknown[@]}")"
+        unknown_hint_needed=true
+    else
         local hb_enabled=false
         args_is_true "${INM_NOTIFY_HEARTBEAT_ENABLED:-false}" && hb_enabled=true
         if [[ "$hb_enabled" == true ]]; then
-            cron_emit_missing "heartbeat" "$hb_default_time" "inm core cron install --jobs=heartbeat --heartbeat-time=${hb_default_time}"
+            cron_emit WARN "heartbeat: no jobs detected"
         else
-            cron_emit INFO "heartbeat cron not enabled (set INM_NOTIFY_HEARTBEAT_ENABLED=true)"
+            cron_emit INFO "heartbeat: not enabled for this instance"
         fi
+    fi
+    if [[ "$unknown_hint_needed" == true ]]; then
+        cron_emit INFO "Hint: add INM_INSTANCE_ID=${instance_id} to manual cron lines or run 'inm core cron install' so jobs map to this instance."
     fi
 }

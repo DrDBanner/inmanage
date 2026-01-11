@@ -34,11 +34,21 @@ run_preflight() {
     local fast="${ARGS[fast]:-false}"
     local skip_snappdf="${ARGS[skip_snappdf]:-false}"
     local skip_github="${ARGS[skip_github]:-false}"
+    local force_raw
+    force_raw="$(args_get ARGS "false" force)"
+    local update_due=true
+    if declare -F update_notice_should_check >/dev/null 2>&1; then
+        if ! update_notice_should_check "$force_raw"; then
+            update_due=false
+        fi
+    fi
     local cli_config_present=false
     local current_user=""
+    local invoked_user=""
     local can_enforce=false
     preflight_compute_context "$enforced_user" "$enforced_group" \
         enforced_owner can_enforce current_user cli_config_present
+    invoked_user="${INM_INVOKED_BY:-$current_user}"
     # Resolve env file path early so probes/readers behave consistently.
     if [ -n "${INM_ENV_FILE:-}" ]; then
         local env_file_resolved
@@ -70,6 +80,7 @@ run_preflight() {
         [notify_heartbeat]=1
         [notify-heartbeat]=1
         [fix_permissions]=1
+        [format]=1
         [debug]=1
         [debuglevel]=1
         [debug_level]=1
@@ -81,7 +92,6 @@ run_preflight() {
         [fast]=1
         [skip_snappdf]=1
         [skip_github]=1
-        [compact]=1
     )
     local -A unknown_args=()
     local arg_key
@@ -103,7 +113,7 @@ run_preflight() {
             bad_args+=("--${arg_key//_/-}")
         done
         log err "[${pf_label}] Unknown arguments: ${bad_args[*]}"
-        log info "[${pf_label}] Allowed flags: --checks=TAG1,TAG2 --check=TAG1,TAG2 --exclude=TAG1,TAG2 --fix-permissions --notify-test --notify-heartbeat --compact --debug --debuglevel=1|2 --dry-run --override-enforced-user --no-cli-clear --fast --skip-snappdf --skip-github"
+        log info "[${pf_label}] Allowed flags: --checks=TAG1,TAG2 --check=TAG1,TAG2 --exclude=TAG1,TAG2 --fix-permissions --notify-test --notify-heartbeat --format=compact|full|failed --debug --debuglevel=1|2 --dry-run --override-enforced-user --no-cli-clear --fast --skip-snappdf --skip-github"
         $errexit_set && set -e
         return 1
     fi
@@ -120,13 +130,43 @@ run_preflight() {
     local notify_heartbeat_raw
     notify_heartbeat_raw="$(args_get ARGS "false" notify_heartbeat)"
     local notify_heartbeat=false
-    local compact_raw
-    compact_raw="$(args_get ARGS "false" compact)"
-    local compact=false
+    local notify_format_raw
+    notify_format_raw="$(args_get ARGS "" format)"
+    local notify_format=""
+    local output_format=""
     args_is_true "$fix_permissions_raw" && fix_permissions=true
     args_is_true "$notify_test_raw" && notify_test=true
     args_is_true "$notify_heartbeat_raw" && notify_heartbeat=true
-    args_is_true "$compact_raw" && compact=true
+    if [[ -n "$notify_format_raw" ]]; then
+        output_format="$notify_format_raw"
+    else
+        output_format="full"
+    fi
+    output_format="${output_format,,}"
+    case "$output_format" in
+        compact|full|failed) ;;
+        *) output_format="full" ;;
+    esac
+    if [[ -n "$notify_format_raw" ]]; then
+        notify_format="$notify_format_raw"
+    else
+        notify_format="${INM_NOTIFY_HEARTBEAT_FORMAT:-}"
+    fi
+    notify_format="${notify_format,,}"
+    if [[ -z "$notify_format" ]]; then
+        local legacy_detail="${INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL:-auto}"
+        legacy_detail="${legacy_detail^^}"
+        case "$legacy_detail" in
+            OK|INFO|ALL) notify_format="full" ;;
+            WARN|ERR) notify_format="failed" ;;
+            AUTO|"") notify_format="failed" ;;
+            *) notify_format="compact" ;;
+        esac
+    fi
+    case "$notify_format" in
+        compact|full|failed) ;;
+        *) notify_format="compact" ;;
+    esac
     # Heartbeat runs can narrow/expand checks using stored include/exclude lists.
     if [[ "$notify_heartbeat" == true ]]; then
         if [[ -n "${INM_NOTIFY_HEARTBEAT_INCLUDE:-}" && -z "$checks_filter" ]]; then
@@ -191,7 +231,7 @@ run_preflight() {
 
     if should_run "CLI"; then
         # ---- CLI self info ----
-        preflight_emit_cli_info add_result "$fast" "$skip_github"
+        preflight_emit_cli_info add_result "$fast" "$skip_github" "$update_due"
     fi
     if should_run "SYS"; then
         # ---- System details ----
@@ -228,7 +268,7 @@ run_preflight() {
         fi
         if [ -n "${INM_INSTALLATION_PATH:-}" ] && [ -d "${INM_INSTALLATION_PATH%/}" ]; then
             local app_dir="${INM_INSTALLATION_PATH%/}"
-            app_emit_preflight add_result "$app_dir" "$app_cfg_hint" "$fast" "$skip_github"
+            app_emit_preflight add_result "$app_dir" "$app_cfg_hint" "$fast" "$skip_github" "$update_due"
             if [ -n "$enforced_user" ]; then
                 fs_emit_permissions_preflight add_result "$enforced_user" "$fix_permissions" "$app_dir"
             fi
@@ -285,7 +325,7 @@ run_preflight() {
     fi
 
     if should_run "CRON"; then
-        cron_emit_preflight add_result "$enforced_user" "$current_user"
+        cron_emit_preflight add_result "$enforced_user" "$current_user" "$invoked_user"
     fi
 
     if should_run "LOG"; then
@@ -308,7 +348,16 @@ run_preflight() {
 
     local -a groups=()
     preflight_get_default_groups groups
-    preflight_print_summary "$compact" groups
+    preflight_print_summary "$output_format" groups
+
+    if [[ "${DEBUG:-false}" == true ]]; then
+        local idx
+        for idx in "${!PF_STATUS[@]}"; do
+            if [[ "${PF_STATUS[$idx]}" == "WARN" || "${PF_STATUS[$idx]}" == "ERR" ]]; then
+                log debug "[HEALTH] ${PF_CHECK[$idx]} ${PF_STATUS[$idx]} ${PF_DETAIL[$idx]}"
+            fi
+        done
+    fi
 
     log info "[${pf_label}] Completed: OK=$ok WARN=$warn ERR=$err"
     local aggregate_status="OK"
@@ -321,7 +370,7 @@ run_preflight() {
 
     if [[ "$notify_heartbeat" == true || "$notify_test" == true ]]; then
         local notify_summary=""
-        notify_summary="$(preflight_build_notify_summary "$compact" "$notify_test" groups)"
+        notify_summary="$(preflight_build_notify_summary "$notify_format" groups)"
         if [[ "$notify_heartbeat" == true ]]; then
             notify_emit_heartbeat "$aggregate_status" "$ok" "$warn" "$err" "$notify_summary"
         fi

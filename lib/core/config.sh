@@ -47,6 +47,7 @@ declare -A default_settings=(
     ["INM_ENV_MODE"]="600" # Strict mode for app .env when fixing perms.
     ["INM_CLI_ENV_MODE"]="600" # Strict mode for CLI config when fixing perms.
     ["INM_KEEP_BACKUPS"]="2"
+    ["INM_AUTO_UPDATE_CHECK"]="true" # Show startup update notice for app + CLI (uses last health check results).
     ["INM_GH_API_CREDENTIALS"]="" # Format username:password or token:x-oauth.
     ["INM_NOTIFY_ENABLED"]="false" # Enable notifications for non-interactive failures.
     ["INM_NOTIFY_TARGETS"]="email,webhook" # Comma list: email,webhook.
@@ -62,7 +63,8 @@ declare -A default_settings=(
     ["INM_NOTIFY_HEARTBEAT_ENABLED"]="false" # Enable daily health heartbeat (requires heartbeat cron job).
     ["INM_NOTIFY_HEARTBEAT_TIME"]="06:00" # Heartbeat cron time (HH:MM).
     ["INM_NOTIFY_HEARTBEAT_LEVEL"]="ERR" # Minimum heartbeat severity (ERR|WARN|INFO|OK|ALL).
-    ["INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL"]="auto" # Detail level in heartbeat mail (auto=use INM_NOTIFY_HEARTBEAT_LEVEL).
+    ["INM_NOTIFY_HEARTBEAT_FORMAT"]="compact" # Heartbeat summary format (compact|full|failed).
+    ["INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL"]="auto" # Legacy heartbeat detail fallback (auto=use INM_NOTIFY_HEARTBEAT_LEVEL).
     ["INM_NOTIFY_HEARTBEAT_INCLUDE"]="" # Optional include filter for heartbeat checks.
     ["INM_NOTIFY_HEARTBEAT_EXCLUDE"]="" # Optional exclude filter for heartbeat checks.
     ["INM_NOTIFY_WEBHOOK_URL"]="" # Webhook target URL.
@@ -100,6 +102,7 @@ default_settings_order=(
     "INM_ENV_MODE"
     "INM_CLI_ENV_MODE"
     "INM_KEEP_BACKUPS"
+    "INM_AUTO_UPDATE_CHECK"
     "INM_GH_API_CREDENTIALS"
     "INM_NOTIFY_ENABLED"
     "INM_NOTIFY_TARGETS"
@@ -115,6 +118,7 @@ default_settings_order=(
     "INM_NOTIFY_HEARTBEAT_ENABLED"
     "INM_NOTIFY_HEARTBEAT_TIME"
     "INM_NOTIFY_HEARTBEAT_LEVEL"
+    "INM_NOTIFY_HEARTBEAT_FORMAT"
     "INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL"
     "INM_NOTIFY_HEARTBEAT_INCLUDE"
     "INM_NOTIFY_HEARTBEAT_EXCLUDE"
@@ -164,6 +168,7 @@ declare -A prompt_texts=(
     ["INM_ENV_MODE"]="ENV_MODE: Mode for app .env when fixing perms."
     ["INM_CLI_ENV_MODE"]="CLI_ENV_MODE: Mode for CLI .env.inmanage when fixing perms."
     ["INM_KEEP_BACKUPS"]="KEEP_BACKUPS: Backup retention. Set to 2 to keep 2 backups in the past at a time."
+    ["INM_AUTO_UPDATE_CHECK"]="AUTO_UPDATE_CHECK: Show stored app + CLI update notice on CLI start (from last health)."
     ["INM_GH_API_CREDENTIALS"]="GH_API_CREDENTIALS: GitHub API credentials (username:password or token:x-oauth)."
     ["INM_NOTIFY_ENABLED"]="NOTIFY_ENABLED: Enable notifications for non-interactive failures."
     ["INM_NOTIFY_TARGETS"]="NOTIFY_TARGETS: Comma list of targets (email,webhook)."
@@ -179,7 +184,8 @@ declare -A prompt_texts=(
     ["INM_NOTIFY_HEARTBEAT_ENABLED"]="NOTIFY_HEARTBEAT_ENABLED: Enable daily heartbeat."
     ["INM_NOTIFY_HEARTBEAT_TIME"]="NOTIFY_HEARTBEAT_TIME: Heartbeat cron time (HH:MM)."
     ["INM_NOTIFY_HEARTBEAT_LEVEL"]="NOTIFY_HEARTBEAT_LEVEL: Minimum severity for heartbeat."
-    ["INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL"]="NOTIFY_HEARTBEAT_DETAIL_LEVEL: Detail severity shown in heartbeat mail."
+    ["INM_NOTIFY_HEARTBEAT_FORMAT"]="NOTIFY_HEARTBEAT_FORMAT: Heartbeat summary format (compact|full|failed)."
+    ["INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL"]="NOTIFY_HEARTBEAT_DETAIL_LEVEL: Legacy detail fallback (auto=use INM_NOTIFY_HEARTBEAT_LEVEL)."
     ["INM_NOTIFY_HEARTBEAT_INCLUDE"]="NOTIFY_HEARTBEAT_INCLUDE: Include filter for heartbeat checks."
     ["INM_NOTIFY_HEARTBEAT_EXCLUDE"]="NOTIFY_HEARTBEAT_EXCLUDE: Exclude filter for heartbeat checks."
     ["INM_NOTIFY_WEBHOOK_URL"]="NOTIFY_WEBHOOK_URL: Webhook target URL."
@@ -202,6 +208,7 @@ declare -A default_inline_comments=(
     ["INM_HISTORY_LOG_FILE"]="Path to history log (supports \${INM_BASE_DIRECTORY} and ~)."
     ["INM_HISTORY_LOG_MAX_SIZE"]="Rotate when log exceeds this size (bytes, K, M, G)."
     ["INM_HISTORY_LOG_ROTATE"]="Number of rotated history logs to keep."
+    ["INM_AUTO_UPDATE_CHECK"]="Startup update notice for app + CLI (uses last health check results)."
     ["INM_GH_API_CREDENTIALS"]="Format username:password or token:x-oauth."
     ["INM_NOTIFY_ENABLED"]="Enable notifications for non-interactive failures."
     ["INM_NOTIFY_TARGETS"]="Comma list: email,webhook."
@@ -217,7 +224,8 @@ declare -A default_inline_comments=(
     ["INM_NOTIFY_HEARTBEAT_ENABLED"]="Enable daily health heartbeat (requires heartbeat cron job)."
     ["INM_NOTIFY_HEARTBEAT_TIME"]="Heartbeat cron time (HH:MM)."
     ["INM_NOTIFY_HEARTBEAT_LEVEL"]="Minimum heartbeat severity (ERR|WARN|INFO|OK|ALL)."
-    ["INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL"]="Detail severity for heartbeat mails (auto=use INM_NOTIFY_HEARTBEAT_LEVEL)."
+    ["INM_NOTIFY_HEARTBEAT_FORMAT"]="Heartbeat summary format (compact|full|failed)."
+    ["INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL"]="Legacy heartbeat detail fallback (auto=use INM_NOTIFY_HEARTBEAT_LEVEL)."
     ["INM_NOTIFY_HEARTBEAT_INCLUDE"]="Optional include filter for heartbeat checks."
     ["INM_NOTIFY_HEARTBEAT_EXCLUDE"]="Optional exclude filter for heartbeat checks."
     ["INM_NOTIFY_WEBHOOK_URL"]="Webhook target URL."

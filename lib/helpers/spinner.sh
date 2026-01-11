@@ -152,7 +152,9 @@ run_with_watchdog() {
         fi
         if [[ "$heartbeat" =~ ^[0-9]+$ ]] && [ "$heartbeat" -gt 0 ]; then
             if [ $((now - last_beat)) -ge "$heartbeat" ]; then
-                log info "[WAIT] ${msg:-Working}..."
+                if [[ -z "${SPINNER_PID:-}" ]]; then
+                    log info "[WAIT] ${msg:-Working}..."
+                fi
                 last_beat="$now"
             fi
         fi

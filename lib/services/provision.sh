@@ -302,7 +302,7 @@ maybe_setup_heartbeat_notifications() {
     fi
     declare -g -A NAMED_ARGS=()
     declare -g INM_NOTIFY_SENT=false
-    if ! run_preflight --notify-test --no-cli-clear --compact; then
+    if ! run_preflight --notify-test --no-cli-clear --format=compact; then
         if [[ "${INM_NOTIFY_SENT:-false}" == true ]]; then
             log info "[${scope}] notify-test sent; preflight reported issues."
         else

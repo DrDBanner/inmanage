@@ -98,11 +98,13 @@ print_cron_manual_instructions() {
     local cli_cmd
     cli_cmd="$(install_cli_hint)"
     local base_clean="${INM_BASE_DIRECTORY%/}"
+    local instance_id
+    instance_id="$(env_resolve_instance_id "$base_clean" "${INM_ENV_FILE:-}")"
 
     printf "%bCron install failed.%b\n" "$MAGENTA" "$RESET"
     cron_jobs_flags "$jobs"
     printf "Try: %b%s core cron install --user=%s --jobs=%s%b\n" "$CYAN" "$cli_cmd" "$user" "$jobs" "$RESET"
-    printf "Or add to %b/etc/cron.d/invoiceninja%b (root):\n" "$CYAN" "$RESET"
+    printf "Or add to %b/etc/cron.d/inmanage-%s%b (root):\n" "$CYAN" "$instance_id" "$RESET"
     if [[ "$CRON_JOB_ARTISAN" == true ]]; then
         printf "  %b* * * * * %s %s schedule:run >> /dev/null 2>&1%b\n" "$CYAN" "$user" "$(artisan_cmd_string)" "$RESET"
     fi

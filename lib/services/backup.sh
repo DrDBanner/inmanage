@@ -304,6 +304,12 @@ run_backup() {
     local fullbackup="${ARGS[fullbackup]:-false}"
     local extra_raw="${ARGS[extra_paths]:-${ARGS[extra]:-}}"
     local create_migration_export="${ARGS[create_migration_export]:-${ARGS[create-migration-export]:-false}}"
+    local skip_staging="${ARGS[skip_staging]:-${ARGS[skip-staging]:-false}}"
+    local skip_staging_enabled=false
+    args_is_true "$skip_staging" && skip_staging_enabled=true
+    local no_prune="${ARGS[no_prune]:-${ARGS[no-prune]:-false}}"
+    local no_prune_enabled=false
+    args_is_true "$no_prune" && no_prune_enabled=true
     local force="${force_update:-false}"
     local simulate="${DRY_RUN:-false}"
     local backup_dir="${INM_BACKUP_DIRECTORY%/}"
@@ -383,8 +389,25 @@ run_backup() {
     BACKUP_DIR="$backup_dir"
     BACKUP_OUTPUTS=()
 
+    backup_prune() {
+        if [[ "$no_prune_enabled" == true ]]; then
+            log info "[BACKUP] Skipping prune (--no-prune)."
+            return 0
+        fi
+        if [[ "$simulate" == true ]]; then
+            log info "[DRY-RUN] Would prune old backups (keep=${INM_KEEP_BACKUPS:-2})."
+            return 0
+        fi
+        if declare -F cleanup_old_backups >/dev/null 2>&1; then
+            log info "[BACKUP] Pruning old backups (keep=${INM_KEEP_BACKUPS:-2})."
+            cleanup_old_backups
+        else
+            log warn "[BACKUP] cleanup_old_backups not available; skipping prune."
+        fi
+    }
+
     log info "[BACKUP] Preparing backup: $base_name"
-    log debug "[BACKUP] bundle=${bundle} compress=${compress} db=${db} storage=${storage} uploads=${uploads} include_app=${include_app} extras=${#BACKUP_EXTRA_PATHS[@]} dry-run=${simulate}"
+    log debug "[BACKUP] bundle=${bundle} compress=${compress} db=${db} storage=${storage} uploads=${uploads} include_app=${include_app} extras=${#BACKUP_EXTRA_PATHS[@]} skip-staging=${skip_staging_enabled} no-prune=${no_prune_enabled} dry-run=${simulate}"
 
     if [[ "$simulate" != true ]]; then
         mkdir -p "$backup_dir" || {
@@ -399,6 +422,149 @@ run_backup() {
     if [[ "$bundle" == "true" ]]; then
         local bundle_path
         bundle_path="$backup_dir/${base_name}$(backup_suffix_for_compress "$compress")"
+
+        if [[ "$skip_staging_enabled" == true && "$compress" != "tar.gz" ]]; then
+            log warn "[BACKUP] --skip-staging only supports tar.gz bundles; using staging."
+            skip_staging_enabled=false
+        fi
+
+        if [[ "$skip_staging_enabled" == true ]]; then
+            local db_tmp_dir=""
+            local env_tmp_dir=""
+            local extra_stage=""
+            local -a tar_args=()
+            local -a tar_parts=()
+
+            if [[ "$db" == "true" ]]; then
+                if [[ "$simulate" == true ]]; then
+                    log info "[DRY-RUN] Would dump database -> <temp>/db.sql"
+                else
+                    db_tmp_dir="$(mktemp -d)" || { log err "[BACKUP] Could not create temp dir for db.sql."; return 1; }
+                    log info "[BACKUP] Dumping database..."
+                    dump_database "$db_tmp_dir/db.sql" || { fs_cleanup_stage "$db_tmp_dir" "$simulate"; return 1; }
+                fi
+            fi
+
+            if [[ "$create_migration_export" == "true" ]]; then
+                if [[ "$simulate" == true ]]; then
+                    log info "[DRY-RUN] Would create migration export .env"
+                else
+                    env_tmp_dir="$(mktemp -d)" || { log err "[BACKUP] Could not create temp dir for .env."; return 1; }
+                    cp "$env_source" "$env_tmp_dir/.env" || { fs_cleanup_stage "$env_tmp_dir" "$simulate"; return 1; }
+                    backup_apply_migration_export "$simulate" "$env_tmp_dir/.env" || { fs_cleanup_stage "$env_tmp_dir" "$simulate"; return 1; }
+                fi
+            fi
+
+            if [[ ${#BACKUP_EXTRA_PATHS[@]} -gt 0 ]]; then
+                if [[ "$simulate" == true ]]; then
+                    log info "[DRY-RUN] Would stage extra paths for bundle"
+                else
+                    extra_stage="$(mktemp -d)" || { log err "[BACKUP] Could not create temp dir for extras."; return 1; }
+                    backup_copy_extra_paths "$extra_stage/extra" "Staging"
+                fi
+            fi
+
+            tar_args+=(--exclude "$(basename "$backup_dir")" --exclude ".cache")
+            if [[ "$include_app" == "true" ]]; then
+                tar_parts+=(-C "$(dirname "$install_root")" "$app_dir_name")
+                if [[ "$storage" != "true" ]]; then
+                    tar_args+=(--exclude "${app_dir_name}/storage")
+                fi
+                if [[ "$uploads" != "true" ]]; then
+                    tar_args+=(--exclude "${app_dir_name}/public/uploads")
+                fi
+                if [[ "$create_migration_export" == "true" ]]; then
+                    tar_args+=(--exclude "${app_dir_name}/.env")
+                fi
+            else
+                local -a root_paths=()
+                if [[ -f "$env_source" && "$create_migration_export" != "true" ]]; then
+                    root_paths+=(".env")
+                fi
+                if [[ "$storage" == "true" ]]; then
+                    local storage_src="$install_root/storage"
+                    if [[ -d "$storage_src" ]]; then
+                        root_paths+=("storage")
+                    else
+                        log warn "[BACKUP] storage/ missing at $storage_src (skipping)."
+                    fi
+                fi
+                if [[ "$uploads" == "true" ]]; then
+                    local uploads_src="$install_root/public/uploads"
+                    if [[ -d "$uploads_src" ]]; then
+                        root_paths+=("public/uploads")
+                    else
+                        log warn "[BACKUP] uploads/ missing at $uploads_src (skipping)."
+                    fi
+                fi
+                if (( ${#root_paths[@]} > 0 )); then
+                    tar_parts+=(-C "$install_root" "${root_paths[@]}")
+                fi
+            fi
+
+            if [[ -n "$env_tmp_dir" ]]; then
+                tar_parts+=(-C "$env_tmp_dir" ".env")
+            fi
+            if [[ -n "$db_tmp_dir" ]]; then
+                tar_parts+=(-C "$db_tmp_dir" "db.sql")
+            fi
+            if [[ -n "$extra_stage" ]]; then
+                tar_parts+=(-C "$extra_stage" "extra")
+            fi
+
+            if [[ ${#tar_parts[@]} -eq 0 ]]; then
+                log err "[BACKUP] Nothing to bundle (check flags)."
+                fs_cleanup_stage "$db_tmp_dir" "$simulate"
+                fs_cleanup_stage "$env_tmp_dir" "$simulate"
+                fs_cleanup_stage "$extra_stage" "$simulate"
+                return 1
+            fi
+
+            if [[ "$simulate" == true ]]; then
+                log info "[DRY-RUN] Would create bundle at $bundle_path (compress=$compress, skip-staging=true)"
+            else
+                log info "[BACKUP] Creating bundle ($compress) at $bundle_path (skip staging)"
+                spinner_run_mode normal "Creating tar bundle..." tar -czf "$bundle_path" "${tar_args[@]}" "${tar_parts[@]}" || {
+                    fs_cleanup_stage "$db_tmp_dir" "$simulate"
+                    fs_cleanup_stage "$env_tmp_dir" "$simulate"
+                    fs_cleanup_stage "$extra_stage" "$simulate"
+                    log err "[BACKUP] Failed to create tar bundle."
+                    return 1
+                }
+            fi
+
+            fs_cleanup_stage "$db_tmp_dir" "$simulate"
+            fs_cleanup_stage "$env_tmp_dir" "$simulate"
+            fs_cleanup_stage "$extra_stage" "$simulate"
+
+            if [[ "$simulate" != true ]]; then
+                enforce_ownership "$backup_dir"
+                enforce_permissions "$backup_dir_mode" "$backup_dir"
+            else
+                log info "[DRY-RUN] Would enforce ownership on backup dir: $backup_dir"
+            fi
+
+            if [[ "$simulate" != true && "$compress" != "false" && -f "$bundle_path" ]]; then
+                local checksum_target="${bundle_path}.sha256"
+                compat_write_sha256_file "$bundle_path" "$checksum_target" && \
+                    log ok "[BACKUP] Checksum written: $checksum_target"
+            elif [[ "$simulate" == true && "$compress" != "false" ]]; then
+                log info "[DRY-RUN] Would create checksum for $bundle_path"
+            fi
+
+            local bundle_size=""
+            if [[ "$simulate" != true && -e "$bundle_path" ]]; then
+                bundle_size="$(fs_path_size "$bundle_path")"
+            fi
+            if [[ -n "$bundle_size" ]]; then
+                log ok "[BACKUP] Bundle ready: $bundle_path (Size: $bundle_size)"
+            else
+                log ok "[BACKUP] Bundle ready: $bundle_path"
+            fi
+            run_hook "post-backup" || return 1
+            backup_prune
+            return 0
+        fi
 
         local stage=""
         if [[ "$simulate" != true ]]; then
@@ -521,6 +687,7 @@ run_backup() {
             log ok "[BACKUP] Bundle ready: $bundle_path"
         fi
         run_hook "post-backup" || return 1
+        backup_prune
         return 0
     fi
 
@@ -624,4 +791,5 @@ run_backup() {
         fi
     done
     run_hook "post-backup" || return 1
+    backup_prune
 }

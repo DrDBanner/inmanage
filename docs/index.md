@@ -350,7 +350,7 @@ Health switches (`inm core health`):
 | `--checks=TAG1,TAG2` | unset | Run only selected check groups (alias: `--check`). |
 | `--exclude=TAG1,TAG2` | unset | Run all checks except these groups. |
 | `--fix-permissions` | `false` | Repair ownership where possible. |
-| `--compact` | `false` | Show only WARN/ERR, plus an OK line per fully healthy section. |
+| `--format=compact\|full\|failed` | unset | Summary format for CLI output and notifications. |
 | `--override-enforced-user` | `false` | Skip user switching for this run. |
 | `--notify-test` | `false` | Send a test notification immediately. |
 | `--notify-heartbeat` | `false` | Internal usage (cron/automation heartbeat). |
@@ -362,7 +362,7 @@ Health switches (`inm core health`):
 Filter tags:
 
 ```text
-CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,LOG,SNAPPDF
+CLI,SYS,FS,PERM,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,LOG,SNAPPDF
 ```
 
 History log (sanitized):
@@ -395,7 +395,7 @@ inm core health --exclude=FS,CRON
 > [!TIP]
 > If you run `--fix-permissions` as root, add `--override-enforced-user` to avoid switching to the enforced user.
 
-`--compact` also affects notification summaries (email + webhook): sections with no WARN/ERR collapse to a single OK line.
+`--format=compact` also affects notification summaries (email + webhook): sections with no WARN/ERR collapse to a single OK line.
 
 ## Cron jobs (INmanage)
 
@@ -408,7 +408,7 @@ inm core cron install
 This installs artisan schedule + backup cron jobs (and heartbeat if selected).
 
 > [!NOTE]
-> Provisioned installs auto‑install cron jobs based on your `.env.provision`. By default that’s `essential` (artisan + backup). If heartbeat is enabled in the provision file and you didn’t explicitly set cron jobs, the heartbeat job is added automatically. Heartbeat detail depth is controlled by `INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL`.
+> Provisioned installs auto‑install cron jobs based on your `.env.provision`. By default that’s `essential` (artisan + backup). If heartbeat is enabled in the provision file and you didn’t explicitly set cron jobs, the heartbeat job is added automatically. Heartbeat summary format is controlled by `INM_NOTIFY_HEARTBEAT_FORMAT`.
 
 Short form (same behavior):
 
@@ -425,7 +425,7 @@ Cron switches (`inm core cron install`):
 | `--mode=auto / system / crontab` | `auto` | Force cron install mode. |
 | `--backup-time=HH:MM` | `03:24` | Backup cron schedule (24h). |
 | `--heartbeat-time=HH:MM` | `06:00` | Heartbeat cron schedule (24h). |
-| `--cron-file=path` | `/etc/cron.d/invoiceninja` | Target cron file (root mode only). |
+| `--cron-file=path` | `/etc/cron.d/inmanage-<instance-id>` | Target cron file (root mode only). |
 | `--create-test-job` | `false` | Add a test job that touches `crontestfile` every minute. |
 
 > [!TIP]
@@ -434,7 +434,7 @@ Cron switches (`inm core cron install`):
 Cron uninstall:
 
 ```bash
-inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path]
+inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path] [--all|--purge] [--instance-id=<id>]
 ```
 
 Short form:
@@ -449,8 +449,9 @@ Cron test job removal:
 inm core cron uninstall --remove-test-job
 ```
 
-> [!NOTE]
 > Some systems use `${HOME}/cronfile` for user cron entries. If it exists, inm will use it as the base and keep it updated.
+
+Tip: `--instance-id=<id>` removes a specific instance block; `--all`/`--purge` removes every INmanage cron entry you can access.
 
 ## Heartbeat notifications (INmanage)
 
@@ -491,7 +492,7 @@ inm core health --notify-test
 1. Cron runs `inm core health --notify-heartbeat` once per day.
 2. Health checks run and a short summary is built per section (OK/WARN/ERR).
 3. A mail is sent if any result is at or above `INM_NOTIFY_HEARTBEAT_LEVEL`.
-4. `INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL` controls which severities appear in the mail body.
+4. `INM_NOTIFY_HEARTBEAT_FORMAT` controls the heartbeat summary format.
 
 In Docker, run the heartbeat from the host (cron) or a small sidecar container. The app scheduler (`schedule:work`) does not run INmanage checks.
 
@@ -518,7 +519,8 @@ Heartbeat config:
 | `INM_NOTIFY_HEARTBEAT_ENABLED=true/false` | `false` | Enable daily health heartbeat. |
 | `INM_NOTIFY_HEARTBEAT_TIME=HH:MM` | `06:00` | Cron schedule for the heartbeat. |
 | `INM_NOTIFY_HEARTBEAT_LEVEL=ERR/WARN/INFO/OK` | `ERR` | Minimum severity for heartbeat. |
-| `INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL=auto/ERR/WARN/INFO/OK/ALL` | `auto` | Which severities appear in the heartbeat mail (auto uses `INM_NOTIFY_HEARTBEAT_LEVEL`). |
+| `INM_NOTIFY_HEARTBEAT_FORMAT=compact/full/failed` | `compact` | Heartbeat summary format. |
+| `INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL=auto/ERR/WARN/INFO/OK/ALL` | `auto` | Legacy fallback if `INM_NOTIFY_HEARTBEAT_FORMAT` is unset. |
 | `INM_NOTIFY_HEARTBEAT_INCLUDE=TAG1,TAG2` | empty | Optional include filter. |
 | `INM_NOTIFY_HEARTBEAT_EXCLUDE=TAG1,TAG2` | empty | Optional exclude filter. |
 
@@ -597,6 +599,7 @@ This mirrors the default `.env.inmanage` generated by INmanage. Values shown are
 | `INM_ENV_MODE` | `600` | App `.env` mode for fix permissions. |
 | `INM_CLI_ENV_MODE` | `600` | CLI `.env.inmanage` mode for fix permissions. |
 | `INM_KEEP_BACKUPS` | `2` | Backup retention count. |
+| `INM_AUTO_UPDATE_CHECK` | `true` | Show startup update notice for app + CLI (uses last health check results). |
 | `INM_GH_API_CREDENTIALS` | empty | GitHub API credentials (`user:pass` or `token:x-oauth`). |
 | `INM_NOTIFY_ENABLED` | `false` | Master notifications switch. |
 | `INM_NOTIFY_TARGETS` | `email,webhook` | Notification targets. |
@@ -612,7 +615,8 @@ This mirrors the default `.env.inmanage` generated by INmanage. Values shown are
 | `INM_NOTIFY_HEARTBEAT_ENABLED` | `false` | Daily heartbeat on/off. |
 | `INM_NOTIFY_HEARTBEAT_TIME` | `06:00` | Heartbeat cron time. |
 | `INM_NOTIFY_HEARTBEAT_LEVEL` | `ERR` | Heartbeat severity. |
-| `INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL` | `auto` | Detail level in heartbeat mail. |
+| `INM_NOTIFY_HEARTBEAT_FORMAT` | `compact` | Heartbeat summary format. |
+| `INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL` | `auto` | Legacy fallback if format is unset. |
 | `INM_NOTIFY_HEARTBEAT_INCLUDE` | empty | Include filter for heartbeat checks. |
 | `INM_NOTIFY_HEARTBEAT_EXCLUDE` | empty | Exclude filter for heartbeat checks. |
 | `INM_NOTIFY_WEBHOOK_URL` | empty | Webhook URL. |
@@ -769,9 +773,9 @@ core:
 
   health (info)               Preflight/health check
                               --checks=TAG1,TAG2 --exclude=TAG1,TAG2
-                              --fix-permissions --compact --notify-test
+                              --fix-permissions --format=compact|full|failed --notify-test
                               --override-enforced-user --no-cli-clear --debug --debuglevel=1|2 --dry-run
-                              (e.g., CLI,SYS,FS,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
+                              (e.g., CLI,SYS,FS,PERM,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
 
   versions                    Show installed/latest/cached app versions
   get app                     Download app release to cache only (use --version=<v> or omit for latest)
@@ -872,13 +876,13 @@ core actions:
   update [--version=v] [--force] [--cache-only] [--no-db-backup] [--preserve-paths=a,b] [--bypass-check-sha]
          rollback [--latest|--name=DIR]   # legacy: last|<dir>
   backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false] [--extra-paths=a,b]
-         [--create-migration-export] [--extra=a,b]
+         [--create-migration-export] [--extra=a,b] [--skip-staging] [--no-prune]
          # Default: single full bundle (app+env+db). Flags narrow scope or add extras.
   restore --file=... [--force] [--include-app=true|false] [--target=...] [--latest] [--auto-select=true|false]
          rollback [--latest|--name=DIR]
          # DB import requires --force.
   health | info [--checks=TAG1,TAG2] [--exclude=TAG1,TAG2]
-         [--fix-permissions] [--compact] [--notify-test]
+         [--fix-permissions] [--format=compact|full|failed] [--notify-test]
          [--override-enforced-user] [--no-cli-clear] [--debug] [--debuglevel=1|2] [--dry-run]
   versions
   get app [--version=v]
@@ -931,7 +935,7 @@ core backup:
   inm core backup [--compress=tar.gz|zip|false] [--name=...] [--include-app=true|false]
     [--bundle=true|false] [--db=true|false] [--storage=true|false] [--uploads=true|false]
     [--fullbackup=true|false] [--extra-paths=a,b] [--extra=a,b]
-    [--create-migration-export]
+    [--create-migration-export] [--skip-staging] [--no-prune]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 ```
@@ -955,9 +959,9 @@ core restore:
 ```text
 core health (info):
   inm core health [--checks=TAG1,TAG2] [--exclude=TAG1,TAG2]
-                       [--fix-permissions] [--compact] [--notify-test]
+                       [--fix-permissions] [--format=compact|full|failed] [--notify-test]
                        [--override-enforced-user] [--no-cli-clear] [--debug] [--debuglevel=1|2] [--dry-run]
-  Tags: CLI,SYS,FS,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,LOG,SNAPPDF
+  Tags: CLI,SYS,FS,PERM,ENVCLI,ENVAPP,CMD,WEB,PHP,EXT,WEBPHP,NET,MAIL,DB,APP,CRON,LOG,SNAPPDF
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 ```
@@ -1019,7 +1023,7 @@ core cron install:
   inm core cron install [--user=name] [--jobs=artisan|backup|heartbeat|essential|all]
     [--mode=auto|system|crontab] [--cron-file=path]
     [--backup-time=HH:MM] [--heartbeat-time=HH:MM] [--create-test-job]
-  inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path] [--remove-test-job]
+inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path] [--remove-test-job] [--all|--purge] [--instance-id=<id>]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 ```
@@ -1455,6 +1459,8 @@ Backup switches (`inm core backup`):
 | `--fullbackup=true/false` | `true` | Force full bundle (db+storage+uploads). |
 | `--extra-paths=a,b` | unset | Add extra paths (comma‑separated). Relative paths resolve from app dir; absolute paths are allowed. Alias: `--extra`. |
 | `--create-migration-export` | `false` | Prompt for APP_URL + DB_* and write them into the backup `.env` (APP_KEY preserved); optionally add extra keys. |
+| `--skip-staging` | `false` | Skip staging and build the tar.gz bundle directly from live paths (faster, less consistent). |
+| `--no-prune` | `false` | Skip post-backup pruning (default keeps `INM_KEEP_BACKUPS`). |
 
 DB-only and files-only backups:
 
@@ -1478,6 +1484,8 @@ Files backup switches (`inm files backup`):
 | `--storage=true/false` | `true` | Include `storage/`. |
 | `--uploads=true/false` | `true` | Include `public/uploads/`. |
 | `--extra-paths=a,b` | unset | Add extra paths (comma‑separated). Relative paths resolve from app dir; absolute paths are allowed. Alias: `--extra`. |
+| `--skip-staging` | `false` | Skip staging and build the tar.gz bundle directly from live paths (faster, less consistent). |
+| `--no-prune` | `false` | Skip post-backup pruning (default keeps `INM_KEEP_BACKUPS`). |
 
 ## Restore Invoice Ninja
 

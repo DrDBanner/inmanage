@@ -54,7 +54,52 @@ enforce_user_switch() {
             log info "[ENV] Hint: use --override-enforced-user to keep root for --fix-permissions."
         fi
 
-        local -a env_args=(INM_ORIGINAL_HOME="$original_home")
+        local invoked_by="${INM_INVOKED_BY:-$current_user}"
+        local -a env_args=(INM_ORIGINAL_HOME="$original_home" INM_INVOKED_BY="$invoked_by")
+        local invoked_snapshot=""
+        local invoked_snapshot_file=""
+        local snapshot_ok=false
+        if command -v crontab >/dev/null 2>&1; then
+            if [[ "$invoked_by" == "$current_user" ]]; then
+                invoked_snapshot="$(crontab -l 2>/dev/null || true)"
+                snapshot_ok=true
+            elif [[ $EUID -eq 0 ]]; then
+                invoked_snapshot="$(crontab -l -u "$invoked_by" 2>/dev/null || true)"
+                snapshot_ok=true
+            elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+                invoked_snapshot="$(sudo -n crontab -l -u "$invoked_by" 2>/dev/null || true)"
+                snapshot_ok=true
+            fi
+        fi
+        local invoked_home=""
+        if [[ "$invoked_by" == "$current_user" ]]; then
+            invoked_home="${HOME:-}"
+        elif command -v getent >/dev/null 2>&1; then
+            invoked_home="$(getent passwd "$invoked_by" 2>/dev/null | cut -d: -f6)"
+        fi
+        if [[ -n "$invoked_home" ]]; then
+            local home_cronfile="${invoked_home%/}/cronfile"
+            if [[ -r "$home_cronfile" ]]; then
+                invoked_snapshot+=$'\n'"$(cat "$home_cronfile" 2>/dev/null || true)"
+                snapshot_ok=true
+            fi
+        fi
+        invoked_snapshot="$(printf "%s\n" "$invoked_snapshot" | grep -E 'inmanage|inm|invoiceninja|artisan schedule:run|notify-heartbeat|core backup' || true)"
+        if [[ "$snapshot_ok" == true ]]; then
+            if command -v mktemp >/dev/null 2>&1; then
+                invoked_snapshot_file="$(mktemp "/tmp/inmanage.cron.${invoked_by}.XXXXXX" 2>/dev/null || true)"
+            fi
+            if [[ -z "$invoked_snapshot_file" ]]; then
+                invoked_snapshot_file="/tmp/inmanage.cron.${invoked_by}.$$"
+            fi
+            if printf "%s\n" "$invoked_snapshot" > "$invoked_snapshot_file" 2>/dev/null; then
+                chmod 0644 "$invoked_snapshot_file" 2>/dev/null || true
+                if [[ $EUID -eq 0 && -n "${args[user]:-}" ]]; then
+                    chown "${args[user]}" "$invoked_snapshot_file" 2>/dev/null || true
+                fi
+                env_args+=(INM_INVOKED_CRON_SNAPSHOT="$invoked_snapshot_file")
+            fi
+        fi
         if [[ -n "${INM_INSTALL_TIMESTAMP:-}" ]]; then
             env_args+=(INM_INSTALL_TIMESTAMP="$INM_INSTALL_TIMESTAMP")
         fi

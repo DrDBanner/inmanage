@@ -82,6 +82,7 @@ app_emit_preflight() {
     local config_hint="$3"
     local fast="${4:-false}"
     local skip_github="${5:-false}"
+    local update_due="${6:-true}"
     local emit_fn=""
     if [[ -n "$add_fn" ]] && declare -F "$add_fn" >/dev/null 2>&1; then
         emit_fn="$add_fn"
@@ -138,6 +139,13 @@ app_emit_preflight() {
     fi
 
     if [ "$fast" != true ] && [ "$skip_github" != true ]; then
+        if [[ "$update_due" != true ]]; then
+            app_emit INFO "Update check deferred (last check <24h; use --force to refresh)"
+            return 0
+        fi
+        if declare -F update_notice_mark_checked >/dev/null 2>&1; then
+            update_notice_mark_checked
+        fi
         local app_installed_version=""
         app_installed_version="$(get_installed_version 2>/dev/null || true)"
         if [ -n "$app_installed_version" ]; then
@@ -171,9 +179,16 @@ app_emit_preflight() {
                         release_count_line=" (${releases_behind} releases behind)"
                     fi
                     app_emit "$update_level" "Update available: ${app_installed_tag} -> ${app_latest_tag}${release_count_line} (run: inm core update)"
+                    if declare -F update_notice_set >/dev/null 2>&1; then
+                        update_notice_set "app" "${update_level,,}" \
+                            "Update available: ${app_installed_tag} -> ${app_latest_tag}${release_count_line} (run: inm core update)"
+                    fi
                     app_emit INFO "Changelog: ${compare_url}"
                 else
                     app_emit OK "App up to date (${app_installed_tag})"
+                    if declare -F update_notice_clear >/dev/null 2>&1; then
+                        update_notice_clear "app"
+                    fi
                 fi
             else
                 app_emit INFO "Update check skipped (latest version unavailable)"

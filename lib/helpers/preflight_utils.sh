@@ -4,6 +4,12 @@
 [[ -n ${__PREFLIGHT_UTILS_LOADED:-} ]] && return
 __PREFLIGHT_UTILS_LOADED=1
 
+preflight_helpers_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${preflight_helpers_dir}/update_notice.sh" ]]; then
+    # shellcheck disable=SC1090,SC1091
+    source "${preflight_helpers_dir}/update_notice.sh"
+fi
+
 # ---------------------------------------------------------------------
 # normalize_check_tag()
 # Normalize user-supplied tag to canonical preflight tag.
@@ -195,6 +201,9 @@ add_result() {
     local status="$1"
     local tag="$2"
     local detail="$3"
+    if [[ -n "${PF_DENY[$tag]:-}" ]]; then
+        return 0
+    fi
     if [[ -n "${checks_filter:-}" && -z "${PF_ALLOW[$tag]:-}" ]]; then
         return 0
     fi
@@ -220,6 +229,7 @@ preflight_emit_cli_info() {
     local add_fn="$1"
     local fast="${2:-false}"
     local skip_github="${3:-false}"
+    local update_due="${4:-true}"
     local emit_fn=""
     if [[ -n "$add_fn" ]] && declare -F "$add_fn" >/dev/null 2>&1; then
         emit_fn="$add_fn"
@@ -277,6 +287,13 @@ preflight_emit_cli_info() {
     fi
 
     if [ "$fast" != true ] && [ "$skip_github" != true ]; then
+        if [[ "$update_due" != true ]]; then
+            cli_emit INFO "CLI update check deferred (last check <24h; use --force to refresh)"
+            return 0
+        fi
+        if declare -F update_notice_mark_checked >/dev/null 2>&1; then
+            update_notice_mark_checked
+        fi
         if [[ "${cli_info[git_present]}" == true ]]; then
             local local_commit_full remote_commit remote_short local_short
             if git_origin_url "$cli_root" "" >/dev/null; then
@@ -294,8 +311,15 @@ preflight_emit_cli_info() {
                             local_short="${local_commit_full:0:7}"
                         fi
                         cli_emit INFO "CLI update available: ${local_short} -> ${remote_short} (run: inm self update)"
+                        if declare -F update_notice_set >/dev/null 2>&1; then
+                            update_notice_set "cli" "info" \
+                                "CLI update available: ${local_short} -> ${remote_short} (run: inm self update)"
+                        fi
                     else
                         cli_emit OK "CLI up to date"
+                        if declare -F update_notice_clear >/dev/null 2>&1; then
+                            update_notice_clear "cli"
+                        fi
                     fi
                 else
                     cli_emit INFO "CLI update check skipped (origin unreachable)"
@@ -421,7 +445,10 @@ preflight_emit_env_cli() {
     }
 
     if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_SELF_ENV_FILE" ]; then
-        local cli_keys=(INM_ENFORCED_USER INM_BASE_DIRECTORY INM_INSTALLATION_DIRECTORY INM_BACKUP_DIRECTORY INM_CACHE_GLOBAL_DIRECTORY INM_CACHE_LOCAL_DIRECTORY INM_HISTORY_LOG_FILE INM_HISTORY_LOG_MAX_SIZE INM_HISTORY_LOG_ROTATE)
+        if [[ -z "${INM_INSTANCE_ID:-}" ]]; then
+            env_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}" >/dev/null 2>&1 || true
+        fi
+        local cli_keys=(INM_INSTANCE_ID INM_ENFORCED_USER INM_BASE_DIRECTORY INM_INSTALLATION_DIRECTORY INM_BACKUP_DIRECTORY INM_CACHE_GLOBAL_DIRECTORY INM_CACHE_LOCAL_DIRECTORY INM_HISTORY_LOG_FILE INM_HISTORY_LOG_MAX_SIZE INM_HISTORY_LOG_ROTATE)
         local k
         for k in "${cli_keys[@]}"; do
             local v="${!k}"
@@ -452,8 +479,14 @@ preflight_emit_env_cli() {
             if [[ "$hb_enabled" == true ]]; then
                 local hb_time="${INM_NOTIFY_HEARTBEAT_TIME:-06:00}"
                 local hb_level="${INM_NOTIFY_HEARTBEAT_LEVEL:-ERR}"
-                local hb_detail="${INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL:-auto}"
-                local hb_line="HEARTBEAT: enabled=true time=${hb_time} level=${hb_level} detail=${hb_detail}"
+                local hb_format="${INM_NOTIFY_HEARTBEAT_FORMAT:-}"
+                local hb_line="HEARTBEAT: enabled=true time=${hb_time} level=${hb_level}"
+                if [[ -n "$hb_format" ]]; then
+                    hb_line+=" format=${hb_format}"
+                else
+                    local hb_detail="${INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL:-auto}"
+                    hb_line+=" detail=${hb_detail}"
+                fi
                 if [[ -n "${INM_NOTIFY_HEARTBEAT_INCLUDE:-}" ]]; then
                     hb_line+=" include=${INM_NOTIFY_HEARTBEAT_INCLUDE}"
                 fi
@@ -1123,18 +1156,18 @@ preflight_group_stats() {
 # ---------------------------------------------------------------------
 preflight_get_default_groups() {
     local -n out_ref="$1"
-    out_ref=("SYS" "FS" "APP" "ENVCLI" "ENVAPP" "CLI" "CMD" "WEB" "PHP" "WEBPHP" "EXT" "NET" "MAIL" "DB" "CRON" "LOG" "SNAPPDF")
+    out_ref=("SYS" "FS" "PERM" "APP" "ENVCLI" "ENVAPP" "CLI" "CMD" "WEB" "PHP" "WEBPHP" "EXT" "NET" "MAIL" "DB" "CRON" "LOG" "SNAPPDF")
 }
 
 # ---------------------------------------------------------------------
 # preflight_print_summary()
 # Print the grouped preflight summary table.
-# Consumes: args: compact, groups_ref; globals: PF_STATUS/PF_CHECK/PF_DETAIL; deps: format_check_label/preflight_group_stats.
+# Consumes: args: format, groups_ref; globals: PF_STATUS/PF_CHECK/PF_DETAIL; deps: format_check_label/preflight_group_stats.
 # Computes: summary output.
 # Returns: 0 after printing.
 # ---------------------------------------------------------------------
 preflight_print_summary() {
-    local compact="$1"
+    local format="$1"
     local -n groups_ref="$2"
     printf "\n"
     local idx g printed
@@ -1142,6 +1175,19 @@ preflight_print_summary() {
     local yellow="${YELLOW:-}"
     local red="${RED:-}"
     local reset="${RESET:-}"
+    local only_fail=false
+    local print_ok_line=false
+
+    if [[ "$format" == true || "$format" == "1" ]]; then
+        format="compact"
+    fi
+    format="${format,,}"
+    case "$format" in
+        compact) only_fail=true; print_ok_line=true ;;
+        failed) only_fail=true; print_ok_line=false ;;
+        full) only_fail=false; print_ok_line=false ;;
+        *) only_fail=false; print_ok_line=false ;;
+    esac
 
     local max_check=7 max_status=6
     for idx in "${!PF_STATUS[@]}"; do
@@ -1158,8 +1204,11 @@ preflight_print_summary() {
         local group_has_warn=false
         local group_has_err=false
         preflight_group_stats "$g" group_has_any group_has_warn group_has_err
-        if [[ "$compact" == true ]]; then
+        if [[ "$only_fail" == true ]]; then
             if [[ "$group_has_any" != true ]]; then
+                continue
+            fi
+            if [[ "$print_ok_line" != true && "$group_has_warn" != true && "$group_has_err" != true ]]; then
                 continue
             fi
             local header
@@ -1167,7 +1216,7 @@ preflight_print_summary() {
             printf "%b\n" "${BLUE}== $header ==${reset}"
             printf "%-*s | %-*s | %s\n" "$max_check" "Subject" "$max_status" "Status" "Detail"
             printf "%s\n" "$(printf '%*s' $((max_check+max_status+12)) '' | tr ' ' '-')"
-            if [[ "$group_has_warn" != true && "$group_has_err" != true ]]; then
+            if [[ "$print_ok_line" == true && "$group_has_warn" != true && "$group_has_err" != true ]]; then
                 local ok_subject
                 ok_subject="$(format_check_label "$g")"
                 printf -v check_field "%-*s" "$max_check" "$ok_subject"
@@ -1180,7 +1229,7 @@ preflight_print_summary() {
         for idx in "${!PF_STATUS[@]}"; do
             if [[ "${PF_CHECK[$idx]}" == "$g" ]]; then
                 local raw_status="${PF_STATUS[$idx]}"
-                if [[ "$compact" == true ]]; then
+                if [[ "$only_fail" == true ]]; then
                     if [[ "$raw_status" != "WARN" && "$raw_status" != "ERR" ]]; then
                         continue
                     fi
@@ -1191,11 +1240,7 @@ preflight_print_summary() {
                         printf "%b\n" "${BLUE}== $header ==${reset}"
                         printf "%-*s | %-*s | %s\n" "$max_check" "Subject" "$max_status" "Status" "Detail"
                         printf "%s\n" "$(printf '%*s' $((max_check+max_status+12)) '' | tr ' ' '-')"
-                        printed=true
                     fi
-                fi
-                if [[ "$printed" = false && "$compact" == true ]]; then
-                    printed=true
                 fi
                 printf -v status_field "%-*s" "$max_status" "$raw_status"
                 case "$raw_status" in
@@ -1209,6 +1254,7 @@ preflight_print_summary() {
                 printf -v check_field "%-*s" "$max_check" "$check_label"
                 row=$(printf "%s | %s | %s" "$check_field" "$status_field" "${PF_DETAIL[$idx]}")
                 printf "%b\n" "$row"
+                printed=true
             fi
         done
         if [ "$printed" = true ]; then
@@ -1220,17 +1266,22 @@ preflight_print_summary() {
 # ---------------------------------------------------------------------
 # preflight_build_notify_summary()
 # Build a notification summary from preflight results.
-# Consumes: args: compact, notify_test, groups_ref; env: INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL/INM_NOTIFY_HEARTBEAT_LEVEL.
-# Computes: summary string for emails/webhooks.
+# Consumes: args: format, groups_ref; env: INM_NOTIFY_HEARTBEAT_FORMAT/INM_NOTIFY_HEARTBEAT_LEVEL.
+# Computes: summary string for emails/webhooks (compact|full|failed).
 # Returns: prints summary to stdout.
 # ---------------------------------------------------------------------
 preflight_build_notify_summary() {
-    local compact="$1"
-    local notify_test="$2"
-    local -n groups_ref="$3"
+    local format="${1:-compact}"
+    local -n groups_ref="$2"
     local notify_summary=""
     local idx g
-    if [[ "$compact" == true ]]; then
+    format="${format,,}"
+    case "$format" in
+        compact|full|failed) ;;
+        *) format="compact" ;;
+    esac
+
+    if [[ "$format" == "compact" ]]; then
         for g in "${groups_ref[@]}"; do
             local group_has_any=false
             local group_has_warn=false
@@ -1264,13 +1315,12 @@ preflight_build_notify_summary() {
         return 0
     fi
 
-    local detail_level="${INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL:-auto}"
-    detail_level="${detail_level^^}"
-    if [[ "$detail_level" == "AUTO" || -z "$detail_level" ]]; then
-        detail_level="${INM_NOTIFY_HEARTBEAT_LEVEL:-ERR}"
-    fi
-    if [[ "$notify_test" == true && "${INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL:-}" == "" ]]; then
+    local detail_level=""
+    if [[ "$format" == "full" ]]; then
         detail_level="OK"
+    else
+        detail_level="${INM_NOTIFY_HEARTBEAT_LEVEL:-ERR}"
+        detail_level="${detail_level^^}"
     fi
     for g in "${groups_ref[@]}"; do
         local printed=false

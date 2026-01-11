@@ -604,3 +604,63 @@ env_set() {
     fi
     log ok "[ENV] Set $key in $env_file"
 }
+
+# ---------------------------------------------------------------------
+# env_instance_id_hash()
+# Stable instance hash fallback (base+env).
+# Consumes: args: base, env.
+# Computes: instance id string.
+# Returns: prints instance id.
+# ---------------------------------------------------------------------
+env_instance_id_hash() {
+    local base="${1%/}"
+    local env="${2%/}"
+    local seed="${base}|${env}"
+    local id=""
+    if command -v cksum >/dev/null 2>&1; then
+        id="$(printf "%s" "$seed" | cksum | awk '{print $1}')"
+    elif command -v sha256sum >/dev/null 2>&1; then
+        id="$(printf "%s" "$seed" | sha256sum | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        id="$(printf "%s" "$seed" | shasum -a 256 | awk '{print $1}')"
+    elif command -v sha256 >/dev/null 2>&1; then
+        id="$(printf "%s" "$seed" | sha256 -q 2>/dev/null)"
+    else
+        id="$(printf "%s" "$seed" | tr -cd '[:alnum:]' | cut -c1-16)"
+    fi
+    if [[ -z "$id" ]]; then
+        id="unknown"
+    fi
+    printf "inm-%s" "$id"
+}
+
+# ---------------------------------------------------------------------
+# env_resolve_instance_id()
+# Ensure a stable instance id exists in CLI config.
+# Consumes: args: base, env; env: INM_INSTANCE_ID, INM_SELF_ENV_FILE; deps: env_set.
+# Computes: instance id string; may persist to CLI config.
+# Returns: prints instance id.
+# ---------------------------------------------------------------------
+env_resolve_instance_id() {
+    local base="${1%/}"
+    local env="${2%/}"
+    local existing="${INM_INSTANCE_ID:-}"
+    if [[ -n "$existing" ]]; then
+        printf "%s" "$existing"
+        return 0
+    fi
+    local generated=""
+    if command -v uuidgen >/dev/null 2>&1; then
+        generated="inm-$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+    elif command -v openssl >/dev/null 2>&1; then
+        generated="inm-$(openssl rand -hex 16 2>/dev/null)"
+    fi
+    if [[ -z "$generated" ]]; then
+        generated="$(env_instance_id_hash "$base" "$env")"
+    fi
+    export INM_INSTANCE_ID="$generated"
+    if [[ -n "${INM_SELF_ENV_FILE:-}" && -f "${INM_SELF_ENV_FILE}" ]]; then
+        env_set cli "INM_INSTANCE_ID=${generated}" >/dev/null 2>&1 || true
+    fi
+    printf "%s" "$generated"
+}
