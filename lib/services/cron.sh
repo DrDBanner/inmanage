@@ -172,10 +172,6 @@ install_cronjob() {
     user="$(args_get args "${INM_ENFORCED_USER:-}" user)"
     local jobs_raw
     jobs_raw="$(args_get args "essential" jobs cron_jobs)"
-    local create_test_job
-    create_test_job="$(args_get args "false" create_test_job)"
-    local remove_test_job
-    remove_test_job="$(args_get args "false" remove_test_job)"
     local cron_mode
     cron_mode="$(args_get args "auto" cron_mode mode)"
     cron_mode="${cron_mode,,}"
@@ -189,13 +185,10 @@ install_cronjob() {
     local cron_file_default="/etc/cron.d/inmanage-${instance_id}"
     local cron_file="$cron_file_default"
     local jobs="${jobs_raw,,}"
-    local create_test_job_enabled=false
-    local remove_test_job_enabled=false
-    args_is_true "$create_test_job" && create_test_job_enabled=true
-    args_is_true "$remove_test_job" && remove_test_job_enabled=true
     local job_artisan=false
     local job_backup=false
     local job_heartbeat=false
+    local job_test=false
     IFS=',' read -ra job_tokens <<<"$jobs"
     local token
     for token in "${job_tokens[@]}"; do
@@ -219,6 +212,9 @@ install_cronjob() {
                 job_backup=true
                 job_heartbeat=true
                 ;;
+            test)
+                job_test=true
+                ;;
             "")
                 ;;
             *)
@@ -226,7 +222,7 @@ install_cronjob() {
                 ;;
         esac
     done
-    if [[ "$job_artisan" != true && "$job_backup" != true && "$job_heartbeat" != true ]]; then
+    if [[ "$job_artisan" != true && "$job_backup" != true && "$job_heartbeat" != true && "$job_test" != true ]]; then
         job_artisan=true
         job_backup=true
     fi
@@ -361,6 +357,75 @@ install_cronjob() {
     esac
 
     check_existing_cron_entries
+
+    local merge_existing_jobs=true
+    if [[ "$merge_existing_jobs" == true ]]; then
+        local existing_artisan=false
+        local existing_backup=false
+        local existing_heartbeat=false
+        local existing_test=false
+        cron_collect_existing_jobs() {
+            local data="$1"
+            local in_block=false
+            local line
+            while IFS= read -r line; do
+                if [[ "$line" == "# INMANAGE INSTANCE ${instance_id} BEGIN" ]]; then
+                    in_block=true
+                    continue
+                fi
+                if [[ "$line" == "# INMANAGE INSTANCE ${instance_id} END" ]]; then
+                    in_block=false
+                    continue
+                fi
+                if [[ "$in_block" != true ]]; then
+                    continue
+                fi
+                if echo "$line" | grep -Eq "schedule:run"; then
+                    existing_artisan=true
+                fi
+                if echo "$line" | grep -Eq "core[[:space:]]+backup"; then
+                    existing_backup=true
+                fi
+                if echo "$line" | grep -Eq "notify-heartbeat"; then
+                    existing_heartbeat=true
+                fi
+                if echo "$line" | grep -Eq "INMANAGE CRON TEST|crontestfile\\."; then
+                    existing_test=true
+                fi
+            done <<< "$data"
+        }
+        local existing_data=""
+        if [[ "$use_user_crontab" == true ]]; then
+            if command -v crontab >/dev/null 2>&1; then
+                existing_data="$(cron_read_crontab "")"
+            fi
+        else
+            if [[ -f "$cron_file" ]]; then
+                existing_data="$(cat "$cron_file" 2>/dev/null || true)"
+            elif [[ "$can_sudo" == true && $EUID -ne 0 ]]; then
+                if sudo -n test -f "$cron_file" 2>/dev/null; then
+                    existing_data="$(sudo cat "$cron_file" 2>/dev/null || true)"
+                fi
+            fi
+        fi
+        if [[ -n "$existing_data" ]]; then
+            cron_collect_existing_jobs "$existing_data"
+            if [[ "$existing_artisan" == true || "$existing_backup" == true || "$existing_heartbeat" == true || "$existing_test" == true ]]; then
+                [[ "$existing_artisan" == true ]] && job_artisan=true
+                [[ "$existing_backup" == true ]] && job_backup=true
+                [[ "$existing_heartbeat" == true ]] && job_heartbeat=true
+                if [[ "$existing_test" == true ]]; then
+                    job_test=true
+                fi
+                local existing_summary=()
+                [[ "$existing_artisan" == true ]] && existing_summary+=("artisan")
+                [[ "$existing_backup" == true ]] && existing_summary+=("backup")
+                [[ "$existing_heartbeat" == true ]] && existing_summary+=("heartbeat")
+                [[ "$existing_test" == true ]] && existing_summary+=("test")
+                log debug "[CRON] Merging requested jobs with existing instance jobs: ${existing_summary[*]}"
+            fi
+        fi
+    fi
     local effective_user="$user"
     if [[ "$use_user_crontab" == true ]]; then
         effective_user="$(id -un 2>/dev/null || echo "$user")"
@@ -386,7 +451,7 @@ install_cronjob() {
     if [[ "$job_heartbeat" == true ]]; then
         job_summary="${job_summary:+${job_summary}, }heartbeat@${heartbeat_time}"
     fi
-    if [[ "$create_test_job_enabled" == true ]]; then
+    if [[ "$job_test" == true ]]; then
         job_summary="${job_summary:+${job_summary}, }test"
     fi
     log info "[CRON] Jobs selected: ${job_summary:-none}"
@@ -399,7 +464,7 @@ install_cronjob() {
     if [[ "$job_heartbeat" == true ]]; then
         log info "[CRON] Will set: heartbeat check at ${heartbeat_time}"
     fi
-    if [[ "$create_test_job_enabled" == true ]]; then
+    if [[ "$job_test" == true ]]; then
         log info "[CRON] Will set: cron test file every minute"
     fi
 
@@ -441,6 +506,9 @@ install_cronjob() {
     if [[ "$job_heartbeat" == true ]]; then
         installed_jobs+=("heartbeat")
     fi
+    if [[ "$job_test" == true ]]; then
+        installed_jobs+=("test")
+    fi
     local installed_jobs_str=""
     if (( ${#installed_jobs[@]} > 0 )); then
         local IFS=,
@@ -464,7 +532,7 @@ install_cronjob() {
         if [[ "$job_heartbeat" == true ]]; then
             echo "${heartbeat_cron_expr} ${user_prefix}$INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core health --notify-heartbeat' >> /dev/null 2>&1"
         fi
-        if [[ "$create_test_job_enabled" == true ]]; then
+        if [[ "$job_test" == true ]]; then
             local test_file="crontestfile.${instance_id}"
             local test_file_escaped
             test_file_escaped="$(escape_squote "$test_file")"
@@ -511,30 +579,15 @@ install_cronjob() {
         elif [[ -f "$home_cronfile" && "$crontab_has_entries" == true ]]; then
             log debug "[CRON] User crontab has entries; ignoring existing cronfile: $home_cronfile"
         fi
-        local tmpbase="${tmpfile}.base"
         if ! cron_strip_instance_block "$tmpfile" "$tmpclean" "$instance_id"; then
             log err "[CRON] Failed to prepare user crontab."
-            rm -f "$tmpfile" "$tmpclean" "$tmpbase"
+            rm -f "$tmpfile" "$tmpclean"
             return 1
         fi
-        if [ -n "$base_clean" ]; then
-            if ! cron_strip_instance_block_by_base "$tmpclean" "$tmpbase" "$base_clean"; then
-                log err "[CRON] Failed to prepare user crontab."
-                rm -f "$tmpfile" "$tmpclean" "$tmpbase"
-                return 1
-            fi
-            if ! mv -f "$tmpbase" "$tmpfile"; then
-                log err "[CRON] Failed to finalize user crontab."
-                rm -f "$tmpfile" "$tmpclean" "$tmpbase"
-                return 1
-            fi
-            rm -f "$tmpclean"
-        else
-            if ! mv -f "$tmpclean" "$tmpfile"; then
-                log err "[CRON] Failed to finalize user crontab."
-                rm -f "$tmpfile" "$tmpclean" "$tmpbase"
-                return 1
-            fi
+        if ! mv -f "$tmpclean" "$tmpfile"; then
+            log err "[CRON] Failed to finalize user crontab."
+            rm -f "$tmpfile" "$tmpclean"
+            return 1
         fi
 
         if [[ -s "$tmpfile" ]]; then
@@ -570,7 +623,6 @@ install_cronjob() {
     fi
 
     local tmpclean="${tmpfile}.clean"
-    local tmpbase="${tmpfile}.base"
     if [[ -f "$cron_file" ]]; then
         cat "$cron_file" > "$tmpfile"
     elif [[ "$can_sudo" == true && $EUID -ne 0 ]]; then
@@ -584,23 +636,14 @@ install_cronjob() {
     fi
     if ! cron_strip_instance_block "$tmpfile" "$tmpclean" "$instance_id"; then
         log err "[CRON] Failed to update cron file."
-        rm -f "$tmpfile" "$tmpclean" "$tmpbase"
+        rm -f "$tmpfile" "$tmpclean"
         return 1
     fi
-    if [ -n "$base_clean" ]; then
-        if ! cron_strip_instance_block_by_base "$tmpclean" "$tmpbase" "$base_clean"; then
-            log err "[CRON] Failed to update cron file."
-            rm -f "$tmpfile" "$tmpclean" "$tmpbase"
-            return 1
-        fi
-        mv -f "$tmpbase" "$tmpclean" 2>/dev/null || true
-    fi
-    if ! cron_strip_legacy_lines "$tmpclean" "$tmpfile" "$base_clean" "$env_clean"; then
+    if ! mv -f "$tmpclean" "$tmpfile"; then
         log err "[CRON] Failed to prepare cron file."
-        rm -f "$tmpfile" "$tmpclean" "$tmpbase"
+        rm -f "$tmpfile" "$tmpclean"
         return 1
     fi
-    rm -f "$tmpclean" "$tmpbase"
     if [[ -s "$tmpfile" ]]; then
         printf "\n" >> "$tmpfile"
     fi
@@ -672,14 +715,13 @@ uninstall_cronjob() {
     local cron_mode
     cron_mode="$(args_get args "auto" cron_mode mode)"
     cron_mode="${cron_mode,,}"
-    local remove_test_job
-    remove_test_job="$(args_get args "false" remove_test_job)"
-    local remove_test_job_enabled=false
-    args_is_true "$remove_test_job" && remove_test_job_enabled=true
-    local remove_all
-    remove_all="$(args_get args "false" remove_all all purge)"
-    local remove_all_enabled=false
-    args_is_true "$remove_all" && remove_all_enabled=true
+    local jobs_raw
+    jobs_raw="$(args_get args "" jobs cron_jobs)"
+    local jobs_specified=false
+    if [[ -n "${args[jobs]:-}" || -n "${args[cron_jobs]:-}" ]]; then
+        jobs_specified=true
+    fi
+    local jobs="${jobs_raw,,}"
     local instance_id_override=""
     instance_id_override="$(args_get args "" instance_id instance uuid)"
     local base_clean="${INM_BASE_DIRECTORY%/}"
@@ -717,6 +759,48 @@ uninstall_cronjob() {
         remove_legacy=false
     fi
 
+    local remove_job_artisan=false
+    local remove_job_backup=false
+    local remove_job_heartbeat=false
+    local remove_job_test=false
+    if [[ "$jobs_specified" == true ]]; then
+        local job_tokens=()
+        IFS=',' read -ra job_tokens <<<"$jobs"
+        local token
+        for token in "${job_tokens[@]}"; do
+            token="${token,,}"
+            case "$token" in
+                scheduler|schedule|artisan|artisan:scheduler)
+                    remove_job_artisan=true
+                    ;;
+                backup)
+                    remove_job_backup=true
+                    ;;
+                heartbeat|notify|health|healthcheck)
+                    remove_job_heartbeat=true
+                    ;;
+                test)
+                    remove_job_test=true
+                    ;;
+                essential|both)
+                    remove_job_artisan=true
+                    remove_job_backup=true
+                    ;;
+                all)
+                    remove_job_artisan=true
+                    remove_job_backup=true
+                    remove_job_heartbeat=true
+                    remove_job_test=true
+                    ;;
+                "")
+                    ;;
+                *)
+                    log warn "[CRON] Unknown job: ${token}"
+                    ;;
+            esac
+        done
+    fi
+
     local remove_user_crontab=false
     local remove_system=false
     case "$cron_mode" in
@@ -736,24 +820,50 @@ uninstall_cronjob() {
             ;;
     esac
 
-    if [[ "$remove_test_job_enabled" == true ]]; then
-        log info "[CRON] Removing cron test job only."
-        remove_test_lines() {
-            awk '
-                BEGIN { skip=0 }
-                /INMANAGE CRON TEST/ { skip=1; next }
-                { if (skip) { skip=0; next } }
-                { print }
-            ' "$1" > "$2"
+    if [[ "$jobs_specified" == true ]]; then
+        local remove_re_parts=()
+        [[ "$remove_job_artisan" == true ]] && remove_re_parts+=("schedule:run")
+        [[ "$remove_job_backup" == true ]] && remove_re_parts+=("core[[:space:]]+backup")
+        [[ "$remove_job_heartbeat" == true ]] && remove_re_parts+=("notify-heartbeat")
+        [[ "$remove_job_test" == true ]] && remove_re_parts+=("INMANAGE CRON TEST" "crontestfile\\.")
+        if (( ${#remove_re_parts[@]} == 0 )); then
+            log info "[CRON] No jobs selected for removal."
+            return 0
+        fi
+        local remove_re
+        remove_re="$(printf "%s|" "${remove_re_parts[@]}")"
+        remove_re="${remove_re%|}"
+        local any_removed=false
+        cron_strip_instance_jobs() {
+            local in_file="$1"
+            local out_file="$2"
+            awk -v id="$instance_id" -v re="$remove_re" '
+                BEGIN { in_block=0 }
+                $0 ~ "^# INMANAGE INSTANCE " id " BEGIN" { in_block=1; print; next }
+                $0 ~ "^# INMANAGE INSTANCE " id " END" { in_block=0; print; next }
+                {
+                    if (in_block && $0 ~ re) next
+                    print
+                }
+            ' "$in_file" > "$out_file"
         }
-        local removed=false
+        cron_instance_has_jobs() {
+            awk -v id="$instance_id" '
+                BEGIN { in_block=0; found=0 }
+                $0 ~ "^# INMANAGE INSTANCE " id " BEGIN" { in_block=1; next }
+                $0 ~ "^# INMANAGE INSTANCE " id " END" { in_block=0; next }
+                in_block && $0 ~ /(schedule:run|core[[:space:]]+backup|notify-heartbeat|INMANAGE CRON TEST|crontestfile\.)/ { found=1 }
+                END { exit(found ? 0 : 1) }
+            ' "$1"
+        }
         if [[ "$remove_user_crontab" == true ]]; then
             if ! command -v crontab >/dev/null 2>&1; then
-                log warn "[CRON] crontab not available; skipping test job removal."
+                log warn "[CRON] crontab not available; skipping job removal."
             else
-                local tmpfile tmpclean
+                local tmpfile tmpclean tmpfinal
                 tmpfile="$(mktemp)"
                 tmpclean="${tmpfile}.clean"
+                tmpfinal="${tmpfile}.final"
                 local crontab_out=""
                 crontab_out="$(cron_read_crontab "")"
                 if [[ -n "$crontab_out" ]]; then
@@ -761,18 +871,23 @@ uninstall_cronjob() {
                 else
                     : > "$tmpfile"
                 fi
-                remove_test_lines "$tmpfile" "$tmpclean"
+                cron_strip_instance_jobs "$tmpfile" "$tmpclean"
                 if cmp -s "$tmpfile" "$tmpclean"; then
-                    log info "[CRON] No cron test job found in user crontab."
+                    log info "[CRON] No matching jobs found in user crontab."
                 else
-                    if crontab "$tmpclean"; then
-                        log ok "[CRON] Removed cron test job from user crontab."
-                        removed=true
+                    if ! cron_instance_has_jobs "$tmpclean"; then
+                        cron_strip_instance_block "$tmpclean" "$tmpfinal" "$instance_id" || true
+                    else
+                        mv -f "$tmpclean" "$tmpfinal"
+                    fi
+                    if crontab "$tmpfinal"; then
+                        log ok "[CRON] Removed selected jobs from user crontab."
+                        any_removed=true
                     else
                         log err "[CRON] Failed to update user crontab."
                     fi
                 fi
-                rm -f "$tmpfile" "$tmpclean"
+                rm -f "$tmpfile" "$tmpclean" "$tmpfinal"
             fi
         fi
         if [[ "$remove_system" == true ]]; then
@@ -780,12 +895,13 @@ uninstall_cronjob() {
                 if [[ "$cron_mode" == "system" ]]; then
                     log err "[CRON] System cron requested but ${cron_dir} is not available."
                 else
-                    log debug "[CRON] System cron unavailable at ${cron_dir}; skipping test job removal."
+                    log debug "[CRON] System cron unavailable at ${cron_dir}; skipping job removal."
                 fi
             else
-                local tmpfile tmpclean
+                local tmpfile tmpclean tmpfinal
                 tmpfile="$(mktemp)"
                 tmpclean="${tmpfile}.clean"
+                tmpfinal="${tmpfile}.final"
                 if [[ -f "$cron_file" ]]; then
                     cat "$cron_file" > "$tmpfile"
                 elif [[ "$can_sudo" == true && $EUID -ne 0 ]]; then
@@ -797,25 +913,30 @@ uninstall_cronjob() {
                 else
                     : > "$tmpfile"
                 fi
-                remove_test_lines "$tmpfile" "$tmpclean"
+                cron_strip_instance_jobs "$tmpfile" "$tmpclean"
                 if cmp -s "$tmpfile" "$tmpclean"; then
-                    log info "[CRON] No cron test job found in ${cron_file}."
+                    log info "[CRON] No matching jobs found in ${cron_file}."
                 else
+                    if ! cron_instance_has_jobs "$tmpclean"; then
+                        cron_strip_instance_block "$tmpclean" "$tmpfinal" "$instance_id" || true
+                    else
+                        mv -f "$tmpclean" "$tmpfinal"
+                    fi
                     local tee_cmd=("tee" "$cron_file")
                     if [[ $EUID -ne 0 && "$can_sudo" == true ]]; then
                         tee_cmd=("sudo" "tee" "$cron_file")
                     fi
-                    if cat "$tmpclean" | "${tee_cmd[@]}" >/dev/null; then
-                        log ok "[CRON] Removed cron test job from ${cron_file}."
-                        removed=true
+                    if cat "$tmpfinal" | "${tee_cmd[@]}" >/dev/null; then
+                        log ok "[CRON] Removed selected jobs from ${cron_file}."
+                        any_removed=true
                     else
                         log err "[CRON] Failed to update ${cron_file}."
                     fi
                 fi
-                rm -f "$tmpfile" "$tmpclean"
+                rm -f "$tmpfile" "$tmpclean" "$tmpfinal"
             fi
         fi
-        [[ "$removed" == false ]] && log info "[CRON] No cron test job removed."
+        [[ "$any_removed" != true ]] && log info "[CRON] No cron jobs removed."
         return 0
     fi
 
@@ -835,10 +956,7 @@ uninstall_cronjob() {
                 : > "$tmpfile"
             fi
             cp "$tmpfile" "$tmporig" 2>/dev/null || true
-            if [[ "$remove_all_enabled" == true ]]; then
-                cron_strip_all_inmanage "$tmpfile" "$tmpclean"
-                mv -f "$tmpclean" "$tmpfile"
-            elif [[ -n "$instance_id_override" ]]; then
+            if [[ -n "$instance_id_override" ]]; then
                 cron_strip_instance_only "$tmpfile" "$tmpclean" "$instance_id"
                 mv -f "$tmpclean" "$tmpfile"
             else
@@ -857,8 +975,8 @@ uninstall_cronjob() {
                     if grep -Eq 'INM_INSTANCE_ID=|inmanage|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup' "$tmporig" 2>/dev/null; then
                         has_inmanage=true
                     fi
-                    if [[ "$has_inmanage" == true && "$remove_all_enabled" != true ]]; then
-                        log warn "[CRON] User crontab has INmanage entries for another instance; use --all to purge."
+                    if [[ "$has_inmanage" == true ]]; then
+                        log warn "[CRON] User crontab has INmanage entries for another instance; use --instance-id to remove."
                     else
                         log info "[CRON] No INMANAGE block found in user crontab."
                     fi
@@ -899,10 +1017,7 @@ uninstall_cronjob() {
             : > "$tmpfile"
         fi
         cp "$tmpfile" "$tmporig" 2>/dev/null || true
-        if [[ "$remove_all_enabled" == true ]]; then
-            cron_strip_all_inmanage "$tmpfile" "$tmpclean"
-            mv -f "$tmpclean" "$tmpfile"
-        elif [[ -n "$instance_id_override" ]]; then
+        if [[ -n "$instance_id_override" ]]; then
             cron_strip_instance_only "$tmpfile" "$tmpclean" "$instance_id"
             mv -f "$tmpclean" "$tmpfile"
         else
@@ -921,8 +1036,8 @@ uninstall_cronjob() {
                 if grep -Eq 'INM_INSTANCE_ID=|inmanage|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup' "$tmporig" 2>/dev/null; then
                     has_inmanage=true
                 fi
-                if [[ "$has_inmanage" == true && "$remove_all_enabled" != true ]]; then
-                    log warn "[CRON] ${cron_file} has INmanage entries for another instance; use --all to purge."
+                if [[ "$has_inmanage" == true ]]; then
+                    log warn "[CRON] ${cron_file} has INmanage entries for another instance; use --instance-id to remove."
                 else
                     log info "[CRON] No INMANAGE block found in ${cron_file}."
                 fi

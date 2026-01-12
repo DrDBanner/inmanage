@@ -421,22 +421,22 @@ Cron switches (`inm core cron install`):
 | Switch | Default | Description |
 | --- | --- | --- |
 | `--user=name` | enforced user | User for cron entries. |
-| `--jobs=artisan / backup / heartbeat / essential / all` | `essential` | Which jobs to install. |
+| `--jobs=artisan / backup / heartbeat / test / essential / all` | `essential` | Which jobs to install. |
 | `--mode=auto / system / crontab` | `auto` | Force cron install mode. |
 | `--backup-time=HH:MM` | `03:24` | Backup cron schedule (24h). |
 | `--heartbeat-time=HH:MM` | `06:00` | Heartbeat cron schedule (24h). |
 | `--cron-file=path` | `/etc/cron.d/inmanage-<instance-id>` | Target cron file (root mode only). |
-| `--create-test-job` | `false` | Add a test job that touches `${INM_BASE_DIRECTORY}/crontestfile.<instance-id>` every minute. When its timestamp updates the cron setup is verified. Then remove the test job. |
+| `--jobs=test` | `false` | Add a test job that touches `${INM_BASE_DIRECTORY}/crontestfile.<instance-id>` every minute. When its timestamp updates the cron setup is verified. Then remove the test job. |
 
 > [!TIP]
 > `essential` installs artisan + backup. `all` adds the heartbeat job.
 >
-> `--create-test-job` writes `${INM_BASE_DIRECTORY}/crontestfile` each minute. Only when its timestamp updates is the cron setup verified.
+> `--jobs=test` writes `${INM_BASE_DIRECTORY}/crontestfile.<instance-id>` each minute. Only when its timestamp updates is the cron setup verified.
 
 Cron uninstall:
 
 ```bash
-inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path] [--all|--purge] [--instance-id=<id>]
+inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path] [--jobs=artisan|backup|heartbeat|test] [--instance-id=<id>]
 ```
 
 Short form:
@@ -448,12 +448,14 @@ inm cron uninstall
 Cron test job removal:
 
 ```bash
-inm core cron uninstall --remove-test-job
+inm core cron uninstall --jobs=test
 ```
+
+> Without `--jobs`, uninstall removes the entire instance block (all jobs for that instance).
 
 > Some systems use `${HOME}/cronfile` for user cron entries. If it exists, inm will use it as the base and keep it updated.
 
-Tip: `--instance-id=<id>` removes a specific instance block; `--all`/`--purge` removes every INmanage cron entry you can access.
+Tip: `--instance-id=<id>` removes a specific instance block.
 
 ## Heartbeat notifications (INmanage)
 
@@ -890,9 +892,8 @@ core actions:
   get app [--version=v]
   prune [--version] [--backups] [--override-enforced-user]
   clear-cache
-  cron install|uninstall [--user=name] [--jobs=artisan|backup|heartbeat|essential|all]
+  cron install|uninstall [--user=name] [--jobs=artisan|backup|heartbeat|test|essential|all]
                         [--mode=auto|system|crontab] [--backup-time=HH:MM] [--heartbeat-time=HH:MM]
-                        [--create-test-job] [--remove-test-job]
 ```
 <!-- END_CLI_HELP -->
 
@@ -1022,12 +1023,13 @@ core prune-backups:
 <!-- CLI_HELP:core-cron -->
 ```text
 core cron install:
-  inm core cron install [--user=name] [--jobs=artisan|backup|heartbeat|essential|all]
+  inm core cron install [--user=name] [--jobs=artisan|backup|heartbeat|test|essential|all]
     [--mode=auto|system|crontab] [--cron-file=path]
-    [--backup-time=HH:MM] [--heartbeat-time=HH:MM] [--create-test-job]
-inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path] [--remove-test-job] [--all|--purge] [--instance-id=<id>]
+    [--backup-time=HH:MM] [--heartbeat-time=HH:MM]
+inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path] [--jobs=artisan|backup|heartbeat|test] [--instance-id=<id>]
 
-  Note: --create-test-job writes ${INM_BASE_DIRECTORY}/crontestfile.<instance-id> each minute. When its timestamp updates the cron setup is verified. Then remove the test job.
+  Note: --jobs=test writes ${INM_BASE_DIRECTORY}/crontestfile.<instance-id> each minute. When its timestamp updates the cron setup is verified. Then remove the test job.
+  Without --jobs, uninstall removes the entire instance block (all jobs for that instance).
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 ```
