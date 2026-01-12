@@ -465,8 +465,11 @@ install_cronjob() {
             echo "${heartbeat_cron_expr} ${user_prefix}$INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core health --notify-heartbeat' >> /dev/null 2>&1"
         fi
         if [[ "$create_test_job_enabled" == true ]]; then
-            echo "# INMANAGE CRON TEST"
-            echo "* * * * * ${user_prefix}$INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${touch_cmd_escaped} crontestfile' >> /dev/null 2>&1"
+            local test_file="crontestfile.${instance_id}"
+            local test_file_escaped
+            test_file_escaped="$(escape_squote "$test_file")"
+            echo "# INMANAGE CRON TEST ${instance_id}"
+            echo "* * * * * ${user_prefix}$INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${touch_cmd_escaped} ${test_file_escaped}' >> /dev/null 2>&1"
         fi
         echo "${instance_block_end}"
     }
@@ -736,7 +739,12 @@ uninstall_cronjob() {
     if [[ "$remove_test_job_enabled" == true ]]; then
         log info "[CRON] Removing cron test job only."
         remove_test_lines() {
-            awk '!/crontestfile/ && !/INMANAGE CRON TEST/' "$1" > "$2"
+            awk '
+                BEGIN { skip=0 }
+                /INMANAGE CRON TEST/ { skip=1; next }
+                { if (skip) { skip=0; next } }
+                { print }
+            ' "$1" > "$2"
         }
         local removed=false
         if [[ "$remove_user_crontab" == true ]]; then
@@ -1461,7 +1469,11 @@ cron_emit_preflight() {
         cron_emit WARN "backup: jobs for another instance (${#backup_unknown[@]}): $(cron_join_entries "${backup_unknown[@]}")"
         unknown_hint_needed=true
     else
-        cron_emit WARN "backup: no jobs detected"
+        if [[ -n "${INM_CRON_BACKUP_TIME:-}" ]]; then
+            cron_emit WARN "backup: no jobs detected"
+        else
+            cron_emit INFO "backup: not configured for this instance"
+        fi
     fi
 
     if (( ${#heartbeat_entries[@]} > 0 )); then
@@ -1475,11 +1487,24 @@ cron_emit_preflight() {
         unknown_hint_needed=true
     else
         local hb_enabled=false
-        args_is_true "${INM_NOTIFY_HEARTBEAT_ENABLED:-false}" && hb_enabled=true
+        local hb_targets_email=false
+        local notify_targets="${INM_NOTIFY_TARGETS:-}"
+        notify_targets="${notify_targets,,}"
+        notify_targets="${notify_targets// /}"
+        if [[ -n "$notify_targets" && ",${notify_targets}," == *",email,"* ]]; then
+            hb_targets_email=true
+        fi
+        if args_is_true "${INM_NOTIFY_HEARTBEAT_ENABLED:-false}" && [[ "$hb_targets_email" == true ]]; then
+            hb_enabled=true
+        fi
         if [[ "$hb_enabled" == true ]]; then
             cron_emit WARN "heartbeat: no jobs detected"
         else
-            cron_emit INFO "heartbeat: not enabled for this instance"
+            if args_is_true "${INM_NOTIFY_HEARTBEAT_ENABLED:-false}" && [[ "$hb_targets_email" != true ]]; then
+                cron_emit INFO "heartbeat: not configured (INM_NOTIFY_TARGETS excludes email)"
+            else
+                cron_emit INFO "heartbeat: not enabled for this instance"
+            fi
         fi
     fi
     if [[ "$unknown_hint_needed" == true ]]; then

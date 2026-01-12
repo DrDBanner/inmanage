@@ -426,10 +426,12 @@ Cron switches (`inm core cron install`):
 | `--backup-time=HH:MM` | `03:24` | Backup cron schedule (24h). |
 | `--heartbeat-time=HH:MM` | `06:00` | Heartbeat cron schedule (24h). |
 | `--cron-file=path` | `/etc/cron.d/inmanage-<instance-id>` | Target cron file (root mode only). |
-| `--create-test-job` | `false` | Add a test job that touches `crontestfile` every minute. |
+| `--create-test-job` | `false` | Add a test job that touches `${INM_BASE_DIRECTORY}/crontestfile.<instance-id>` every minute. When its timestamp updates the cron setup is verified. Then remove the test job. |
 
 > [!TIP]
 > `essential` installs artisan + backup. `all` adds the heartbeat job.
+>
+> `--create-test-job` writes `${INM_BASE_DIRECTORY}/crontestfile` each minute. Only when its timestamp updates is the cron setup verified.
 
 Cron uninstall:
 
@@ -1024,6 +1026,8 @@ core cron install:
     [--mode=auto|system|crontab] [--cron-file=path]
     [--backup-time=HH:MM] [--heartbeat-time=HH:MM] [--create-test-job]
 inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path] [--remove-test-job] [--all|--purge] [--instance-id=<id>]
+
+  Note: --create-test-job writes ${INM_BASE_DIRECTORY}/crontestfile.<instance-id> each minute. When its timestamp updates the cron setup is verified. Then remove the test job.
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 ```
