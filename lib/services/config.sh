@@ -176,6 +176,7 @@ persist_derived_config() {
     local cli_env_mode="${INM_CLI_ENV_MODE:-600}"
     chmod "$cli_env_mode" "$INM_SELF_ENV_FILE" 2>/dev/null
     log ok "[PDC] Config persisted successfully"
+    INM_CONFIG_CREATED_THIS_RUN=true
     warn_cli_config_owner_mismatch "$INM_SELF_ENV_FILE"
 
     return 0
@@ -414,6 +415,7 @@ create_own_config() {
         chmod "$cli_env_mode" "$INM_SELF_ENV_FILE" 2>/dev/null || true
     fi
     log ok "$INM_SELF_ENV_FILE has been created and configured."
+    INM_CONFIG_CREATED_THIS_RUN=true
 
     load_env_file_raw "$INM_SELF_ENV_FILE"
     warn_cli_config_owner_mismatch "$INM_SELF_ENV_FILE"
@@ -564,6 +566,7 @@ spawn_cli_config() {
     local cli_env_mode="${INM_CLI_ENV_MODE:-600}"
     chmod "$cli_env_mode" "$INM_SELF_ENV_FILE" 2>/dev/null
     log ok "[CFG] Config written: $INM_SELF_ENV_FILE"
+    INM_CONFIG_CREATED_THIS_RUN=true
     warn_cli_config_owner_mismatch "$INM_SELF_ENV_FILE"
     INM_SELF_ENV_FILE="$prev_env_file"
     return 0

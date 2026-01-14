@@ -66,7 +66,7 @@ self_resolve_path() {
 self_write_version_file() {
   local target_dir="$1"
   local source_dir="$2"
-  local branch="" commit="" dirty="" commit_date="" err=""
+  local branch="" commit="" dirty="" commit_date=""
   local version_line=""
   local version_value=""
 
@@ -74,10 +74,10 @@ self_write_version_file() {
   [[ -z "$source_dir" ]] && source_dir="$target_dir"
 
   if command -v git >/dev/null 2>&1 && [ -d "$source_dir/.git" ]; then
-    git_collect_info "$source_dir" branch commit dirty commit_date err || true
+    git_collect_info "$source_dir" branch commit dirty commit_date || true
   fi
   if [[ -z "$branch" && -z "$commit" && -d "$target_dir/.git" && "$target_dir" != "$source_dir" ]]; then
-    git_collect_info "$target_dir" branch commit dirty commit_date err || true
+    git_collect_info "$target_dir" branch commit dirty commit_date || true
   fi
 
   if [[ -n "$branch" || -n "$commit" ]]; then
@@ -332,6 +332,7 @@ install_self() {
 
   local bin_source="$install_dir/inmanage.sh"
   INM_SELF_INSTALL_SCRIPT="$bin_source"
+  # shellcheck disable=SC2034
   INM_SELF_INSTALL_MODE="$install_mode"
   local targets=("inmanage" "inm")
 

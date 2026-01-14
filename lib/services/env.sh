@@ -369,7 +369,7 @@ env_show() {
     local access owner
     owner="$(_env_owner_for "$env_file")"
     access="$(_env_access_mode "$env_file" "read" "$owner")" || return 1
-    log info "[ENV] Showing env from $env_file"
+    log debug "[ENV] Showing env from $env_file"
     _env_run "$access" "$owner" cat "$env_file"
 }
 

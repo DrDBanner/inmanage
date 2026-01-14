@@ -39,6 +39,21 @@ check_missing_settings() {
     updated=0
     for key in "${!default_settings[@]}"; do
         if ! grep -q "^$key=" "$INM_SELF_ENV_FILE"; then
+            if [[ "$key" == "INM_CLI_COMPATIBILITY" ]]; then
+                local allow_compat=false
+                if [[ "${INM_CONFIG_CREATED_THIS_RUN:-}" == "true" ]]; then
+                    allow_compat=true
+                else
+                    case "${CMD_CONTEXT:-}:${CMD_ACTION:-}" in
+                        self:install|self:switch-mode|self:switch)
+                            allow_compat=true
+                            ;;
+                    esac
+                fi
+                if [[ "$allow_compat" != true ]]; then
+                    continue
+                fi
+            fi
             if [ ! -w "$INM_SELF_ENV_FILE" ]; then
                 local current_user=""
                 current_user="$(id -un 2>/dev/null || true)"
@@ -446,8 +461,8 @@ check_envs() {
             else
                 log_hint "ENV" "CLI config defaults to 600 for security. Fix options: run as enforced user, add your user to the app group, or relax CLI config mode."
                 log_hint "ENV" "Directory access also matters: .inmanage needs +x for your user (group membership or chmod/chgrp)."
-                log_hint "ENV" "Set mode (group): sudo inm env set cli INM_CLI_ENV_MODE=640"
-                log_hint "ENV" "Set mode (world, if no secrets): sudo inm env set cli INM_CLI_ENV_MODE=644"
+                log_hint "ENV" "Set mode (group): sudo inm env set cli INM_CLI_ENV_MODE=\"640\""
+                log_hint "ENV" "Set mode (world, if no secrets): sudo inm env set cli INM_CLI_ENV_MODE=\"644\""
                 log_hint "ENV" "Apply permissions: sudo inm core health --fix-permissions"
             fi
             exit 1
@@ -458,11 +473,7 @@ check_envs() {
             log err "[ENV] Failed to load project configuration."
             exit 1
         }
-        if should_suppress_pre_switch_logs; then
-            log debug "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
-        else
-            log info "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
-        fi
+        log debug "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
 
         check_base_directory_valid_and_enter || {
             log err "[ENV] Base directory check failed. Aborting."

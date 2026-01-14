@@ -346,6 +346,7 @@ run_preflight() {
 
     spinner_stop
 
+    # shellcheck disable=SC2034
     local -a groups=()
     preflight_get_default_groups groups
     preflight_print_summary "$output_format" groups

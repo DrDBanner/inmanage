@@ -120,6 +120,7 @@ get_app_release() {
         log info "[DRY-RUN] Would download app release to cache."
         return 0
     fi
+    # shellcheck disable=SC2034
     local -A args=()
     parse_named_args args "$@"
 
