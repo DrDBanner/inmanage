@@ -56,7 +56,7 @@ One-off or recurring contributions are both acceptable.
 
 Support the project via the official checkout page:
 
-➡ https://example.com/support
+➡ [https://example.com/support](https://example.com/support)
 
 After checkout, you will receive:
 - An invoice

@@ -622,7 +622,7 @@ sudo -u www-data inm core install --provision --force
 Notes:
 - We use `--force` because the nginx setup already created the app directory. This acknowledges the destructive nature of a provisioned install.
 - `APP_KEY` is generated automatically; do not set it in `.env.provision`.
-- You can put any `INM_*` keys into `.env.provision`. They are copied into `.inmanage/.env.inmanage` and stripped from the app `.env`. See the full CLI config reference in the main docs: <https://github.com/DrDBanner/inmanage/blob/main/docs/index.md#cli-config-reference-envinmanage>
+- You can put any `INM_*` keys into `.env.provision`. They are copied into `.inmanage/.env.inmanage` and stripped from the app `.env`. See the full CLI config reference in the main docs: <../index.md#cli-config-reference-envinmanage>
 - A health check runs automatically during installation.
 
 Minimal `.env.provision` example:
@@ -674,7 +674,7 @@ sudo -u www-data nano /var/www/billing.debian12vm.local/.inmanage/.env.provision
 If you chose the wrong enforced user during first run, fix it like this:
 
 ```bash
-sudo inm env set cli INM_ENFORCED_USER www-data
+sudo inm env set cli INM_ENFORCED_USER="www-data"
 sudo inm core health --fix-permissions --override-enforced-user
 ```
 
@@ -707,4 +707,4 @@ Open your local browser at <https://billing.debian12vm.local> to access the appl
 
 **Password:** admin
 
-Have fun. Don't forget to star and bookmark the <https://github.com/DrDBanner/inmanage/> script.
+Have fun. Don't forget to star and bookmark the [INmanage repo](../..).

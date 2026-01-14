@@ -30,6 +30,7 @@ INmanage is the CLI for self-hosted Invoice Ninja. Focus: **convenience**, **cer
   - [Update Invoice Ninja](#update-invoice-ninja)
   - [Backup Invoice Ninja](#backup-invoice-ninja)
   - [Restore Invoice Ninja](#restore-invoice-ninja)
+  - [Migrate Invoice Ninja](#migrate-invoice-ninja)
   - [Rollback cheatsheet (INmanage)](#rollback-cheatsheet-inmanage)
   - [libSaxon (XSLT2) for e‑invoicing (Invoice Ninja)](#libsaxon-xslt2-for-einvoicing-invoice-ninja)
 - **Environments**
@@ -193,7 +194,7 @@ inm
 ```
 
 > [!IMPORTANT]
-> On first run, use the user who should read/write the Invoice Ninja files (often the webserver user like `www-data`, `nginx`, `apache`, `httpd`; on shared hosting, your login user like `username`/`web234355`). This prevents permission issues. If you later switch users, set it via `inm env set cli INM_ENFORCED_USER <user>` and then run `sudo inm core health --fix-permissions --override-enforced-user`.
+> On first run, use the user who should read/write the Invoice Ninja files (often the webserver user like `www-data`, `nginx`, `apache`, `httpd`; on shared hosting, your login user like `username`/`web234355`). This prevents permission issues. If you later switch users, set it via `inm env set cli INM_ENFORCED_USER="<user>"` and then run `sudo inm core health --fix-permissions --override-enforced-user`.
 
 ## Global switches (CLI)
 
@@ -225,7 +226,7 @@ Permissions defaults (CLI config, used by `--fix-permissions`):
 | `INM_ENFORCED_USER` / `INM_ENFORCED_GROUP` | `www-data` / unset | Ownership for app files. |
 | `INM_DIR_MODE` | `2750` | App directories. |
 | `INM_BACKUP_DIR_MODE` | empty | Backup directory (defaults to `INM_DIR_MODE`). |
-| `INM_FILE_MODE` | `640` | App files (skips executable files). |
+| `INM_FILE_MODE` | `644` | App files (skips executable files). |
 | `INM_ENV_MODE` | `600` | App `.env`. |
 | `INM_CLI_ENV_MODE` | `600` | CLI `.env.inmanage`. |
 | `INM_CACHE_DIR_MODE` / `INM_CACHE_FILE_MODE` | auto | Cache permissions (775/664 when a group is set, otherwise 750/640). |
@@ -235,8 +236,8 @@ Default `INM_DIR_MODE` is security‑first (no group write). If you need shared 
 Quick set via CLI (run):
 
 ```bash
-inm env set cli INM_ENFORCED_USER www-data
-inm env set cli INM_DIR_MODE 2750
+inm env set cli INM_ENFORCED_USER="www-data"
+inm env set cli INM_DIR_MODE="2750"
 ```
 
 Apply permission changes:
@@ -252,6 +253,12 @@ You can plug your own scripts into the flow.
 Default hook location:
 
 - `.inmanage/hooks/<event>`
+
+Hook filenames (exact):
+
+- `pre-install`, `post-install`
+- `pre-update`, `post-update`
+- `pre-backup`, `post-backup`
 
 Hook config (CLI):
 
@@ -269,8 +276,8 @@ Hook config (CLI):
 Quick set via CLI:
 
 ```bash
-inm env set cli INM_HOOKS_DIR /custom/hooks/dir
-inm env set cli INM_HOOK_STRICT true
+inm env set cli INM_HOOKS_DIR="/custom/hooks/dir"
+inm env set cli INM_HOOK_STRICT="true"
 ```
 
 Behavior:
@@ -296,8 +303,8 @@ Example: post-install hook to inject custom app keys:
 set -e
 
 # in .inmanage/hooks/post-install
-inm env set app CUSTOM_FEATURE_FLAG true
-inm env set app CUSTOM_BRANDING_NAME "Acme Co"
+inm env set app CUSTOM_FEATURE_FLAG="true"
+inm env set app CUSTOM_BRANDING_NAME="Acme Co"
 ```
 
 ## Uninstall and reinstall CLI
@@ -381,9 +388,9 @@ Config:
 Quick set via CLI:
 
 ```bash
-inm env set cli INM_HISTORY_LOG_FILE /var/www/.inmanage/history.log
-inm env set cli INM_HISTORY_LOG_MAX_SIZE 1M
-inm env set cli INM_HISTORY_LOG_ROTATE 10
+inm env set cli INM_HISTORY_LOG_FILE="/var/www/.inmanage/history.log"
+inm env set cli INM_HISTORY_LOG_MAX_SIZE="1M"
+inm env set cli INM_HISTORY_LOG_ROTATE="10"
 ```
 
 Exclude example:
@@ -452,10 +459,15 @@ inm core cron uninstall --jobs=test
 ```
 
 > Without `--jobs`, uninstall removes the entire instance block (all jobs for that instance).
-
 > Some systems use `${HOME}/cronfile` for user cron entries. If it exists, inm will use it as the base and keep it updated.
 
 Tip: `--instance-id=<id>` removes a specific instance block.
+
+Show instance id:
+
+```bash
+inm env get cli INM_INSTANCE_ID
+```
 
 ## Heartbeat notifications (INmanage)
 
@@ -473,10 +485,12 @@ Heartbeat is a daily, non-interactive health run that sends a summary if somethi
 
 ```bash
 # 1) Enable notifications + heartbeat
-inm env set cli INM_NOTIFY_ENABLED true
-inm env set cli INM_NOTIFY_TARGETS email
-inm env set cli INM_NOTIFY_HEARTBEAT_ENABLED true
-inm env set cli INM_NOTIFY_HEARTBEAT_LEVEL WARN
+inm env set cli INM_NOTIFY_ENABLED="true"
+inm env set cli INM_NOTIFY_TARGETS="email"
+inm env set cli INM_NOTIFY_HEARTBEAT_ENABLED="true"
+inm env set cli INM_NOTIFY_HEARTBEAT_LEVEL="WARN"
+inm env set cli INM_NOTIFY_EMAIL_TO="you@example.com"
+inm env set cli INM_NOTIFY_EMAIL_FROM_NAME="Heartbeat - Your Company"
 
 # 2) Install cron job (daily)
 inm core cron install --jobs=heartbeat
@@ -564,7 +578,7 @@ Use this to read or change app/CLI env values without editing files by hand.
 ```bash
 inm env show cli
 inm env show app
-inm env set app APP_URL https://example.test
+inm env set app APP_URL="https://example.test"
 ```
 
 If the target env file is not readable/writable, `inm env get/set/unset/show` will prompt to use sudo (or fail in non‑interactive mode).
@@ -641,7 +655,7 @@ Control where downloads and working files live (global vs project cache).
 Quick set via CLI:
 
 ```bash
-inm env set cli INM_CACHE_GLOBAL_DIRECTORY /var/cache/inmanage
+inm env set cli INM_CACHE_GLOBAL_DIRECTORY="/var/cache/inmanage"
 ```
 
 If the global cache is not writable, inm falls back to local cache and may ask to fix permissions with sudo.
@@ -664,7 +678,7 @@ INM_DB_CLIENT=mariadb
 Quick set via CLI:
 
 ```bash
-inm env set cli INM_DB_CLIENT mysql
+inm env set cli INM_DB_CLIENT="mysql"
 ```
 
 ## MySQL client config (.my.cnf) (INmanage)
@@ -684,7 +698,7 @@ database=$(inm env get app DB_DATABASE)
 host=$(inm env get app DB_HOST)
 EOF
 chmod 600 ~/.my.cnf'
-inm env set cli INM_FORCE_READ_DB_PW N
+inm env set cli INM_FORCE_READ_DB_PW="N"
 ```
 
 Notes:
@@ -722,7 +736,7 @@ If `sudo` is not available:
 
 Short answers to common questions.
 
-- **Use with existing installs?** Yes. Run a backup, then use `core update`.
+- **Use with existing installs?** Yes. No problem. No data gets deleted. Prior to any data altering action, backups are forced by default.
 - **Web updates okay?** Yes, but inm gives you versioned backups and rollback.
 - **Docker?** Yes, with correct mounts and a real shell for the enforced user.
 - **Failed install?** Retry or rollback to the previous version directory.
@@ -1189,7 +1203,7 @@ env actions:
 <!-- CLI_HELP:env-commands -->
 ```text
 env commands:
-  inm env set <app|cli> KEY VALUE
+  inm env set <app|cli> KEY="VALUE"
   inm env get <app|cli> KEY
   inm env unset <app|cli> KEY
   inm env show [app|cli]
@@ -1287,23 +1301,8 @@ Provision config keys:
 Quick set via CLI:
 
 ```bash
-inm env set cli INM_MIGRATION_BACKUP LATEST
+inm env set cli INM_MIGRATION_BACKUP="LATEST"
 ```
-
-Migration flow (provisioned install):
-
-1. Create a migration backup on the source host:
-   ```bash
-   inm core backup --name=migration --compress=tar.gz --include-app=true
-   ```
-   Preferred: write target-ready values into the backup `.env` so the restore can run without manual edits later. The command prompts you for APP_URL and DB values (and optionally extra keys), writes them into the backup bundle (APP_KEY is preserved), and the restored app will use those values immediately.
-   ```bash
-   inm core backup --create-migration-export
-   ```
-2. On the target host, point provision to the backup:
-   - `inm spawn provision-file --backup-file=/path/to/backup.tar.gz`
-   - or `inm spawn provision-file --latest-backup`
-   - or set the migration backup in config (see table above)
 
 ### Install flow (under the hood)
 
@@ -1319,7 +1318,8 @@ Shared steps (both provisioned and clean):
 - Deploy the new app into the install path and enforce ownership/permissions (if configured).
 - Run artisan tasks: `key:generate`, `optimize`, `up`, `ninja:translations`.
 - Install/verify Snappdf (when `PDF_GENERATOR=snappdf`).
-- Optional cron install (configurable).
+- Auto-install essential cron jobs (artisan + backup); add heartbeat if configured.
+- Optional heartbeat email messaging when SMTP + INM notify settings are present.
 - Optional hooks: `post-install`.
 - Final cache cleanup: `config:clear` + `cache:clear`.
 
@@ -1350,9 +1350,9 @@ Mandatory settings to review (common):
 Quick set via CLI:
 
 ```bash
-inm env set app APP_URL https://example.test
-inm env set app DB_PASSWORD "<your-db-password>"
-inm env set app PDF_GENERATOR snappdf
+inm env set app APP_URL="https://example.test"
+inm env set app DB_PASSWORD="<your-db-password>"
+inm env set app PDF_GENERATOR="snappdf"
 ```
 
 Optional: set any other Invoice Ninja `.env` keys you need. Official env reference:
@@ -1362,7 +1362,7 @@ Optional: set any other Invoice Ninja `.env` keys you need. Official env referen
 > INmanage preserves the exact value you pass and supports complex passwords — just make sure your shell quoting is correct.
 >
 > For "endboss" passwords (quotes, spaces, hashes, backslashes, unicode), use
-> `inm env set app DB_PASSWORD <value>` or wrap the value in double quotes and
+> `inm env set app DB_PASSWORD="<value>"` or wrap the value in double quotes and
 > escape `"` and `\` inside the `.env` file.
 
 ### Wizard install
@@ -1421,6 +1421,7 @@ Update switches (`inm core update`):
 Update flow (under the hood):
 
 - Read current version and resolve target version.
+- Optional hooks: `pre-update` and `post-update` (see [Hooks (CLI pre/post)](#hooks-cli-prepost)).
 - Create a pre‑update DB backup (unless `--no-db-backup`).
 - Download target release into cache.
 - Fetch release digest and verify the tarball checksum (fails if missing, unless you explicitly bypass).
@@ -1448,7 +1449,7 @@ Full bundle by default; narrow the scope with flags when needed.
 Full bundle (db + storage + uploads; optional app + extras):
 
 ```bash
-inm core backup --name=pre_migration --compress=tar.gz --include-app=true --extra-paths=custom1,custom2
+inm core backup --name=your_optional_label --compress=tar.gz --include-app=true --extra-paths=custom1,custom2
 ```
 
 Backup switches (`inm core backup`):
@@ -1467,6 +1468,8 @@ Backup switches (`inm core backup`):
 | `--create-migration-export` | `false` | Prompt for APP_URL + DB_* and write them into the backup `.env` (APP_KEY preserved); optionally add extra keys. |
 | `--skip-staging` | `false` | Skip staging and build the tar.gz bundle directly from live paths (faster, less consistent). |
 | `--no-prune` | `false` | Skip post-backup pruning (default keeps `INM_KEEP_BACKUPS`). |
+
+Hooks: `pre-backup` and `post-backup` are supported. See [Hooks (CLI pre/post)](#hooks-cli-prepost).
 
 DB-only and files-only backups:
 
@@ -1535,6 +1538,30 @@ DB-only restore:
 ```bash
 inm db restore --file=path --force --purge=true
 ```
+
+## Migrate Invoice Ninja
+
+Migration flow (bundle-first):
+
+1. On the source host, create a migration‑ready backup:
+   ```bash
+   inm core backup --create-migration-export
+   ```
+   You will be prompted for the target `APP_URL` and DB settings. INmanage writes them into the backup bundle’s `.env` (APP_KEY preserved).
+2. Copy the backup bundle to the target host.
+3. On the target host, ensure INmanage is installed and a new CLI config has been created.
+4. Restore the bundle on the target host:
+   ```bash
+   sudo -u www-data inm core restore --file="/path/to/backup.tar.gz" --force
+   ```
+5. Verify integrity and functionality:
+   ```bash
+   sudo -u www-data inm core health
+   ```
+   Cron jobs are not migrated; install them for the new host: [Cron jobs (INmanage)](#cron-jobs-inmanage).
+
+> [!NOTE]
+> `--create-migration-export` prepares the app `.env` inside the backup bundle. A valid `.env.inmanage` on the target host is still required so INmanage can resolve paths and run the restore. The bundle path must be readable by the enforced user.
 
 ## Rollback cheatsheet (INmanage)
 
@@ -1640,7 +1667,7 @@ Checklist:
 Quick set via CLI:
 
 ```bash
-inm env set cli INM_ENFORCED_USER www-data
+inm env set cli INM_ENFORCED_USER="www-data"
 ```
 
 > [!TIP]
