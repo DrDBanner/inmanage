@@ -3,62 +3,33 @@ set -euo pipefail
 
 ###############################################################################
 # ULTIMATE RSYNC BACKUP SCRIPT
+# Runs on the backup host and pulls from the app host via SSH (scp/rsync).
 # by Dr.D.Banner - https://github.com/DrDBanner
 ###############################################################################
 #
 # DESCRIPTION:
-#   This script performs secure backups of files and directories from a remote
-#   server via SSH. It uses `scp` for single files and `rsync` for
-#   full directory syncs. Optional *pre* and *post* hook scripts can be executed
-#   remotely before and after the backup (e.g. to trigger a DB dump).
+#   Runs on the backup host and pulls files/folders from the app host via SSH.
+#   Uses `scp` for individual files and `rsync` for directories.
+#   Optional remote pre/post hooks can run on the app host (e.g. DB dump).
 #
-# BACKUP TYPE:
-#   - This script performs **incremental backups** by default.
-#     That means only changed files are copied, which saves bandwidth and time.
-#   - This behavior is controlled by the `RSYNC_OPTS` variable.
+# BACKUP BEHAVIOR:
+#   - Incremental by default (rsync delta transfers → faster, less bandwidth).
+#   - Controlled by `RSYNC_OPTS`.
+#     Example: RSYNC_OPTS="-avz --delete --bwlimit=5000"
+#       -a archive, -v verbose, -z compress
+#       --delete sync deletions, --bwlimit KB/s
 #
-#     For example:
-#
-#       RSYNC_OPTS="-avz --delete --bwlimit=5000"
-#     - `-a`  → archive mode (recursive, keeps timestamps, symlinks, etc.)
-#     - `-v`  → verbose
-#     - `-z`  → compress data during transfer
-#     - `--delete`  → remove copied local files if they were deleted on the remote server as well
-#     - `--delete`  → is optional, but useful for keeping the local backup in sync
-#     - `--bwlimit` → limit transfer speed (e.g. 5000 = 5 MB/s)
-#
-#   - To change this behavior (e.g. full copy every time, no deletes),
-#     adjust `RSYNC_OPTS` accordingly.
-#
-#   - Files will be downloaded into $LOCAL_BASE/
-#     If a filename conflict occurs, the file is redirected into a subfolder named after its parent directory.
-#
-#     Example:
-#
-#     /etc/nginx/nginx.conf and /etc/apache2/nginx.conf
-#     >   → $LOCAL_BASE/nginx/nginx.conf
-#     >   → $LOCAL_BASE/apache2/nginx.conf
-#
+# PATH COLLISIONS:
+#   - Files are written under $LOCAL_BASE/.
+#   - If filenames collide, the file goes into a folder named after its parent.
+#     Example: /etc/nginx/nginx.conf → $LOCAL_BASE/nginx/nginx.conf
 #
 # USAGE:
-#   1. Fill in the CONFIGURATION section below:
-#      - Set REMOTE_USER, REMOTE_HOST, and optionally SSH_KEY
-#      - Uncomment file and directory paths in REMOTE_FILES and REMOTE_PATHS
-#      - Set LOCAL_BASE to your desired backup destination
-#
-#   2. Make the script executable:
-#        chmod +x backup_remote_projectname.sh
-#      macOS tip: if using /bin/bash 3.x, install newer bash via Homebrew (brew install bash)
-#                 or run with /usr/bin/env bash explicitly.
-#
-#   3. Run manually:
-#        ./backup_remote_projectname.sh
-#      macOS: works out of the box with rsync/ssh; ensure Xcode Command Line Tools are installed.
-#      Linux: works on common distros; ensure rsync/ssh are installed.
-#      Windows 10/11: run under WSL (Ubuntu/Debian) or Git Bash; you need ssh/rsync available.
-#
-#   4. Or add to crontab for automated execution (e.g. every night at 03:30):
-#        30 3 * * * /path/to/backup_remote_projectname.sh >> /var/log/remote_backup.log 2>&1
+#   1. Fill the CONFIGURATION section (REMOTE_USER/REMOTE_HOST/LOCAL_BASE/SSH_KEY).
+#   2. Uncomment paths in REMOTE_FILES and REMOTE_PATHS.
+#   3. Make it executable: chmod +x backup_remote_projectname.sh
+#   4. Run manually: ./backup_remote_projectname.sh
+#   5. Cron example: 30 3 * * * /path/to/backup_remote_projectname.sh >> /var/log/remote_backup.log 2>&1
 #
 # PLATFORM SUPPORT:
 #   - macOS (tested with Homebrew Bash and system bash)
@@ -71,12 +42,19 @@ set -euo pipefail
 #   - Remote server must be accessible via SSH
 #   - SSH key-based login is REQUIRED (no password prompts)
 #
-# SSH KEY SETUP:
-#   - If you can already connect with `ssh user@host` without password,
-#     no need to set SSH_KEY.
-#   - Otherwise, generate a key and add it to the remote server:
-#       ssh-keygen -t ed25519
-#       ssh-copy-id -i ~/.ssh/id_ed25519.pub user@host
+# SSH KEY SETUP (passwordless login required):
+#   - Run these commands on the machine where this script runs (your LOCAL machine; the destination).
+#   - The SSH connection goes FROM your LOCAL machine TO the REMOTE server.
+#   - The REMOTE server is the machine you want to pull files/folders from for your LOCAL off-site backups.
+#   1) Quick test (should NOT ask for a password):
+#        ssh user@host
+#   2) If it asks for a password, generate a key and copy its public key:
+#        ssh-keygen -t ed25519 -f ~/.ssh/inmanage_backup
+#        ssh-copy-id -i ~/.ssh/inmanage_backup.pub user@host
+#      Note: the key name/path is up to you (depends on how you run ssh-keygen).
+#   3) Test again:
+#        ssh user@host
+#   4) If you use a non-default key, set SSH_KEY to its path.
 #
 # TODO: Add "inm backup spawn remote-backup-script" flow that generates this
 # script + an .env template, supports REMOTE_PRE_HOOK, rsync/scp selection,
@@ -115,7 +93,7 @@ REMOTE_PATHS=(
 #  "/etc/nginx/"
 #  "/var/www/html/"
 #  "/path/to/your/backup/location/your/want/to/copy/to/your/local/machine"
-#  "/path/to/project/.inmanage/_backups/" 
+#  "/path/to/project/.backups/" 
 )
 
 # Optional remote scripts to execute before/after backup
@@ -140,6 +118,7 @@ PRESERVE_FULL_PATH=false
 # RSYNC options
 # --bwlimit limits bandwidth in KB/s (e.g. 5000 = 5 MB/s) to avoid saturating your connection
 RSYNC_OPTS="-avz --delete --bwlimit=5000"
+RSYNC_LOG_FULL=false           # true = include full rsync output in logs
 
 # ----------------------------------------------------
 # END CONFIGURATION BLOCK
@@ -176,6 +155,19 @@ fi
 # -----------------------
 # Script Starts Here
 # -----------------------
+
+# Timing
+START_TS="$(date +%s)"
+START_HUMAN="$(date '+%Y-%m-%d %H:%M:%S')"
+
+# Format duration (seconds) as HH:MM:SS
+format_duration() {
+  local total="$1"
+  local hours=$((total / 3600))
+  local mins=$(((total % 3600) / 60))
+  local secs=$((total % 60))
+  printf '%02d:%02d:%02d' "$hours" "$mins" "$secs"
+}
 
 # Executes an optional remote hook script via SSH
 # Parameters:
@@ -246,11 +238,19 @@ if (( ${#REMOTE_PATHS[@]} > 0 )); then
         LOCAL_PATH="${LOCAL_BASE}"
       fi
       mkdir -p "${LOCAL_PATH}"
-      echo "-> RSYNC: ${REMOTE_PATH} → ${LOCAL_PATH}"
-      rsync "${RSYNC_OPTS_ARR[@]}" \
-        -e "ssh ${SSH_OPTS[*]}" \
-        "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}" \
-        "${LOCAL_PATH}"
+      if [[ "$RSYNC_LOG_FULL" == true ]]; then
+        echo "-> RSYNC: ${REMOTE_PATH} → ${LOCAL_PATH}"
+        rsync "${RSYNC_OPTS_ARR[@]}" \
+          -e "ssh ${SSH_OPTS[*]}" \
+          "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}" \
+          "${LOCAL_PATH}"
+      else
+        echo "-> RSYNC: ${REMOTE_PATH} → ${LOCAL_PATH} (output suppressed)"
+        rsync "${RSYNC_OPTS_ARR[@]}" \
+          -e "ssh ${SSH_OPTS[*]}" \
+          "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}" \
+          "${LOCAL_PATH}" >/dev/null
+      fi
     else
       echo "WARNING: Remote path '${REMOTE_PATH}' not found. Skipping."
     fi
@@ -262,4 +262,12 @@ fi
 # Run Post-Hook (optional) ---
 run_remote_hook "$REMOTE_POST_HOOK" "$REMOTE_POST_HOOK_USER" "$REMOTE_POST_HOOK_HOST"
 
+END_TS="$(date +%s)"
+END_HUMAN="$(date '+%Y-%m-%d %H:%M:%S')"
+ELAPSED="$((END_TS - START_TS))"
+ELAPSED_FMT="$(format_duration "$ELAPSED")"
+
 echo "Backup completed successfully."
+echo "Started: ${START_HUMAN}"
+echo "Finished: ${END_HUMAN}"
+echo "Duration: ${ELAPSED_FMT}"

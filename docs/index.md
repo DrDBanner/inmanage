@@ -29,6 +29,7 @@ INmanage is the CLI for self-hosted Invoice Ninja. Focus: **convenience**, **cer
   - [Install Invoice Ninja](#install-invoice-ninja)
   - [Update Invoice Ninja](#update-invoice-ninja)
   - [Backup Invoice Ninja](#backup-invoice-ninja)
+    - [Offsite backups](#offsite-backups)
   - [Restore Invoice Ninja](#restore-invoice-ninja)
   - [Migrate Invoice Ninja](#migrate-invoice-ninja)
   - [Rollback cheatsheet (INmanage)](#rollback-cheatsheet-inmanage)
@@ -1495,6 +1496,73 @@ Files backup switches (`inm files backup`):
 | `--extra-paths=a,b` | unset | Add extra paths (comma‑separated). Relative paths resolve from app dir; absolute paths are allowed. Alias: `--extra`. |
 | `--skip-staging` | `false` | Skip staging and build the tar.gz bundle directly from live paths (faster, less consistent). |
 | `--no-prune` | `false` | Skip post-backup pruning (default keeps `INM_KEEP_BACKUPS`). |
+
+### Offsite backups
+
+Two common patterns: **remote pull** (backup host connects to the app host) or **push** (app host uploads to storage).
+
+#### Remote pull
+
+INmanage ships a ready-to-use script for offsite backups. Use this when a separate machine should pull bundles from the app host.
+
+Script highlights: pulls multiple files via SCP and folders via rsync. It uses delta transfers (only changes are sent) with compression by default, supports pre/post hooks (DB dumps), bandwidth limiting and delete‑sync via `RSYNC_OPTS`, optional full rsync output via `RSYNC_LOG_FULL`, and prints start/end timestamps with a duration summary. It expects passwordless SSH (see the script header).
+
+##### Ensure backups exist
+
+Run `inm core backup` so bundles exist in `.backup/` (or let your cron job create them).
+
+##### Download the script
+
+On your **backup host** (local machine, NAS, appliance, or any server), download:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/templates/backup_remote_job.sh -o backup_remote_job.sh
+chmod +x backup_remote_job.sh
+```
+Script reference: [`templates/backup_remote_job.sh`](../templates/backup_remote_job.sh).
+
+##### Configure the script
+
+Edit the file itself and set the config section like this:
+
+```bash
+REMOTE_USER="YourSSH-Username"              # SSH login on the app host
+REMOTE_HOST="billing.invoiceninja.local"    # App host (source)
+LOCAL_BASE="$HOME/Remote-Backups/Job_Name"  # Destination on backup host
+SSH_KEY="$HOME/.ssh/inmanage_backup"        # Optional: non-default key
+REMOTE_PATHS=(                              # Pull these paths from the app host
+  "/var/www/billing.invoiceninja.local/.backup/"
+  "/any/other/path/with/access/to"
+)
+```
+
+##### Run once
+
+Verify it works:
+
+```bash
+./backup_remote_job.sh
+```
+
+##### Schedule it
+
+Copy and paste this (adjust the path) to add the job to your crontab:
+
+```bash
+(crontab -l 2>/dev/null; echo "30 3 * * * /path/to/backup_remote_job.sh >> /path/to/remote_backup.log 2>&1") | crontab -
+```
+
+#### Rclone push
+
+The app host uploads bundles to storage.
+
+1. Install rclone on the **app host**.
+2. Run `inm core backup` so bundles exist in `.backup/`.
+3. Configure rclone and push:
+   ```bash
+   rclone copy /path/to/.backup remote:bucket/path
+   ```
+4. Keep app host credentials and rclone credentials separate.
 
 ## Restore Invoice Ninja
 
