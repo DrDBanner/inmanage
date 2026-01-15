@@ -29,7 +29,9 @@ Detailed installation options and different install modes: see the [Installation
 ```bash
 # 1) Install CLI (from anywhere; system mode;)
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash
+```
 
+```bash
 # 2) First run - create project config
 cd /path/to/your/invoiceninja_basedirectory
 sudo -u www-data inm
