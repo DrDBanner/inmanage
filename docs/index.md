@@ -2,6 +2,8 @@
 
 INmanage is the CLI for self-hosted Invoice Ninja. Focus: **convenience**, **certainty**, **low stress**. This document keeps the flow simple while staying complete.
 
+It removes the repetitive ops load and makes ongoing maintenance something you can rely on. Hooks and Heartbeat turn it into a long‑term ops companion that embeds your automation and watches the instance.
+
 ## Table of contents
 
 - **INmanage (CLI)**
@@ -12,6 +14,7 @@ INmanage is the CLI for self-hosted Invoice Ninja. Focus: **convenience**, **cer
   - [Files and permissions](#files-and-permissions)
   - [Hooks (CLI pre/post)](#hooks-cli-prepost)
   - [Uninstall and reinstall CLI](#uninstall-and-reinstall-cli)
+  - [Update from legacy version (CLI)](#update-from-legacy-version)
   - [Health checks (INmanage)](#health-checks-inmanage)
   - [Cron jobs (INmanage)](#cron-jobs-inmanage)
   - [Heartbeat notifications (INmanage)](#heartbeat-notifications-inmanage)
@@ -342,6 +345,40 @@ sudo inm self uninstall --force
 If you had multiple installs, uninstalling one does **not** remove the others. To switch back, remove the local `./inm` symlink (project mode), ensure the desired `PATH` entry is present, then run `hash -r` or open a new shell. Use `which inm` to confirm.
 
 Reinstall by running the installer again (see [Install CLI](#install-cli)).
+
+### Update from legacy version
+
+Legacy installs used a project checkout under `.inmanage` (updated via `git pull`). This flow is supported.
+
+**Steps**
+1. From the project root, update the legacy repo if you still use it:
+   ```bash
+   cd .inmanage
+   git pull --ff-only
+   ```
+2. Run the legacy CLI from the project root:
+   ```bash
+   ./inmanage.sh health
+   ```
+   If a legacy install is detected, you will be asked to migrate.
+3. When prompted, pick the install mode you want to keep:
+   - **Project install** (keeps `./inm` in the project root)
+   - **User install** (installs to `~/.local/share/inmanage`)
+   - **System install** (installs to `/usr/local/share/inmanage`, requires sudo)
+
+**What happens**
+- The new CLI is installed in the chosen mode.
+- The legacy `.inmanage` repo is cleaned; `.env.inmanage` stays in place (archived files go to `.inmanage/_legacy`).
+- Legacy project symlinks are only created for **project** installs.
+- The CLI re-launches from the new path (user installs may require a `PATH` update).
+
+**What to check**
+- Remove any existing cronjobs for the project. Then let INmanage install them automatically again. See: [Cron jobs](#cron-jobs-inmanage).
+- Remove legacy shell aliases/functions if you used them.
+- Verify with:
+  ```bash
+  inm health
+  ```
 
 ## Health checks (INmanage)
 

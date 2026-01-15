@@ -4,7 +4,7 @@ INmanage (inm) – CLI for Invoice Ninja
 
 **Backup. Update. Install. Done.**
 
-INmanage is the CLI for self-hosted Invoice Ninja. Focus: **save time**, **less stress**, **certainty**, **convenience**. Installation takes 2–3 minutes per host and will save you many hours of manual work maintaining your Invoice Ninja instances. It removes the repetitive ops load and makes ongoing maintenance something you can rely on. Hooks and Heartbeat turn it into a long‑term ops companion that embeds your automation and watches the instance.
+INmanage is the CLI for self-hosted Invoice Ninja. Focus: **save time**, **less stress**, **certainty**, **convenience**. Installation takes 2–3 minutes per host and will save you many hours of manual work maintaining your Invoice Ninja instances. 
 
 > [!TIP]
 > Docs:
@@ -22,12 +22,9 @@ INmanage is the CLI for self-hosted Invoice Ninja. Focus: **save time**, **less 
 | DB credentials | From `.env` or `.my.cnf`. |
 | CLI tools | git, curl, tar, rsync, php, jq, composer, zip/unzip. |
 
-## Install the CLI
+## Quickstart
 
-Example: base directory `/var/www/billing.yourdomain.com`, app directory `/var/www/billing.yourdomain.com/invoiceninja`.
-Learn naming: [docs/index.md#project-layout-inmanage](docs/index.md#project-layout-inmanage)
-
-Quick Start (4 steps):
+Detailed installation options and different install modes: see the [Installation Documentation](docs/index.md#install-cli).
 
 ```bash
 # 1) Install CLI (from anywhere; system mode;)
@@ -45,15 +42,14 @@ sudo -u www-data inm core install
 ```
 
 > [!NOTE]
+> Example: base directory `/var/www/billing.yourdomain.com`,
+>
+> app directory `/var/www/billing.yourdomain.com/invoiceninja`.
+>
+> Learn naming: [docs/index.md#project-layout-inmanage](docs/index.md#project-layout-inmanage)
+>
 > Replace `www-data` with your webserver user if needed. If you don't need sudo, you can leave it out.
 
-Detailed installation options and different install modes: see the [Installation Documentation](docs/index.md#install-cli).
-
-> [!NOTE]
-> - Run the script as a user who can read the `.env` file of your Invoice Ninja installation. Typically, this is the web server user, such as `www-data`, `httpd`, `web`, `apache`, or `nginx`. In shared hosting environments, it is often the logged-in user (e.g., `u439534522`).
-> - `sudo -u <user> inm ...` runs the command as that OS user now. `--run-user <user>` is for install mode only (it sets who owns/should run the CLI after install).
-> - Ensure you set the correct username in the script’s `.env.inmanage` file under `INM_ENFORCED_USER` and especially on the first run (otherwise you'll need to change permissions afterwards).
-> - In restricted environments (e.g., shared hosting with GitHub rate limits), set the `INM_GH_API_CREDENTIALS` variable in `.env.inmanage` as `USERNAME:PASSWORD` or `token:x-oauth` if needed.
 
 If the installer created symlinks (system/user/project), you can use `inm` (short) or `inmanage`. Otherwise run the CLI from its install path with `./inm` or `./inmanage`.
 
