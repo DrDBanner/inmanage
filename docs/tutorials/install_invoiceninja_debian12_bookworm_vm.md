@@ -603,20 +603,16 @@ sudo -u www-data inm                       # create CLI config
 
 When prompted, accept the defaults and set **FORCE_READ_DB_PW** to `Y` (read DB password from the app `.env`).
 
+<a href="https://github.com/user-attachments/assets/777f1217-1d7d-4c65-bb85-db6d36b57644" target="_blank">
+  <img src="https://github.com/user-attachments/assets/342ca8a9-4ab5-4d16-ba56-43acd9c5f6ec" alt="Install CLI Config" width="100%">
+</a>
+
 ### 9.2. Provisioned install (single file)
 
 Run the installer and pick **provisioned** when asked. If no provision file exists, it will offer to create one and open it in your editor. After you save and exit, the install continues automatically.
 
 ```bash
 sudo -u www-data inm core install --force
-```
-
-If a provision file already exists, you can choose to use it or create a fresh one. The editor opens only when a new file is created.
-
-Non-interactive automation (no editor): create `.inmanage/.env.provision` first, then run:
-
-```bash
-sudo -u www-data inm core install --provision --force
 ```
 
 Notes:
@@ -658,6 +654,10 @@ INM_NOTIFY_HEARTBEAT_TIME=06:00
 If your MariaDB root user uses socket auth, set `DB_ELEVATED_PASSWORD=auth_socket` instead of a password and run the install with sudo.
 
 When you include valid `MAIL_*` SMTP settings and the minimum notification keys (`INM_NOTIFY_ENABLED`, `INM_NOTIFY_TARGETS`, `INM_NOTIFY_HEARTBEAT_ENABLED`, `INM_NOTIFY_HEARTBEAT_LEVEL`), the installer auto-installs the heartbeat cron job and sends a test mail. Otherwise, it installs only the essential cron jobs (artisan + backup).
+
+<a href="https://github.com/user-attachments/assets/dcaa1fc8-727b-4cae-b13f-3818763a76e2" target="_blank">
+  <img src="https://github.com/user-attachments/assets/999051b4-ad27-46f6-b75d-10975c56d3ba" alt="Install IN" width="100%">
+</a>
 
 After you confirm the install, you should see a "Setup Complete!" summary with the app URL and default admin credentials. When you are satisfied, delete the provision file because it contains secrets:
 
