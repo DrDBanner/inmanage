@@ -4,6 +4,8 @@
 WebM
 [install.webm](https://github.com/user-attachments/assets/f7443d0e-9618-4f63-a856-805f5a1db407)
 
+WEBM Inline
+<video autoplay muted loop src="https://github.com/user-attachments/assets/f7443d0e-9618-4f63-a856-805f5a1db407" type="video/webm"></video>
 
 ### Install CLI Config
 
@@ -12,9 +14,7 @@ Webm
 
 MP4 Inline
 
-<video autoplay muted loop playsinline>
-  <source src="https://github.com/user-attachments/assets/4efaf3c6-c274-4c51-903b-0ca6857eae7d" type="video/mp4">
-</video>
+<video autoplay muted loop src="https://github.com/user-attachments/assets/4efaf3c6-c274-4c51-903b-0ca6857eae7d" type="video/mp4"></video>
 
 ### Install IN
 [install_in_install.webm](https://github.com/user-attachments/assets/32e8e7b0-bcfe-438f-b8fb-27cc1e374725)
