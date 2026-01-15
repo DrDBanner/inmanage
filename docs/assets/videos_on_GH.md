@@ -5,8 +5,9 @@ WebM
 [install.webm](https://github.com/user-attachments/assets/f7443d0e-9618-4f63-a856-805f5a1db407)
 
 WEBM Inline
-<video autoplay muted loop controls src="https://github.com/user-attachments/assets/f7443d0e-9618-4f63-a856-805f5a1db407" type="video/webm"></video>
-
+<p align="center" width="100%">
+<video src="https://github.com/user-attachments/assets/f7443d0e-9618-4f63-a856-805f5a1db407" type="video/webm" width="80%" autoplay muted loop controls></video>
+</p>
 ### Install CLI Config
 
 Webm
