@@ -772,6 +772,34 @@ legacy_backup_path() {
 }
 
 # ---------------------------------------------------------------------
+# legacy_cleanup_repo()
+# Remove legacy repo content under .inmanage while keeping config files.
+# Consumes: args: legacy_root, base_dir; deps: legacy_backup_path.
+# ---------------------------------------------------------------------
+legacy_cleanup_repo() {
+  local legacy_root="$1"
+  local base_dir="$2"
+  [[ -z "$legacy_root" ]] && return 0
+  [[ ! -d "$legacy_root" ]] && return 0
+
+  if [[ ! -d "$legacy_root/.git" && ! -f "$legacy_root/inmanage.sh" && ! -d "$legacy_root/lib" ]]; then
+    return 0
+  fi
+
+  log info "[SELF] Cleaning legacy repo content in $legacy_root (keeping .env.inmanage/.env.provision/history.log)."
+  local entry base
+  shopt -s dotglob nullglob
+  for entry in "$legacy_root"/*; do
+    base="$(basename "$entry")"
+    case "$base" in
+      .|..|.env.inmanage|.env.provision|history.log|_legacy) continue ;;
+    esac
+    legacy_backup_path "$entry" "$base_dir"
+  done
+  shopt -u dotglob nullglob
+}
+
+# ---------------------------------------------------------------------
 # legacy_link_path()
 # Create a legacy symlink pointing to the new script.
 # Consumes: args: target, new_script, base_dir; deps: legacy_backup_path.
@@ -913,7 +941,7 @@ maybe_migrate_legacy_cli() {
 
   if [[ "$do_migrate" != true ]]; then
     if [ -f "${INM_SELF_ENV_FILE:-}" ]; then
-      env_set cli "INM_CLI_COMPATIBILITY=\"legacy\"" >/dev/null 2>&1 || true
+      env_set cli "INM_CLI_COMPATIBILITY=legacy" >/dev/null 2>&1 || true
     fi
     log info "[SELF] Staying on legacy bootstrap. To migrate later: inmanage self install"
     legacy_warn_shell_alias
@@ -933,10 +961,15 @@ maybe_migrate_legacy_cli() {
     return 1
   fi
 
-  legacy_create_symlinks "$base_dir" "$new_script"
+  legacy_cleanup_repo "${base_dir%/}/.inmanage" "$base_dir"
+  if [[ "${INM_SELF_INSTALL_MODE:-}" == "3" ]]; then
+    legacy_create_symlinks "$base_dir" "$new_script"
+  else
+    log info "[SELF] Skipping legacy project symlinks (install mode != project)."
+  fi
 
   if [ -f "${INM_SELF_ENV_FILE:-}" ]; then
-    env_set cli "INM_CLI_COMPATIBILITY=\"ultron\"" >/dev/null 2>&1 || true
+    env_set cli "INM_CLI_COMPATIBILITY=ultron" >/dev/null 2>&1 || true
   fi
   export INM_CLI_COMPATIBILITY="ultron"
   legacy_warn_shell_alias

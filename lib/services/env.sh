@@ -537,6 +537,10 @@ env_set() {
         return 0
     fi
     local cmd tmp_file comment=""
+    local current_mode=""
+    if [[ "$target" == "cli" && -f "$env_file" ]] && declare -F _fs_get_mode >/dev/null 2>&1; then
+        current_mode="$(_fs_get_mode "$env_file")"
+    fi
     tmp_file="$(_env_run "$access" "$owner" mktemp)" || {
         log err "[ENV] Failed to create temp file for $env_file"
         return 1
@@ -599,6 +603,9 @@ env_set() {
     cmd='printf "%s" "$CONTENT" > "$TMP"'
     _env_run_shell "$access" "$owner" "$cmd" CONTENT="$output" TMP="$tmp_file" || return 1
     _env_replace_file "$access" "$owner" "$env_file" "$tmp_file" || return 1
+    if [[ "$target" == "cli" && -n "$current_mode" ]]; then
+        _env_run "$access" "$owner" chmod "$current_mode" "$env_file" 2>/dev/null || true
+    fi
     if [[ "$target" == "app" && -n "${INM_ENV_MODE:-}" ]]; then
         _env_run "$access" "$owner" chmod "${INM_ENV_MODE}" "$env_file" 2>/dev/null || true
     fi
