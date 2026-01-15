@@ -4,18 +4,10 @@
 Helper
 [install.webm](https://github.com/user-attachments/assets/f7443d0e-9618-4f63-a856-805f5a1db407)
 
-TEST
+Inline Video
 
-<video controls muted loop playsinline width="900">
+<video autoplay muted loop playsinline>
   <source src="https://github.com/user-attachments/assets/f7443d0e-9618-4f63-a856-805f5a1db407" type="video/webm">
-</video>
-
-<video src="https://github.com/user-attachments/assets/f7443d0e-9618-4f63-a856-805f5a1db407"
-       autoplay
-       loop
-       muted
-       playsinline
-       width="100%">
 </video>
 
 
