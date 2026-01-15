@@ -1263,6 +1263,12 @@ This section is about the app itself (not the CLI).
 
 Repeatable and unattended. Best for staging/production.
 
+<a href="https://github.com/user-attachments/assets/dcaa1fc8-727b-4cae-b13f-3818763a76e2" target="_blank">
+  <img src="https://github.com/user-attachments/assets/999051b4-ad27-46f6-b75d-10975c56d3ba" alt="Install IN" width="100%">
+</a>
+
+*In this example `--override-enforced-user` was used in order to work with passwordless mysql auth_socket.*
+
 1. Start the installer:
    ```bash
    inm core install
@@ -1291,12 +1297,6 @@ Repeatable and unattended. Best for staging/production.
    - Save and exit; the installer continues with what you saved.
    - Result: `.env.provision` becomes the app `.env` (INM_* stripped), the app is installed and seeded, and the default admin user is created.
 3. **End result**: you get the login URL and default credentials (`admin@admin.com` / `admin`) so you can log in immediately; delete `.env.provision` once you are satisfied.
-
-<a href="https://github.com/user-attachments/assets/dcaa1fc8-727b-4cae-b13f-3818763a76e2" target="_blank">
-  <img src="https://github.com/user-attachments/assets/999051b4-ad27-46f6-b75d-10975c56d3ba" alt="Install IN" width="100%">
-</a>
-
-*In this example `--override-enforced-user` was used in order to work with passwordless mysql auth_socket.*
 
 ---
 
