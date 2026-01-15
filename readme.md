@@ -28,7 +28,7 @@ Detailed installation options and different install modes: see the [Installation
 # 1) Install CLI (from anywhere; system mode;)
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash
 ```
-![install](https://github.com/user-attachments/assets/800e3fa7-0fe5-47ce-9d29-46c31a6a8162)
+![install](https://github.com/user-attachments/assets/e523ee13-15aa-4858-8eef-e007e393af1d)
 
 ```bash
 # 2) First run - create project config
