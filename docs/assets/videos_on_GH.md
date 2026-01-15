@@ -1,21 +1,22 @@
 ## Install
 
-### Install CLI
-WebM
-[install.webm](https://github.com/user-attachments/assets/f7443d0e-9618-4f63-a856-805f5a1db407)
 
-WEBM Inline
-<p align="center" width="100%">
-<video src="https://github.com/user-attachments/assets/f7443d0e-9618-4f63-a856-805f5a1db407" type="video/webm" width="80%" autoplay="true" muted="true" loop="true" controls="controls"></video>
-</p>
+### Install CLI
+
+<a href="https://github.com/user-attachments/assets/de024a7d-c1ea-4864-9058-81c8adec116d" target="_blank">
+  <img src="https://github.com/user-attachments/assets/622b16b9-893b-4f6f-a47c-06b9fac13f92" alt="Install CLI" width="100%">
+</a>
+
+
 ### Install CLI Config
 
-Webm
-[install_cli_config.webm](https://github.com/user-attachments/assets/e4d4c9b6-0ae2-4815-87eb-2e9cb3cb47c1)
+<a href="https://github.com/user-attachments/assets/777f1217-1d7d-4c65-bb85-db6d36b57644" target="_blank">
+  <img src="https://github.com/user-attachments/assets/342ca8a9-4ab5-4d16-ba56-43acd9c5f6ec" alt="Install CLI Config" width="100%">
+</a>
 
-MP4 Inline
-
-<video autoplay muted loop src="https://github.com/user-attachments/assets/4efaf3c6-c274-4c51-903b-0ca6857eae7d" type="video/mp4"></video>
 
 ### Install IN
-[install_in_install.webm](https://github.com/user-attachments/assets/32e8e7b0-bcfe-438f-b8fb-27cc1e374725)
+
+<a href="https://github.com/user-attachments/assets/dcaa1fc8-727b-4cae-b13f-3818763a76e2" target="_blank">
+  <img src="https://github.com/user-attachments/assets/999051b4-ad27-46f6-b75d-10975c56d3ba" alt="Install IN" width="100%">
+</a>
