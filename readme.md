@@ -7,10 +7,8 @@ INmanage (inm) – CLI for Invoice Ninja
 INmanage is the CLI for self-hosted Invoice Ninja. Focus: **save time**, **less stress**, **certainty**, **convenience**. Installation takes 2–3 minutes per host and will save you many hours of manual work maintaining your Invoice Ninja instances. 
 
 > [!TIP]
-> Docs:
-> - Full documentation: [docs/index.md](docs/index.md)
+> - **Full documentation**: [docs/index.md](docs/index.md)
 > - Cheat sheet: [cheatsheet.md](./cheatsheet.md)
-> - Containers/VMs: [docs/index.md#containers--vms-onboarding-invoice-ninja-and-inmanage](docs/index.md#containers--vms-onboarding-invoice-ninja-and-inmanage)
 
 ## Things You Need
 
@@ -30,6 +28,7 @@ Detailed installation options and different install modes: see the [Installation
 # 1) Install CLI (from anywhere; system mode;)
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash
 ```
+![install](https://github.com/user-attachments/assets/800e3fa7-0fe5-47ce-9d29-46c31a6a8162)
 
 ```bash
 # 2) First run - create project config
@@ -44,9 +43,7 @@ sudo -u www-data inm core install
 ```
 
 > [!NOTE]
-> Example: base directory `/var/www/billing.yourdomain.com`,
->
-> app directory `/var/www/billing.yourdomain.com/invoiceninja`.
+> Example: base directory `/var/www/billing.yourdomain.com`, app directory `/var/www/billing.yourdomain.com/invoiceninja`.
 >
 > Learn naming: [docs/index.md#project-layout-inmanage](docs/index.md#project-layout-inmanage)
 >
