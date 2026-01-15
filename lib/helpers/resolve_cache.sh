@@ -30,6 +30,65 @@ expand_path_vars() {
 }
 
 # ---------------------------------------------------------------------
+# resolve_user_home()
+# Resolve home directory for a user.
+# Consumes: args: user; tools: getent, pw.
+# Computes: home path.
+# Returns: home path on stdout (empty if unavailable).
+# ---------------------------------------------------------------------
+resolve_user_home() {
+    local user="$1"
+    [[ -z "$user" ]] && return 1
+
+    local home=""
+    if command -v getent >/dev/null 2>&1; then
+        home="$(getent passwd "$user" 2>/dev/null | cut -d: -f6)"
+    elif command -v pw >/dev/null 2>&1; then
+        home="$(pw usershow "$user" 2>/dev/null | awk -F: '{print $9}')"
+    fi
+    if [[ -z "$home" ]]; then
+        home="$(eval echo "~$user" 2>/dev/null || true)"
+    fi
+    if [[ -n "$home" && "$home" != "~$user" && -d "$home" ]]; then
+        printf "%s\n" "$home"
+        return 0
+    fi
+    return 1
+}
+
+# ---------------------------------------------------------------------
+# resolve_enforced_cache_dir()
+# Prefer existing enforced-user cache when running as root with override.
+# Consumes: env: INM_OVERRIDE_ENFORCED_USER, INM_ENFORCED_USER, INM_CACHE_GLOBAL_DIRECTORY; deps: expand_path_vars.
+# Computes: cache dir path.
+# Returns: cache dir on stdout, 0 on success; 1 on failure.
+# ---------------------------------------------------------------------
+resolve_enforced_cache_dir() {
+    if [[ "${INM_OVERRIDE_ENFORCED_USER:-}" != "true" ]]; then
+        return 1
+    fi
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        return 1
+    fi
+    local enforced_user="${INM_ENFORCED_USER:-}"
+    if [[ -z "$enforced_user" || "$enforced_user" == "root" ]]; then
+        return 1
+    fi
+
+    local enforced_home=""
+    enforced_home="$(resolve_user_home "$enforced_user")" || return 1
+
+    local cache_dir=""
+    local INM_HOME_RESOLVED_BASE="$enforced_home"
+    cache_dir="$(expand_path_vars "${INM_CACHE_GLOBAL_DIRECTORY:-$HOME/.cache/inmanage}")"
+    if [[ -n "$cache_dir" && -d "$cache_dir" ]]; then
+        printf "%s\n" "$cache_dir"
+        return 0
+    fi
+    return 1
+}
+
+# ---------------------------------------------------------------------
 # sudo_prepare_cache_dir()
 # Create/chown/chmod a cache directory via sudo.
 # Consumes: args: path, owner, mode, allow_prompt, group; tools: sudo, timeout.
@@ -118,6 +177,14 @@ apply_cache_dir_mode() {
 # Returns: selected cache dir on stdout.
 # ---------------------------------------------------------------------
 resolve_cache_directory() {
+    local enforced_cache=""
+    enforced_cache="$(resolve_enforced_cache_dir 2>/dev/null || true)"
+    if [[ -n "$enforced_cache" ]]; then
+        log debug "[CACHE] Using enforced user cache: $enforced_cache"
+        echo "$enforced_cache"
+        return 0
+    fi
+
     local global_path local_path
     global_path="$(expand_path_vars "${INM_CACHE_GLOBAL_DIRECTORY}")"
     local_path="$(expand_path_vars "${INM_CACHE_LOCAL_DIRECTORY}")"

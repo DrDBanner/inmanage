@@ -658,7 +658,13 @@ preflight_emit_filesystem() {
     local gc_path=""
     local lc_path=""
     if [ -n "${INM_CACHE_GLOBAL_DIRECTORY:-}" ]; then
-        gc_path="$(expand_path_vars "$INM_CACHE_GLOBAL_DIRECTORY")"
+        local enforced_cache=""
+        enforced_cache="$(resolve_enforced_cache_dir 2>/dev/null || true)"
+        if [[ -n "$enforced_cache" ]]; then
+            gc_path="$enforced_cache"
+        else
+            gc_path="$(expand_path_vars "$INM_CACHE_GLOBAL_DIRECTORY")"
+        fi
         preflight_check_cache_dir "$gc_path" "global" "INM_CACHE_GLOBAL_DIRECTORY" \
             cache_global_state cache_global_detail cache_global_mode cache_global_world_writable
     fi
