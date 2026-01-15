@@ -4,7 +4,7 @@ INmanage (inm) – CLI for Invoice Ninja
 
 **Backup. Update. Install. Done.**
 
-INmanage is the CLI for self-hosted Invoice Ninja. Focus: **save time**, **less stress**, **certainty**, **convenience**. Installation takes 2–3 minutes per host and will save you many hours of manual work maintaining your Invoice Ninja instances. 
+INmanage is the CLI for self-hosted Invoice Ninja. Focus: **save time**, **less stress**, **certainty**, **convenience**. Installation takes 2–3 minutes per host and will save you many hours of manual work maintaining your Invoice Ninja instances.
 
 > [!TIP]
 > - **Full documentation**: [docs/index.md](docs/index.md)
@@ -28,7 +28,9 @@ Detailed installation options and different install modes: see the [Installation
 # 1) Install CLI (from anywhere; system mode;)
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/install_inmanage.sh | sudo bash
 ```
-![install](https://github.com/user-attachments/assets/e523ee13-15aa-4858-8eef-e007e393af1d)
+<a href="https://github.com/user-attachments/assets/de024a7d-c1ea-4864-9058-81c8adec116d" target="_blank">
+  <img src="https://github.com/user-attachments/assets/622b16b9-893b-4f6f-a47c-06b9fac13f92" alt="Install CLI" width="100%">
+</a>
 
 ```bash
 # 2) First run - create project config

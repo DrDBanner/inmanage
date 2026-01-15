@@ -350,7 +350,8 @@ Reinstall by running the installer again (see [Install CLI](#install-cli)).
 
 Legacy installs used a project checkout under `.inmanage` (updated via `git pull`). This flow is supported.
 
-**Steps**
+#### Steps
+
 1. From the project root, update the legacy repo if you still use it:
    ```bash
    cd .inmanage
@@ -366,13 +367,15 @@ Legacy installs used a project checkout under `.inmanage` (updated via `git pull
    - **User install** (installs to `~/.local/share/inmanage`)
    - **System install** (installs to `/usr/local/share/inmanage`, requires sudo)
 
-**What happens**
+#### What happens
+
 - The new CLI is installed in the chosen mode.
 - The legacy `.inmanage` repo is cleaned; `.env.inmanage` stays in place (archived files go to `.inmanage/_legacy`).
 - Legacy project symlinks are only created for **project** installs.
 - The CLI re-launches from the new path (user installs may require a `PATH` update).
 
-**What to check**
+#### What to check
+
 - Remove any existing cronjobs for the project. Then let INmanage install them automatically again. See: [Cron jobs](#cron-jobs-inmanage).
 - Remove legacy shell aliases/functions if you used them.
 - Verify with:
@@ -1288,6 +1291,12 @@ Repeatable and unattended. Best for staging/production.
    - Save and exit; the installer continues with what you saved.
    - Result: `.env.provision` becomes the app `.env` (INM_* stripped), the app is installed and seeded, and the default admin user is created.
 3. **End result**: you get the login URL and default credentials (`admin@admin.com` / `admin`) so you can log in immediately; delete `.env.provision` once you are satisfied.
+
+<a href="https://github.com/user-attachments/assets/dcaa1fc8-727b-4cae-b13f-3818763a76e2" target="_blank">
+  <img src="https://github.com/user-attachments/assets/999051b4-ad27-46f6-b75d-10975c56d3ba" alt="Install IN" width="100%">
+</a>
+
+*In this example `--override-enforced-user` was used in order to work with passwordless mysql auth_socket.*
 
 ---
 
