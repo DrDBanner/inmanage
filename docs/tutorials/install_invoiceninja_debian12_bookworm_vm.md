@@ -603,8 +603,8 @@ sudo -u www-data inm                       # create CLI config
 
 When prompted, accept the defaults and set **FORCE_READ_DB_PW** to `Y` (read DB password from the app `.env`).
 
-<a href="https://github.com/user-attachments/assets/777f1217-1d7d-4c65-bb85-db6d36b57644" target="_blank">
-  <img src="https://github.com/user-attachments/assets/342ca8a9-4ab5-4d16-ba56-43acd9c5f6ec" alt="Install CLI Config" width="100%">
+<a href="https://github.com/user-attachments/assets/342ca8a9-4ab5-4d16-ba56-43acd9c5f6ec" target="_blank">
+  <img src="https://github.com/user-attachments/assets/777f1217-1d7d-4c65-bb85-db6d36b57644" alt="Install CLI Config" width="100%">
 </a>
 
 ### 9.2. Provisioned install (single file)
