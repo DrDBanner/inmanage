@@ -758,6 +758,7 @@ Version info:
 - `inm version` (CLI)
 - `inm self version` (same as above)
 - `inm core versions` (Invoice Ninja versions: installed/latest/cached)
+- `inm core versions --show-changelog` (compare link for installed -> latest)
 
 See the Global switches table for `--debug`, `--debuglevel`, and `--dry-run`.
 To suppress shell tracing around sensitive values, keep `INM_TRACE_SENSITIVE` unset/true. Set `INM_TRACE_SENSITIVE=off` to allow full tracing (may expose secrets).
@@ -817,7 +818,7 @@ core:
 
   update                      Update Invoice Ninja
                               --version=<v> --force --cache-only --no-db-backup --preserve-paths=a,b
-                              --bypass-check-sha
+                              --bypass-check-sha --show-changelog
                               rollback [--latest|--name=DIR]  # legacy: last|<dir>
 
   backup                      Full backup (db+files)
@@ -836,7 +837,7 @@ core:
                               --override-enforced-user --no-cli-clear --debug --debuglevel=1|2 --dry-run
                               (e.g., CLI,SYS,FS,PERM,DB,WEB,PHP,EXT,NET,APP,CRON,SNAPPDF)
 
-  versions                    Show installed/latest/cached app versions
+  versions                    Show installed/latest/cached app versions [--show-changelog]
   get app                     Download app release to cache only (use --version=<v> or omit for latest)
 
   prune                       Prune versions/backups/cache
@@ -980,7 +981,7 @@ core install:
 ```text
 core update:
   inm core update [--version=v] [--force] [--cache-only] [--no-db-backup]
-    [--preserve-paths=a,b] [--bypass-check-sha]
+    [--preserve-paths=a,b] [--bypass-check-sha] [--show-changelog]
   inm core update rollback [--latest|--name=DIR]   # legacy: last|<dir>
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
@@ -1038,7 +1039,7 @@ core version:
 <!-- CLI_HELP:core-versions -->
 ```text
 core versions:
-  inm core versions
+  inm core versions [--show-changelog]
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
 ```

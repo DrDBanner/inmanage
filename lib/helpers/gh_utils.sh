@@ -129,6 +129,52 @@ gh_release_latest_version() {
 }
 
 # ---------------------------------------------------------------------
+# build_changelog_url()
+# Build a GitHub compare URL for two versions.
+# Consumes: args: from_version, to_version.
+# Computes: compare URL.
+# Returns: URL on stdout, empty on failure.
+# ---------------------------------------------------------------------
+build_changelog_url() {
+    local from_version="$1"
+    local to_version="$2"
+    if [[ -z "$from_version" || -z "$to_version" ]]; then
+        return 1
+    fi
+    local from_tag="${from_version#v}"
+    local to_tag="${to_version#v}"
+    if [[ -z "$from_tag" || -z "$to_tag" || "$from_tag" == "$to_tag" ]]; then
+        return 1
+    fi
+    printf "https://github.com/invoiceninja/invoiceninja/compare/v%s...v%s" "$from_tag" "$to_tag"
+}
+
+# ---------------------------------------------------------------------
+# emit_changelog_link()
+# Emit a compare URL for a version range when requested.
+# Consumes: args: label, from_version, to_version, show_flag.
+# Computes: log output.
+# Returns: 0 always.
+# ---------------------------------------------------------------------
+emit_changelog_link() {
+    local label="$1"
+    local from_version="$2"
+    local to_version="$3"
+    local show_flag="${4:-false}"
+
+    if ! args_is_true "$show_flag"; then
+        return 0
+    fi
+    local changelog_url=""
+    changelog_url="$(build_changelog_url "$from_version" "$to_version" 2>/dev/null || true)"
+    if [[ -n "$changelog_url" ]]; then
+        log info "[${label}] Changelog: $changelog_url"
+    else
+        log info "[${label}] Changelog unavailable (need installed + target versions)."
+    fi
+}
+
+# ---------------------------------------------------------------------
 # gh_release_list_versions()
 # List release versions (prefix stripped) for a repo.
 # Consumes: args: repo, prefix, per_page; deps: gh_auth_args/http_fetch_with_args; tools: jq.

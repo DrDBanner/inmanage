@@ -268,6 +268,11 @@ run_artisan() {
 # Returns: 0 after logging.
 # ---------------------------------------------------------------------
 show_versions_summary() {
+    local -A args=()
+    parse_named_args args "$@"
+    local show_changelog
+    show_changelog="$(args_get args "false" show_changelog show-changelog)"
+
     local installed latest cache_dir cached_versions=()
 
     installed="$(get_installed_version || true)"
@@ -298,6 +303,8 @@ show_versions_summary() {
     else
         log info "[VER] Cached: <none>"
     fi
+
+    emit_changelog_link "VER" "$installed" "$latest" "$show_changelog"
 }
 
 # ---------------------------------------------------------------------

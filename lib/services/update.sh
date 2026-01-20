@@ -19,6 +19,8 @@ run_update() {
     local -A args=()
     parse_named_args args "$@"
 
+    local show_changelog
+    show_changelog="$(args_get args "false" show_changelog show-changelog)"
     local cache_only
     cache_only="$(args_get args "false" cache_only)"
     local no_db_backup
@@ -50,6 +52,7 @@ run_update() {
         fi
     fi
     log info "[UPD] Installed: ${installed_version:-<unknown>} | Latest: ${latest_version:-<unknown>}"
+    emit_changelog_link "UPD" "$installed_version" "$latest_version" "$show_changelog"
 
     # Cache-only path: download + checksum, no install/extract
     if args_is_true "$cache_only"; then
