@@ -655,8 +655,8 @@ If your MariaDB root user uses socket auth, set `DB_ELEVATED_PASSWORD=auth_socke
 
 When you include valid `MAIL_*` SMTP settings and the minimum notification keys (`INM_NOTIFY_ENABLED`, `INM_NOTIFY_TARGETS`, `INM_NOTIFY_HEARTBEAT_ENABLED`, `INM_NOTIFY_HEARTBEAT_LEVEL`), the installer auto-installs the heartbeat cron job and sends a test mail. Otherwise, it installs only the essential cron jobs (artisan + backup).
 
-<a href="https://github.com/user-attachments/assets/dcaa1fc8-727b-4cae-b13f-3818763a76e2" target="_blank">
-  <img src="https://github.com/user-attachments/assets/999051b4-ad27-46f6-b75d-10975c56d3ba" alt="Install IN" width="100%">
+<a href="https://github.com/user-attachments/assets/999051b4-ad27-46f6-b75d-10975c56d3ba" target="_blank">
+  <img src="https://github.com/user-attachments/assets/dcaa1fc8-727b-4cae-b13f-3818763a76e2" alt="Install IN" width="100%">
 </a>
 
 After you confirm the install, you should see a "Setup Complete!" summary with the app URL and default admin credentials. When you are satisfied, delete the provision file because it contains secrets:
