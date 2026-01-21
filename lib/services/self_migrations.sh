@@ -50,6 +50,125 @@ _self_migrations_plan_index() {
 }
 
 # ---------------------------------------------------------------------
+# self_migrations_legacy_root()
+# Resolve legacy project root (typically .inmanage within base dir).
+# Returns: prints path or empty on failure.
+# ---------------------------------------------------------------------
+self_migrations_legacy_root() {
+    local base_dir="${INM_PATH_BASE_DIR:-}"
+    [[ -z "$base_dir" ]] && return 1
+    if declare -F path_expand_no_eval >/dev/null 2>&1; then
+        base_dir="$(path_expand_no_eval "$base_dir")"
+    fi
+    base_dir="${base_dir%/}"
+    local config_root="${INM_CONFIG_ROOT:-.inmanage}"
+    local legacy_root="$config_root"
+    if [[ "$legacy_root" != /* ]]; then
+        legacy_root="${base_dir%/}/${legacy_root#/}"
+    fi
+    printf "%s" "$legacy_root"
+}
+
+_self_migrations_legacy_symlink() {
+    local base_dir="$1"
+    local legacy_root="$2"
+    local link_path="${base_dir%/}/inmanage.sh"
+    [[ -L "$link_path" ]] || return 1
+    local target=""
+    target="$(readlink "$link_path" 2>/dev/null || true)"
+    if [[ -z "$target" ]]; then
+        return 1
+    fi
+    if [[ "$target" == ".inmanage/inmanage.sh" || "$target" == "${legacy_root}/inmanage.sh" || "$target" == */.inmanage/inmanage.sh ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# ---------------------------------------------------------------------
+# self_migrations_legacy_detected()
+# Check if a legacy local install still exists in the project.
+# Returns: 0 if legacy repo or symlink found, 1 otherwise.
+# ---------------------------------------------------------------------
+self_migrations_legacy_detected() {
+    local base_dir="${INM_PATH_BASE_DIR:-}"
+    [[ -z "$base_dir" ]] && return 1
+    if declare -F path_expand_no_eval >/dev/null 2>&1; then
+        base_dir="$(path_expand_no_eval "$base_dir")"
+    fi
+    base_dir="${base_dir%/}"
+    local legacy_root
+    legacy_root="$(self_migrations_legacy_root)" || return 1
+    if [[ -d "$legacy_root/.git" || -f "$legacy_root/inmanage.sh" || -d "$legacy_root/lib" ]]; then
+        return 0
+    fi
+    if _self_migrations_legacy_symlink "$base_dir" "$legacy_root"; then
+        return 0
+    fi
+    return 1
+}
+
+# ---------------------------------------------------------------------
+# self_migrations_legacy_cleanup()
+# Remove legacy repo content and legacy project symlink.
+# Consumes: env: INM_PATH_BASE_DIR; deps: legacy_cleanup_repo/legacy_backup_path.
+# ---------------------------------------------------------------------
+self_migrations_legacy_cleanup() {
+    local base_dir="${INM_PATH_BASE_DIR:-}"
+    [[ -z "$base_dir" ]] && return 0
+    if declare -F path_expand_no_eval >/dev/null 2>&1; then
+        base_dir="$(path_expand_no_eval "$base_dir")"
+    fi
+    base_dir="${base_dir%/}"
+    local legacy_root
+    legacy_root="$(self_migrations_legacy_root)" || return 0
+
+    if declare -F legacy_cleanup_repo >/dev/null 2>&1; then
+        legacy_cleanup_repo "$legacy_root" "$base_dir"
+    fi
+
+    local link_path="${base_dir%/}/inmanage.sh"
+    if _self_migrations_legacy_symlink "$base_dir" "$legacy_root"; then
+        if declare -F legacy_backup_path >/dev/null 2>&1; then
+            legacy_backup_path "$link_path" "$base_dir"
+        else
+            rm -f "$link_path" 2>/dev/null || true
+        fi
+    fi
+}
+
+# ---------------------------------------------------------------------
+# self_migrations_prompt_legacy_cleanup()
+# Prompt to remove legacy local install after config migration.
+# ---------------------------------------------------------------------
+self_migrations_prompt_legacy_cleanup() {
+    if ! self_migrations_legacy_detected; then
+        return 0
+    fi
+    local interactive=false
+    if declare -F legacy_is_interactive >/dev/null 2>&1; then
+        if legacy_is_interactive; then
+            interactive=true
+        fi
+    elif [[ -t 0 && -t 1 ]]; then
+        interactive=true
+    fi
+    if [[ "$interactive" != true ]]; then
+        return 0
+    fi
+    if ! declare -F prompt_confirm >/dev/null 2>&1; then
+        return 0
+    fi
+    if prompt_confirm "SELF_MIG_LEGACY_CLEANUP" "no" \
+        "Legacy local install detected (.inmanage repo / inmanage.sh). Remove it now? (yes/no):" \
+        false 120; then
+        self_migrations_legacy_cleanup
+    else
+        log info "[SELF_MIG] You can remove it later with: inm self update --legacy-migration=force"
+    fi
+}
+
+# ---------------------------------------------------------------------
 # self_migrations_run_if_needed()
 # Run CLI config migrations based on the configured migration state.
 # Consumes: args: config_file; env: INM_SELF_ENV_FILE; deps: env_set/load_env_file_raw.
@@ -88,6 +207,7 @@ self_migrations_run_if_needed() {
 
     local mig_dir="${LIB_DIR}/self_migrations"
     local i entry target_value script_name func_name script_path
+    local ran_migrations=false
     for ((i=start_index; i<${#SELF_MIGRATIONS_PLAN[@]}; i++)); do
         entry="${SELF_MIGRATIONS_PLAN[$i]}"
         target_value="${entry%%|*}"
@@ -114,6 +234,7 @@ self_migrations_run_if_needed() {
             INM_SELF_ENV_FILE="$prev_env_file"
             return 1
         }
+        ran_migrations=true
 
         if env_set cli "${SELF_MIGRATIONS_KEY}=${target_value}" >/dev/null 2>&1; then
             :
@@ -125,6 +246,9 @@ self_migrations_run_if_needed() {
 
     load_env_file_raw "$config_file" || true
     log debug "[SELF_MIG] CLI config migration completed (state: ${current_value:-<unknown>})."
+    if [[ "$ran_migrations" == true ]]; then
+        self_migrations_prompt_legacy_cleanup
+    fi
 
     INM_SELF_ENV_FILE="$prev_env_file"
     return 0

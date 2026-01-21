@@ -482,6 +482,10 @@ install_self() {
 # Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 self_update() {
+  local -A args=()
+  parse_named_args args "$@"
+  local legacy_mode
+  legacy_mode="$(args_get args "" legacy_migration legacy-migration)"
   local script_path="$0"
   script_path="$(self_resolve_path "$0")"
   local root
@@ -511,6 +515,16 @@ self_update() {
     fi
     if declare -F update_notice_mark_checked >/dev/null 2>&1; then
       update_notice_mark_checked
+    fi
+    if [[ "${legacy_mode,,}" =~ ^(force|yes|y)$ ]]; then
+      if declare -F self_migrations_legacy_detected >/dev/null 2>&1; then
+        if self_migrations_legacy_detected; then
+          log info "[SELF] Removing legacy local install (--legacy-migration=force)."
+          self_migrations_legacy_cleanup
+        else
+          log info "[SELF] No legacy local install found."
+        fi
+      fi
     fi
   else
     self_write_version_file "$root" "$root"
