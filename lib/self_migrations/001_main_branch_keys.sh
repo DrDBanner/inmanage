@@ -21,11 +21,15 @@ declare -A MIG_001_KEY_MAP=(
 
 migration_001_replace_placeholders() {
     local value="$1"
-    local legacy canon
+    local legacy canon pattern replacement
     for legacy in "${!MIG_001_KEY_MAP[@]}"; do
         canon="${MIG_001_KEY_MAP[$legacy]}"
-        value="${value//\${$legacy}/\${$canon}}"
-        value="${value//\$$legacy/\$$canon}"
+        pattern="\${${legacy}}"
+        replacement="\${${canon}}"
+        value="${value//${pattern}/${replacement}}"
+        pattern="\$${legacy}"
+        replacement="\$${canon}"
+        value="${value//${pattern}/${replacement}}"
     done
     printf "%s" "$value"
 }
