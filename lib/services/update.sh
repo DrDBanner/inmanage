@@ -160,9 +160,9 @@ run_update() {
         return 1
     }
 
-    local preserve_paths_default=("storage" "public/uploads" "public/.user.ini" "public/.well-known")
     local preserve_raw="${args[preserve_paths]:-${args[preserve-paths]:-${INM_PRESERVE_PATHS:-}}}"
-    local preserve_paths=("${preserve_paths_default[@]}")
+    local preserve_paths=()
+    app_default_preserve_paths preserve_paths
     if [[ -n "$preserve_raw" ]]; then
         IFS=',' read -ra preserve_extra <<<"$preserve_raw"
         preserve_paths+=("${preserve_extra[@]}")

@@ -1466,6 +1466,22 @@ Update switches (`inm core update`):
 | `--no-db-backup` | `false` | Skip the mandatory pre-update DB backup (not recommended). |
 | `--bypass-check-sha` | `false` | Skip release digest verification (not recommended). |
 
+Default preserved paths (always kept):
+- `storage`
+- `public/storage`
+- `public/uploads`
+- `public/.user.ini`
+- `public/.well-known`
+- `public/.htaccess`
+- `public/*.ini`
+- `public/.*.ini`
+Add more via `--preserve-paths=a,b` or persist in CLI config with `INM_PRESERVE_PATHS="a,b"`.
+
+Example (persist in CLI config):
+```bash
+inm env set cli INM_PRESERVE_PATHS="public/storage,public/robots.txt,public/sitemap.xml"
+```
+
 Update flow (under the hood):
 
 - Read current version and resolve target version.

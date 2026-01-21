@@ -314,6 +314,7 @@ app_run_rollback() {
 # Returns: prints target to stdout.
 # ---------------------------------------------------------------------
 app_parse_rollback_target() {
+    # shellcheck disable=SC2034
     local -n args_ref="$1"
     local default_target="$2"
     shift 2 || true
@@ -379,13 +380,36 @@ app_log_rollback_hint() {
 }
 
 # ---------------------------------------------------------------------
-# app_preserve_path()
-# Copy a path from current app into a new target tree if missing.
+# app_default_preserve_paths()
+# Default app paths to preserve during updates.
+# Consumes: args: output array name.
+# Computes: default preserve list.
+# Returns: 0 after setting output array.
+# ---------------------------------------------------------------------
+app_default_preserve_paths() {
+    # shellcheck disable=SC2034
+    local -n out="$1"
+    # shellcheck disable=SC2034
+    out=(
+        "storage"
+        "public/storage"
+        "public/uploads"
+        "public/.user.ini"
+        "public/.well-known"
+        "public/.htaccess"
+        "public/*.ini"
+        "public/.*.ini"
+    )
+}
+
+# ---------------------------------------------------------------------
+# app_preserve_path_copy()
+# Copy a concrete path from current app into a new target tree if missing.
 # Consumes: args: tag, src_root, dst_root, rel; tools: rsync/cp.
 # Computes: copies directory or file if it exists.
 # Returns: 0 always (logs warn on failures).
 # ---------------------------------------------------------------------
-app_preserve_path() {
+app_preserve_path_copy() {
     local tag="$1"
     local src_root="$2"
     local dst_root="$3"
@@ -408,4 +432,42 @@ app_preserve_path() {
     fi
     log debug "[${tag}] Preserve path not found: $rel"
     return 0
+}
+
+# ---------------------------------------------------------------------
+# app_preserve_path()
+# Copy a path from current app into a new target tree if missing.
+# Consumes: args: tag, src_root, dst_root, rel; tools: rsync/cp.
+# Computes: copies directory or file if it exists.
+# Returns: 0 always (logs warn on failures).
+# ---------------------------------------------------------------------
+app_preserve_path() {
+    local tag="$1"
+    local src_root="$2"
+    local dst_root="$3"
+    local rel="$4"
+    rel="${rel#/}"
+    local src_root_clean="${src_root%/}"
+    if [[ "$rel" == *"*"* || "$rel" == *"?"* || "$rel" == *"["* ]]; then
+        local match=""
+        local had_match=false
+        local nullglob_was_set=false
+        if shopt -q nullglob; then
+            nullglob_was_set=true
+        fi
+        shopt -s nullglob
+        for match in "$src_root_clean"/$rel; do
+            had_match=true
+            local rel_match="${match#"${src_root_clean}"/}"
+            app_preserve_path_copy "$tag" "$src_root_clean" "$dst_root" "$rel_match"
+        done
+        if [[ "$nullglob_was_set" != true ]]; then
+            shopt -u nullglob
+        fi
+        if [[ "$had_match" != true ]]; then
+            log debug "[${tag}] Preserve path not found: $rel"
+        fi
+        return 0
+    fi
+    app_preserve_path_copy "$tag" "$src_root_clean" "$dst_root" "$rel"
 }
