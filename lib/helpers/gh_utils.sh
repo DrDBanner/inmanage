@@ -150,6 +150,25 @@ build_changelog_url() {
 }
 
 # ---------------------------------------------------------------------
+# build_release_url()
+# Build a GitHub release URL for a version.
+# Consumes: args: version.
+# Computes: release URL.
+# Returns: URL on stdout, empty on failure.
+# ---------------------------------------------------------------------
+build_release_url() {
+    local version="$1"
+    if [[ -z "$version" ]]; then
+        return 1
+    fi
+    local tag="${version#v}"
+    if [[ -z "$tag" ]]; then
+        return 1
+    fi
+    printf "https://github.com/invoiceninja/invoiceninja/releases/tag/v%s" "$tag"
+}
+
+# ---------------------------------------------------------------------
 # emit_changelog_link()
 # Emit a compare URL for a version range when requested.
 # Consumes: args: label, from_version, to_version, show_flag.
@@ -169,9 +188,19 @@ emit_changelog_link() {
     changelog_url="$(build_changelog_url "$from_version" "$to_version" 2>/dev/null || true)"
     if [[ -n "$changelog_url" ]]; then
         log info "[${label}] Changelog: $changelog_url"
-    else
-        log info "[${label}] Changelog unavailable (need installed + target versions)."
+        return 0
     fi
+    local from_tag="${from_version#v}"
+    local to_tag="${to_version#v}"
+    if [[ -n "$from_tag" && -n "$to_tag" && "$from_tag" == "$to_tag" ]]; then
+        local release_url=""
+        release_url="$(build_release_url "$from_tag" 2>/dev/null || true)"
+        if [[ -n "$release_url" ]]; then
+            log info "[${label}] Changelog: $release_url"
+            return 0
+        fi
+    fi
+    log info "[${label}] Changelog unavailable (need installed + target versions)."
 }
 
 # ---------------------------------------------------------------------
