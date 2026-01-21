@@ -56,6 +56,128 @@ cron_escape_awk_re() {
     printf "%s" "$re"
 }
 
+cron_is_interactive() {
+    [[ -t 0 && -t 1 ]]
+}
+
+cron_heartbeat_requirements_ok() {
+    local notify_enabled="${INM_NOTIFY_ENABLE:-false}"
+    local heartbeat_enabled="${INM_NOTIFY_HEARTBEAT_ENABLE:-false}"
+    if ! args_is_true "$notify_enabled"; then
+        return 1
+    fi
+    if ! args_is_true "$heartbeat_enabled"; then
+        return 1
+    fi
+    local targets="${INM_NOTIFY_TARGETS_LIST:-}"
+    targets="${targets,,}"
+    targets="${targets//[[:space:]]/}"
+    if [[ -z "$targets" ]]; then
+        return 1
+    fi
+    local has_email=false
+    local has_webhook=false
+    local part
+    IFS=',' read -ra parts <<<"$targets"
+    for part in "${parts[@]}"; do
+        case "$part" in
+            email) has_email=true ;;
+            webhook) has_webhook=true ;;
+        esac
+    done
+    if [[ "$has_email" == true && -z "${INM_NOTIFY_EMAIL_TO_LIST:-}" ]]; then
+        return 1
+    fi
+    if [[ "$has_webhook" == true && -z "${INM_NOTIFY_WEBHOOK_URL:-}" ]]; then
+        return 1
+    fi
+    return 0
+}
+
+cron_prompt_heartbeat_config() {
+    if ! cron_is_interactive; then
+        return 1
+    fi
+    if ! declare -F prompt_confirm >/dev/null 2>&1; then
+        return 1
+    fi
+    if ! declare -F prompt_var >/dev/null 2>&1; then
+        return 1
+    fi
+    if ! declare -F env_set >/dev/null 2>&1; then
+        return 1
+    fi
+    if ! prompt_confirm "CRON_HB_SETUP" "yes" \
+        "[CRON] Heartbeat notifications are not configured. Configure now? (yes/no):" false 120; then
+        return 1
+    fi
+
+    local notify_enabled="${INM_NOTIFY_ENABLE:-false}"
+    if ! args_is_true "$notify_enabled"; then
+        if prompt_confirm "CRON_NOTIFY_ENABLE" "yes" \
+            "[CRON] Enable notifications (INM_NOTIFY_ENABLE)? (yes/no):" false 60; then
+            env_set cli "INM_NOTIFY_ENABLE=true" >/dev/null 2>&1 || true
+        else
+            env_set cli "INM_NOTIFY_ENABLE=false" >/dev/null 2>&1 || true
+            return 1
+        fi
+    fi
+
+    local heartbeat_enabled="${INM_NOTIFY_HEARTBEAT_ENABLE:-true}"
+    if ! args_is_true "$heartbeat_enabled"; then
+        if prompt_confirm "CRON_HB_ENABLE" "yes" \
+            "[CRON] Enable heartbeat notifications (INM_NOTIFY_HEARTBEAT_ENABLE)? (yes/no):" false 60; then
+            env_set cli "INM_NOTIFY_HEARTBEAT_ENABLE=true" >/dev/null 2>&1 || true
+        else
+            env_set cli "INM_NOTIFY_HEARTBEAT_ENABLE=false" >/dev/null 2>&1 || true
+            return 1
+        fi
+    fi
+
+    local targets="${INM_NOTIFY_TARGETS_LIST:-}"
+    if [[ -z "$targets" ]]; then
+        targets="$(prompt_var "CRON_NOTIFY_TARGETS" "email" \
+            "[CRON] Notification targets (comma-separated: email,webhook):" false 120)" || return 1
+        targets="${targets,,}"
+        targets="${targets//[[:space:]]/}"
+        env_set cli "INM_NOTIFY_TARGETS_LIST=${targets}" >/dev/null 2>&1 || true
+    fi
+
+    targets="${targets,,}"
+    targets="${targets//[[:space:]]/}"
+    local need_email=false
+    local need_webhook=false
+    local part
+    IFS=',' read -ra parts <<<"$targets"
+    for part in "${parts[@]}"; do
+        case "$part" in
+            email) need_email=true ;;
+            webhook) need_webhook=true ;;
+        esac
+    done
+
+    if [[ "$need_email" == true && -z "${INM_NOTIFY_EMAIL_TO_LIST:-}" ]]; then
+        local email_to=""
+        email_to="$(prompt_var "CRON_NOTIFY_EMAIL_TO" "" \
+            "[CRON] Email recipients (comma-separated):" false 120)" || return 1
+        env_set cli "INM_NOTIFY_EMAIL_TO_LIST=${email_to}" >/dev/null 2>&1 || true
+    fi
+
+    if [[ "$need_webhook" == true && -z "${INM_NOTIFY_WEBHOOK_URL:-}" ]]; then
+        local webhook_url=""
+        webhook_url="$(prompt_var "CRON_NOTIFY_WEBHOOK_URL" "" \
+            "[CRON] Webhook URL:" false 120)" || return 1
+        env_set cli "INM_NOTIFY_WEBHOOK_URL=${webhook_url}" >/dev/null 2>&1 || true
+    fi
+
+    if [[ -n "${INM_SELF_ENV_FILE:-}" && -f "${INM_SELF_ENV_FILE}" ]] && declare -F load_env_file_raw >/dev/null 2>&1; then
+        load_env_file_raw "$INM_SELF_ENV_FILE" || true
+    fi
+
+    cron_heartbeat_requirements_ok
+    return $?
+}
+
 cron_strip_legacy_lines() {
     local infile="$1"
     local outfile="$2"
@@ -226,6 +348,22 @@ install_cronjob() {
     if [[ "$job_artisan" != true && "$job_backup" != true && "$job_heartbeat" != true && "$job_test" != true ]]; then
         job_artisan=true
         job_backup=true
+    fi
+
+    if [[ "$job_heartbeat" == true ]]; then
+        if ! cron_heartbeat_requirements_ok; then
+            if cron_prompt_heartbeat_config; then
+                :
+            else
+                log warn "[CRON] Heartbeat job skipped; notification settings incomplete."
+                job_heartbeat=false
+            fi
+        fi
+    fi
+    if [[ "$job_artisan" != true && "$job_backup" != true && "$job_heartbeat" != true && "$job_test" != true ]]; then
+        job_artisan=true
+        job_backup=true
+        log warn "[CRON] No valid jobs selected; falling back to essential jobs."
     fi
     export INM_CRON_INSTALLED_JOBS=""
     export INM_CRON_INSTALL_TARGET=""
