@@ -126,6 +126,166 @@ write_config_defaults() {
 }
 
 # ---------------------------------------------------------------------
+# config_sort_cli_env()
+# Rewrite CLI config in a stable, ordered layout.
+# Consumes: args: env_file, include_missing; globals: default_settings/default_settings_order/default_inline_comments.
+# Returns: 0 on success, non-zero on failure.
+# ---------------------------------------------------------------------
+config_sort_cli_env() {
+    local env_file="${1:-$INM_SELF_ENV_FILE}"
+    local include_missing="${2:-false}"
+
+    [[ -n "$env_file" && -f "$env_file" ]] || return 0
+    if ! declare -p default_settings >/dev/null 2>&1; then
+        return 0
+    fi
+
+    local owner="" access="direct"
+    if declare -F _env_owner_for >/dev/null 2>&1; then
+        owner="$(_env_owner_for "$env_file")"
+    fi
+    if declare -F _env_access_mode >/dev/null 2>&1; then
+        access="$(_env_access_mode "$env_file" "write" "$owner")" || {
+            log warn "[CFG] Cannot reorder CLI config (permission denied): $env_file"
+            return 0
+        }
+    fi
+
+    local current_mode=""
+    if declare -F _fs_get_mode >/dev/null 2>&1; then
+        current_mode="$(_fs_get_mode "$env_file")"
+    fi
+
+    local content=""
+    if declare -F _env_run >/dev/null 2>&1; then
+        content="$(_env_run "$access" "$owner" cat "$env_file")"
+    else
+        content="$(cat "$env_file" 2>/dev/null)"
+    fi
+
+    declare -A present_keys=()
+    declare -A current_comments=()
+    local line key raw comment
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*= ]]; then
+            key="${BASH_REMATCH[2]}"
+            present_keys["$key"]=1
+            if declare -F _env_extract_inline_comment >/dev/null 2>&1; then
+                raw="${line#*=}"
+                comment="$(_env_extract_inline_comment "$raw")"
+                current_comments["$key"]="$comment"
+            fi
+        fi
+    done <<< "$content"
+
+    declare -A added=()
+    local -a ordered_keys=()
+    if declare -p default_settings_order >/dev/null 2>&1 && [ "${#default_settings_order[@]}" -gt 0 ]; then
+        for key in "${default_settings_order[@]}"; do
+            if [[ -n "${present_keys[$key]+_}" || "$include_missing" == true ]]; then
+                ordered_keys+=("$key")
+                added["$key"]=1
+            fi
+        done
+    fi
+
+    local remaining_keys=()
+    for key in "${!default_settings[@]}"; do
+        if [[ -n "${added[$key]+_}" ]]; then
+            continue
+        fi
+        if [[ -n "${present_keys[$key]+_}" || "$include_missing" == true ]]; then
+            remaining_keys+=("$key")
+        fi
+    done
+    if [ "${#remaining_keys[@]}" -gt 0 ]; then
+        local sorted_remaining=()
+        mapfile -t sorted_remaining < <(printf '%s\n' "${remaining_keys[@]}" | sort)
+        ordered_keys+=("${sorted_remaining[@]}")
+    fi
+
+    local extra_keys=()
+    for key in "${!present_keys[@]}"; do
+        if [[ -z "${default_settings[$key]+_}" ]]; then
+            extra_keys+=("$key")
+        fi
+    done
+    if [ "${#extra_keys[@]}" -gt 0 ]; then
+        local sorted_extra=()
+        mapfile -t sorted_extra < <(printf '%s\n' "${extra_keys[@]}" | sort)
+        ordered_keys+=("${sorted_extra[@]}")
+    fi
+
+    if [ "${#ordered_keys[@]}" -eq 0 ]; then
+        return 0
+    fi
+
+    local tmp_file
+    if declare -F _env_run >/dev/null 2>&1; then
+        tmp_file="$(_env_run "$access" "$owner" mktemp)" || return 1
+    else
+        tmp_file="$(mktemp)" || return 1
+    fi
+
+    local value escaped sensitive comment_out
+    for key in "${ordered_keys[@]}"; do
+        if [[ -n "${present_keys[$key]+_}" ]]; then
+            if declare -F read_env_value_safe >/dev/null 2>&1; then
+                value="$(read_env_value_safe "$env_file" "$key" 2>/dev/null)"
+            else
+                value=""
+            fi
+        else
+            value="${default_settings[$key]}"
+        fi
+
+        sensitive=false
+        if declare -F _env_key_is_sensitive >/dev/null 2>&1; then
+            if _env_key_is_sensitive "$key"; then
+                sensitive=true
+            fi
+        elif [[ "$key" =~ (^|_)(PASS(WORD)?|TOKEN|SECRET|KEY|CREDENTIALS)$ ]]; then
+            sensitive=true
+        fi
+
+        comment_out=""
+        if [[ "$sensitive" != true ]]; then
+            comment="${current_comments[$key]:-}"
+            if [[ -n "$comment" ]]; then
+                if [[ "$comment" =~ ^[[:space:]]*# ]]; then
+                    comment_out="$comment"
+                else
+                    comment_out=" # $comment"
+                fi
+            elif [ -n "${default_inline_comments[$key]+_}" ]; then
+                comment_out=" # ${default_inline_comments[$key]}"
+            fi
+        fi
+
+        escaped="$(_config_escape_value "$value")"
+        if [[ -n "$comment_out" ]]; then
+            printf '%s="%s"%s\n' "$key" "$escaped" "$comment_out" >> "$tmp_file"
+        else
+            printf '%s="%s"\n' "$key" "$escaped" >> "$tmp_file"
+        fi
+    done
+
+    if declare -F _env_replace_file >/dev/null 2>&1; then
+        _env_replace_file "$access" "$owner" "$env_file" "$tmp_file" || return 1
+    else
+        mv "$tmp_file" "$env_file" || return 1
+    fi
+    if [[ -n "$current_mode" ]]; then
+        if declare -F _env_run >/dev/null 2>&1; then
+            _env_run "$access" "$owner" chmod "$current_mode" "$env_file" 2>/dev/null || true
+        else
+            chmod "$current_mode" "$env_file" 2>/dev/null || true
+        fi
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------
 # persist_derived_config()
 # Persist derived defaults to a config file when enabled.
 # Consumes: env: INM_SELF_ENV_FILE, INM_DEFAULT_SELF_ENV_FILE, INM_PERM_CLI_ENV_MODE; globals: NAMED_ARGS.
@@ -171,6 +331,10 @@ persist_derived_config() {
     fi
     if ! grep -q "^INM_SELF_CLI_COMPAT_MODE=" "$INM_SELF_ENV_FILE"; then
         echo "INM_SELF_CLI_COMPAT_MODE=\"ultron\"" >> "$INM_SELF_ENV_FILE"
+    fi
+
+    if declare -F config_sort_cli_env >/dev/null 2>&1; then
+        config_sort_cli_env "$INM_SELF_ENV_FILE" true
     fi
 
     local cli_env_mode="${default_settings[INM_PERM_CLI_ENV_MODE]:-${INM_PERM_CLI_ENV_MODE:-600}}"
@@ -424,6 +588,10 @@ create_own_config() {
     log ok "$INM_SELF_ENV_FILE has been created and configured."
     INM_CONFIG_CREATED_THIS_RUN=true
 
+    if declare -F config_sort_cli_env >/dev/null 2>&1; then
+        config_sort_cli_env "$INM_SELF_ENV_FILE" true
+    fi
+
     load_env_file_raw "$INM_SELF_ENV_FILE"
     warn_cli_config_owner_mismatch "$INM_SELF_ENV_FILE"
 
@@ -565,6 +733,10 @@ spawn_cli_config() {
         escaped="$(_config_escape_value "${extra_values[$key]}")"
         printf '%s="%s"\n' "$key" "$escaped" >> "$INM_SELF_ENV_FILE"
     done
+
+    if declare -F config_sort_cli_env >/dev/null 2>&1; then
+        config_sort_cli_env "$INM_SELF_ENV_FILE" true
+    fi
 
     for key in "${!saved_defaults[@]}"; do
         default_settings["$key"]="${saved_defaults[$key]}"

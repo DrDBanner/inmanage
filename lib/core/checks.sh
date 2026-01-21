@@ -37,7 +37,23 @@ check_missing_settings() {
     fi
 
     updated=0
+    local ordered_keys=()
+    if declare -p default_settings_order >/dev/null 2>&1 && [ "${#default_settings_order[@]}" -gt 0 ]; then
+        ordered_keys=("${default_settings_order[@]}")
+    fi
+    local remaining_keys=()
     for key in "${!default_settings[@]}"; do
+        if [[ " ${ordered_keys[*]} " != *" ${key} "* ]]; then
+            remaining_keys+=("$key")
+        fi
+    done
+    if [ "${#remaining_keys[@]}" -gt 0 ]; then
+        local sorted_remaining=()
+        mapfile -t sorted_remaining < <(printf '%s\n' "${remaining_keys[@]}" | sort)
+        ordered_keys+=("${sorted_remaining[@]}")
+    fi
+
+    for key in "${ordered_keys[@]}"; do
         if ! grep -q "^$key=" "$INM_SELF_ENV_FILE"; then
             if [[ "$key" == "INM_SELF_CLI_COMPAT_MODE" ]]; then
                 local allow_compat=false

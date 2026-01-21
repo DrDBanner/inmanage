@@ -247,6 +247,9 @@ self_migrations_run_if_needed() {
     load_env_file_raw "$config_file" || true
     log debug "[SELF_MIG] CLI config migration completed (state: ${current_value:-<unknown>})."
     if [[ "$ran_migrations" == true ]]; then
+        if declare -F config_sort_cli_env >/dev/null 2>&1; then
+            config_sort_cli_env "$config_file" false
+        fi
         self_migrations_prompt_legacy_cleanup
     fi
 
