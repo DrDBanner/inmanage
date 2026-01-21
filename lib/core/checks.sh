@@ -36,6 +36,25 @@ check_missing_settings() {
         exit 1
     fi
 
+    if declare -F fs_prompt_fix_owner >/dev/null 2>&1; then
+        local expected_owner=""
+        if declare -F config_expected_owner >/dev/null 2>&1; then
+            expected_owner="$(config_expected_owner "$INM_SELF_ENV_FILE")"
+        fi
+        if [[ -n "$expected_owner" ]]; then
+            fs_prompt_fix_owner "$expected_owner" "CLI config" "CFG_CHOWN" "$INM_SELF_ENV_FILE"
+            if declare -F ops_log_path >/dev/null 2>&1; then
+                local log_file=""
+                log_file="$(ops_log_path 2>/dev/null || true)"
+                if [[ -n "$log_file" ]]; then
+                    local log_dir
+                    log_dir="$(dirname "$log_file")"
+                    fs_prompt_fix_owner "$expected_owner" "History log" "LOG_CHOWN" "$log_dir" "$log_file"
+                fi
+            fi
+        fi
+    fi
+
     updated=0
     local ordered_keys=()
     if declare -p default_settings_order >/dev/null 2>&1 && [ "${#default_settings_order[@]}" -gt 0 ]; then
@@ -113,6 +132,7 @@ check_missing_settings() {
             load_env_file_raw "$INM_SELF_ENV_FILE"
         fi
     fi
+
 }
 
 # ---------------------------------------------------------------------

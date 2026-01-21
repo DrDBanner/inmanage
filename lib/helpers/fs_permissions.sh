@@ -42,6 +42,88 @@ enforce_ownership() {
 }
 
 # ---------------------------------------------------------------------
+# fs_prompt_fix_owner()
+# Prompt to fix ownership when files/dirs are owned by root.
+# Consumes: args: expected_owner, label, prompt_id, paths...; deps: _fs_get_owner/prompt_confirm.
+# Returns: 0 after check.
+# ---------------------------------------------------------------------
+fs_prompt_fix_owner() {
+    local expected_owner="$1"
+    local label="$2"
+    local prompt_id="$3"
+    shift 3 || true
+    local paths=("$@")
+
+    [[ -n "$expected_owner" ]] || return 0
+    [[ -n "$label" ]] || label="Path"
+    [[ -n "$prompt_id" ]] || prompt_id="FS_CHOWN"
+    [[ ${#paths[@]} -gt 0 ]] || return 0
+
+    local guard_id="${prompt_id//[^A-Za-z0-9_]/_}"
+    local guard_var="__FS_PROMPTED_${guard_id}"
+    if [[ -n "${!guard_var:-}" ]]; then
+        return 0
+    fi
+    printf -v "$guard_var" "%s" "1"
+
+    local found_root=false
+    local found_mismatch=false
+    local first_path=""
+    local current owner_user
+    for path in "${paths[@]}"; do
+        [[ -n "$path" ]] || continue
+        [[ -e "$path" ]] || continue
+        [[ -n "$first_path" ]] || first_path="$path"
+        current="$(_fs_get_owner "$path")"
+        [[ -n "$current" ]] || continue
+        if [[ "$current" != "$expected_owner" ]]; then
+            found_mismatch=true
+            owner_user="${current%%:*}"
+            if [[ "$owner_user" == "root" ]]; then
+                found_root=true
+            fi
+        fi
+    done
+
+    if [[ "$found_mismatch" != true ]]; then
+        return 0
+    fi
+    if [[ "$found_root" != true ]]; then
+        log warn "[FS] ${label} owner mismatch; consider: sudo chown ${expected_owner} \"${first_path:-<path>}\""
+        return 0
+    fi
+    if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+        log warn "[FS] ${label} owned by root; consider chown to ${expected_owner}."
+        return 0
+    fi
+    if ! command -v sudo >/dev/null 2>&1; then
+        log warn "[FS] ${label} owned by root; run with sudo to fix ownership."
+        return 0
+    fi
+    if [[ ! -t 0 || ! -t 1 ]]; then
+        log warn "[FS] ${label} owned by root; run with sudo to fix ownership."
+        return 0
+    fi
+    if ! declare -F prompt_confirm >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if prompt_confirm "$prompt_id" "no" \
+        "${label} owned by root. Fix ownership to ${expected_owner}? (yes/no):" \
+        false 60; then
+        local path
+        for path in "${paths[@]}"; do
+            [[ -n "$path" && -e "$path" ]] || continue
+            sudo chown "$expected_owner" "$path" 2>/dev/null || true
+        done
+        log ok "[FS] ${label} ownership updated."
+    else
+        log info "[FS] Skipped ownership fix (run: sudo chown ${expected_owner} \"${first_path:-<path>}\")."
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------
 # enforce_dir_permissions()
 # Apply chmod to directories only (recursively).
 # Consumes: args: mode, paths; tools: find, chmod.
