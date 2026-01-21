@@ -506,6 +506,12 @@ self_update() {
   if git_pull_ff_only "$root"; then
     self_write_version_file "$root" "$root"
     log ok "[SELF] Update completed."
+    if declare -F update_notice_clear >/dev/null 2>&1; then
+      update_notice_clear "cli"
+    fi
+    if declare -F update_notice_mark_checked >/dev/null 2>&1; then
+      update_notice_mark_checked
+    fi
   else
     self_write_version_file "$root" "$root"
     log err "[SELF] git pull failed; resolve manually."

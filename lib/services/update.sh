@@ -224,6 +224,12 @@ run_update() {
     if [ -n "$rollback_dir" ]; then
         app_log_rollback_hint "UPD" "update" "$rollback_dir"
     fi
+    if declare -F update_notice_clear >/dev/null 2>&1; then
+        update_notice_clear "app"
+    fi
+    if declare -F update_notice_mark_checked >/dev/null 2>&1; then
+        update_notice_mark_checked
+    fi
 
     run_hook "post-update" || return 1
 }
