@@ -285,6 +285,22 @@ _env_replace_file() {
 }
 
 # ---------------------------------------------------------------------
+# _env_tmp_file()
+# Create a temp file near the target to keep replacements on one filesystem.
+# Consumes: args: access, owner, target_path; deps: _env_run_shell.
+# Returns: prints temp file path.
+# ---------------------------------------------------------------------
+_env_tmp_file() {
+    local access="$1"
+    local owner="$2"
+    local target_path="$3"
+    local dir
+    dir="$(dirname "$target_path")"
+    local cmd='mktemp "$DIR/.inm_tmp.XXXXXX"'
+    _env_run_shell "$access" "$owner" "$cmd" DIR="$dir"
+}
+
+# ---------------------------------------------------------------------
 # env_user_ini_apply()
 # Write a managed .user.ini into the public webroot.
 # Consumes: args: target_path; env: INM_INSTALLATION_PATH; globals: NAMED_ARGS; deps: _env_access_mode.
@@ -318,7 +334,7 @@ env_user_ini_apply() {
     fi
 
     local tmp_file
-    tmp_file="$(_env_run "$access" "$owner" mktemp)" || {
+    tmp_file="$(_env_tmp_file "$access" "$owner" "$target_path")" || {
         log err "[ENV] Failed to create temp file for $target_path"
         return 1
     }
@@ -448,7 +464,7 @@ env_unset() {
     fi
     if grep -q -E "^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=" "$env_file"; then
         local cmd tmp_file
-        tmp_file="$(_env_run "$access" "$owner" mktemp)" || {
+        tmp_file="$(_env_tmp_file "$access" "$owner" "$env_file")" || {
             log err "[ENV] Failed to create temp file for $env_file"
             return 1
         }
@@ -541,7 +557,7 @@ env_set() {
     if [[ "$target" == "cli" && -f "$env_file" ]] && declare -F _fs_get_mode >/dev/null 2>&1; then
         current_mode="$(_fs_get_mode "$env_file")"
     fi
-    tmp_file="$(_env_run "$access" "$owner" mktemp)" || {
+    tmp_file="$(_env_tmp_file "$access" "$owner" "$env_file")" || {
         log err "[ENV] Failed to create temp file for $env_file"
         return 1
     }

@@ -22,6 +22,7 @@ declare -A default_settings=(
     ["INM_PATH_BASE_DIR"]="$PWD/"
     ["INM_PATH_APP_DIR"]="./invoiceninja"
     ["INM_PATH_APP_ENV_FILE"]="\${INM_PATH_BASE_DIR}\${INM_PATH_APP_DIR}/.env"
+    ["INM_PATH_TMP_DOWNLOAD_DIR"]="./.temp"
     ["INM_RUNTIME_PHP_BIN"]="$(command -v php)"
     ["INM_RUNTIME_ARTISAN_CMD"]="\${INM_RUNTIME_PHP_BIN} \${INM_PATH_BASE_DIR}\${INM_PATH_APP_DIR}/artisan"
     ["INM_EXEC_SHELL_BIN"]="$(command -v bash)"
@@ -79,6 +80,7 @@ default_settings_order=(
     "INM_PATH_BASE_DIR"
     "INM_PATH_APP_DIR"
     "INM_PATH_APP_ENV_FILE"
+    "INM_PATH_TMP_DOWNLOAD_DIR"
     "INM_RUNTIME_PHP_BIN"
     "INM_RUNTIME_ARTISAN_CMD"
     "INM_EXEC_SHELL_BIN"
@@ -201,6 +203,7 @@ declare -A prompt_texts=(
 
 # shellcheck disable=SC2034,SC2190
 declare -A default_inline_comments=(
+    ["INM_PATH_TMP_DOWNLOAD_DIR"]="Temporary download directory for CLI updates."
     ["INM_BACKUP_DIR_PERM_MODE"]="Optional override for backup dir mode (empty=use INM_PERM_DIR_MODE)."
     ["INM_CACHE_GLOBAL_DIR_PERM_MODE"]="Empty = auto (775 if group set, else 750)."
     ["INM_CACHE_GLOBAL_FILE_PERM_MODE"]="Empty = auto (664 if group set, else 640)."

@@ -118,6 +118,9 @@ check_missing_settings() {
     if [ "$updated" -eq 1 ]; then
         log ok "[CMS] Updated $INM_SELF_ENV_FILE with missing settings. Reloading."
         load_env_file_raw "$INM_SELF_ENV_FILE"
+        if declare -F config_sort_cli_env >/dev/null 2>&1; then
+            config_sort_cli_env "$INM_SELF_ENV_FILE" false
+        fi
     else
         log debug "[CMS] Loaded settings from $INM_SELF_ENV_FILE."
     fi

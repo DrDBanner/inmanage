@@ -221,7 +221,9 @@ config_sort_cli_env() {
     fi
 
     local tmp_file
-    if declare -F _env_run >/dev/null 2>&1; then
+    if declare -F _env_tmp_file >/dev/null 2>&1; then
+        tmp_file="$(_env_tmp_file "$access" "$owner" "$env_file")" || return 1
+    elif declare -F _env_run >/dev/null 2>&1; then
         tmp_file="$(_env_run "$access" "$owner" mktemp)" || return 1
     else
         tmp_file="$(mktemp)" || return 1
@@ -539,10 +541,18 @@ create_own_config() {
     fi
 
     local tmp_file
-    tmp_file="$(mktemp)" || {
-        log err "[COC] Error: Could not create temporary config file. Aborting."
-        exit 1
-    }
+    local tmp_template="${target_dir%/}/.inm_cli_env.XXXXXX"
+    if [[ "$use_sudo" == true ]]; then
+        tmp_file="$(sudo mktemp "$tmp_template")" || {
+            log err "[COC] Error: Could not create temporary config file. Aborting."
+            exit 1
+        }
+    else
+        tmp_file="$(mktemp "$tmp_template")" || {
+            log err "[COC] Error: Could not create temporary config file. Aborting."
+            exit 1
+        }
+    fi
 
     write_config_defaults "$tmp_file"
     for key in "${!named_args_canon[@]}"; do
