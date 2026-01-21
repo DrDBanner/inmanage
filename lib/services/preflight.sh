@@ -169,15 +169,39 @@ run_preflight() {
     esac
     # Heartbeat runs can narrow/expand checks using stored include/exclude lists.
     if [[ "$notify_heartbeat" == true ]]; then
-        if [[ -n "${INM_NOTIFY_HEARTBEAT_INCLUDE:-}" && -z "$checks_filter" ]]; then
-            checks_filter="${INM_NOTIFY_HEARTBEAT_INCLUDE}"
+        local hb_include="${INM_NOTIFY_HEARTBEAT_CHECK_INCLUDE:-}"
+        local hb_include_legacy="${INM_NOTIFY_HEARTBEAT_INCLUDE:-}"
+        if [[ -z "$hb_include" && -n "$hb_include_legacy" ]]; then
+            hb_include="$hb_include_legacy"
         fi
-        if [[ -n "${INM_NOTIFY_HEARTBEAT_EXCLUDE:-}" ]]; then
-            if [[ -z "$exclude_filter" ]]; then
-                exclude_filter="${INM_NOTIFY_HEARTBEAT_EXCLUDE}"
+        if [[ -n "$hb_include" && -z "$checks_filter" ]]; then
+            checks_filter="$hb_include"
+        fi
+        local hb_exclude="${INM_NOTIFY_HEARTBEAT_CHECK_EXCLUDE:-}"
+        local hb_exclude_legacy="${INM_NOTIFY_HEARTBEAT_EXCLUDE:-}"
+        if [[ -n "$hb_exclude_legacy" ]]; then
+            if [[ -z "$hb_exclude" ]]; then
+                hb_exclude="$hb_exclude_legacy"
             else
-                exclude_filter="${exclude_filter},${INM_NOTIFY_HEARTBEAT_EXCLUDE}"
+                hb_exclude="${hb_exclude},${hb_exclude_legacy}"
             fi
+        fi
+        if [[ -n "$hb_exclude" ]]; then
+            if [[ -z "$exclude_filter" ]]; then
+                exclude_filter="$hb_exclude"
+            else
+                exclude_filter="${exclude_filter},${hb_exclude}"
+            fi
+        fi
+    fi
+    if [[ -n "${INM_HEALTH_CHECK_INCLUDE:-}" && -z "$checks_filter" ]]; then
+        checks_filter="${INM_HEALTH_CHECK_INCLUDE}"
+    fi
+    if [[ -n "${INM_HEALTH_CHECK_EXCLUDE:-}" ]]; then
+        if [[ -z "$exclude_filter" ]]; then
+            exclude_filter="${INM_HEALTH_CHECK_EXCLUDE}"
+        else
+            exclude_filter="${exclude_filter},${INM_HEALTH_CHECK_EXCLUDE}"
         fi
     fi
     if [ "$fix_permissions" = true ] && [ -z "$checks_filter" ]; then
@@ -206,6 +230,17 @@ run_preflight() {
         log info "[${pf_label}] Valid tags: $preflight_valid_tags"
         $errexit_set && set -e
         return 1
+    fi
+    local -a conflicts=()
+    local tag
+    for tag in "${!PF_ALLOW[@]}"; do
+        if [[ -n "${PF_DENY[$tag]:-}" ]]; then
+            conflicts+=("$tag")
+            unset 'PF_ALLOW[$tag]'
+        fi
+    done
+    if (( ${#conflicts[@]} > 0 )); then
+        log warn "[${pf_label}] Conflicting health check filters (include+exclude): ${conflicts[*]} (exclude wins)"
     fi
 
     # Results collector (drives summary and notifications).

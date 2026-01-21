@@ -366,6 +366,32 @@ preflight_emit_commands() {
     local req_cmds=()
     mapfile -t req_cmds < <(check_commands_list "$mode")
 
+    local -A optional_cmds=()
+    if [[ "$mode" == "preflight" ]]; then
+        optional_cmds=(
+            [curl]=1
+            [git]=1
+            [jq]=1
+            [rsync]=1
+            [tar]=1
+            [zip]=1
+            [unzip]=1
+            [composer]=1
+            [sha256sum]=1
+        )
+    fi
+    local -A optional_hints=(
+        [curl]="Network/health URL checks and update lookups may be skipped."
+        [git]="CLI update checks are skipped."
+        [jq]="GitHub release parsing may be skipped."
+        [rsync]="File copy/preserve operations may fail."
+        [tar]="Backups/restores and app extracts may fail."
+        [zip]="Zip backups/restores may fail."
+        [unzip]="Zip backups/restores may fail."
+        [composer]="Composer-based operations may fail."
+        [sha256sum]="Release checksum validation may be skipped."
+    )
+
     local missing_cmds=()
     mapfile -t missing_cmds < <(check_commands_missing "$mode")
 
@@ -379,14 +405,24 @@ preflight_emit_commands() {
     for cmd in "${req_cmds[@]}"; do
         if [[ "$cmd" == "sha256sum" ]]; then
             if [[ -n "${missing_set[sha256sum/shasum/sha256]:-}" ]]; then
-                cmd_emit ERR "sha256sum/shasum/sha256 missing"
+                cmd_emit WARN "sha256sum/shasum/sha256 missing. ${optional_hints[sha256sum]}"
             else
                 cmd_emit OK "sha256sum/shasum/sha256"
             fi
             continue
         fi
         if [[ -n "${missing_set[$cmd]:-}" ]]; then
-            cmd_emit ERR "${cmd} missing"
+            local status="ERR"
+            local hint=""
+            if [[ -n "${optional_cmds[$cmd]:-}" ]]; then
+                status="WARN"
+                hint="${optional_hints[$cmd]}"
+            fi
+            if [[ -n "$hint" ]]; then
+                cmd_emit "$status" "${cmd} missing. ${hint}"
+            else
+                cmd_emit "$status" "${cmd} missing"
+            fi
         else
             cmd_emit OK "$cmd"
         fi
@@ -408,6 +444,10 @@ preflight_require_commands() {
     local -a missing_cmds=()
     mapfile -t missing_cmds < <(check_commands_missing "$mode")
     if [ ${#missing_cmds[@]} -gt 0 ]; then
+        if [[ "$mode" == "preflight" ]]; then
+            log warn "[${label}] Missing commands (continuing with partial checks): ${missing_cmds[*]}"
+            return 0
+        fi
         log err "[${label}] Missing required CLI commands: ${missing_cmds[*]}"
         log info "[${label}] Please install missing commands to proceed."
         return 1
@@ -487,11 +527,13 @@ preflight_emit_env_cli() {
                     local hb_detail="${INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL:-auto}"
                     hb_line+=" detail=${hb_detail}"
                 fi
-                if [[ -n "${INM_NOTIFY_HEARTBEAT_INCLUDE:-}" ]]; then
-                    hb_line+=" include=${INM_NOTIFY_HEARTBEAT_INCLUDE}"
+                local hb_include="${INM_NOTIFY_HEARTBEAT_CHECK_INCLUDE:-${INM_NOTIFY_HEARTBEAT_INCLUDE:-}}"
+                local hb_exclude="${INM_NOTIFY_HEARTBEAT_CHECK_EXCLUDE:-${INM_NOTIFY_HEARTBEAT_EXCLUDE:-}}"
+                if [[ -n "$hb_include" ]]; then
+                    hb_line+=" include=${hb_include}"
                 fi
-                if [[ -n "${INM_NOTIFY_HEARTBEAT_EXCLUDE:-}" ]]; then
-                    hb_line+=" exclude=${INM_NOTIFY_HEARTBEAT_EXCLUDE}"
+                if [[ -n "$hb_exclude" ]]; then
+                    hb_line+=" exclude=${hb_exclude}"
                 fi
                 env_emit INFO "$hb_line"
             else
@@ -576,6 +618,12 @@ preflight_emit_filesystem() {
         fi
     }
 
+    local du_available=true
+    if ! command -v du >/dev/null 2>&1; then
+        du_available=false
+        fs_emit INFO "Size checks skipped (du not available)"
+    fi
+
     if [ -n "${INM_BASE_DIRECTORY:-}" ] && df -h "$INM_BASE_DIRECTORY" >/dev/null 2>&1; then
         local diskline=""
         local df_out="" used="" avail="" mount=""
@@ -617,7 +665,7 @@ preflight_emit_filesystem() {
         fi
         local sz=""
         local base_dir="${INM_BASE_DIRECTORY%/}"
-        if [ -d "$dir" ]; then
+        if [ -d "$dir" ] && [[ "$du_available" == true ]]; then
             local du_timeout du_rc=0
             du_timeout="$(preflight_fs_du_timeout "$dir")"
             sz="$(fs_path_size_timeout "$dir" "$du_timeout")"
@@ -626,7 +674,7 @@ preflight_emit_filesystem() {
                 log debug "[FS] Size check timed out for $dir; skipping size."
             fi
         fi
-        if [[ -z "$sz" && -n "$base_dir" && "${dir%/}" == "$base_dir" ]]; then
+        if [[ "$du_available" == true && -z "$sz" && -n "$base_dir" && "${dir%/}" == "$base_dir" ]]; then
             sz="$(fs_path_size "$dir")"
         fi
         local check_user="${enforced_user:-}"
@@ -750,6 +798,11 @@ preflight_emit_network() {
         fi
     }
 
+    if ! command -v curl >/dev/null 2>&1; then
+        net_emit INFO "Network checks skipped (curl missing)"
+        return 0
+    fi
+
     if [ "$fast" != true ] && [ "$skip_github" != true ]; then
         local gh_ok=false
         http_head "https://github.com" gh_ok ""
@@ -835,6 +888,10 @@ preflight_emit_mail() {
             mail_emit INFO "Mail: ${smtp_mailer} currently active (SMTP check skipped)"
         elif [ -n "$smtp_host" ]; then
             smtp_port="${smtp_port:-587}"
+            if ! command -v php >/dev/null 2>&1; then
+                mail_emit INFO "SMTP check skipped (php missing)"
+                return 0
+            fi
             local smtp_out smtp_detail
             if [ "${DEBUG:-false}" = true ]; then
                 # shellcheck disable=SC2016

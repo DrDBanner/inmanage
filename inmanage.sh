@@ -490,6 +490,10 @@ if [[ "$CMD_CONTEXT" == "self" ]]; then
     fi
 elif [[ "${LEGACY_CMD:-}" == "version" ]]; then
     cmd_check_mode="self"
+elif [[ "$CMD_CONTEXT" == "core" && ( "$CMD_ACTION" == "health" || "$CMD_ACTION" == "info" ) ]]; then
+    cmd_check_mode="preflight"
+elif [[ "${LEGACY_CMD:-}" == "health" || "${LEGACY_CMD:-}" == "info" ]]; then
+    cmd_check_mode="preflight"
 fi
 check_commands "$cmd_check_mode"
 check_envs "$@"

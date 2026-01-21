@@ -322,6 +322,14 @@ check_commands() {
     done
 
     if [ ${#missing_commands[@]} -ne 0 ]; then
+        if [[ "$mode" == "preflight" ]]; then
+            log warn "[CC] Preflight: missing commands (checks will be partial):"
+            for missing in "${missing_commands[@]}"; do
+                log warn "[CC]  - $missing"
+            done
+            log note "[CC] Install missing commands for full health coverage."
+            return 0
+        fi
         log err "[CC] Dependency Checks: The following commands are not available:"
         for missing in "${missing_commands[@]}"; do
             log err "[CC]  - $missing"

@@ -24,15 +24,17 @@ web_emit_preflight() {
     local apache_running=false
     local nginx_running=false
     local apache_bin=""
-    if pgrep -x apache2 >/dev/null 2>&1 || pgrep -x apache24 >/dev/null 2>&1 || pgrep -x httpd >/dev/null 2>&1 || pgrep -x apache >/dev/null 2>&1; then
-        apache_running=true
-    elif pgrep -f 'apache24|apache2|httpd' >/dev/null 2>&1; then
-        apache_running=true
-    fi
-    if pgrep -x nginx >/dev/null 2>&1; then
-        nginx_running=true
-    elif pgrep -f 'nginx' >/dev/null 2>&1; then
-        nginx_running=true
+    if command -v pgrep >/dev/null 2>&1; then
+        if pgrep -x apache2 >/dev/null 2>&1 || pgrep -x apache24 >/dev/null 2>&1 || pgrep -x httpd >/dev/null 2>&1 || pgrep -x apache >/dev/null 2>&1; then
+            apache_running=true
+        elif pgrep -f 'apache24|apache2|httpd' >/dev/null 2>&1; then
+            apache_running=true
+        fi
+        if pgrep -x nginx >/dev/null 2>&1; then
+            nginx_running=true
+        elif pgrep -f 'nginx' >/dev/null 2>&1; then
+            nginx_running=true
+        fi
     fi
     if [[ "$apache_running" != true && "$nginx_running" != true ]] && command -v service >/dev/null 2>&1; then
         if service -e 2>/dev/null | grep -q '/apache24$'; then
@@ -115,6 +117,10 @@ webphp_emit_preflight() {
 
     if [ -z "$url" ]; then
         ${add_fn:-log info} INFO "WEBPHP" "APP_URL not set; skipping web probe"
+        return 0
+    fi
+    if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+        ${add_fn:-log info} INFO "WEBPHP" "Web probe skipped (curl/wget missing)"
         return 0
     fi
 

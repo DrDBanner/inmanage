@@ -139,12 +139,28 @@ app_emit_preflight() {
     fi
 
     if [ "$fast" != true ] && [ "$skip_github" != true ]; then
+        local have_curl=false
+        local have_wget=false
+        command -v curl >/dev/null 2>&1 && have_curl=true
+        command -v wget >/dev/null 2>&1 && have_wget=true
+        if [[ "$have_curl" != true && "$have_wget" != true ]]; then
+            app_emit INFO "Update check skipped (curl/wget missing)"
+            return 0
+        fi
         if [[ "$update_due" != true ]]; then
             app_emit INFO "Update check deferred (last check <24h; use --force to refresh)"
             return 0
         fi
         if declare -F update_notice_mark_checked >/dev/null 2>&1; then
             update_notice_mark_checked
+        fi
+        if [[ "$have_curl" == true ]] && declare -F http_head >/dev/null 2>&1; then
+            local gh_ok=false
+            http_head "https://api.github.com" gh_ok ""
+            if [[ "$gh_ok" != true ]]; then
+                app_emit INFO "Update check skipped (GitHub not reachable)"
+                return 0
+            fi
         fi
         local app_installed_version=""
         app_installed_version="$(get_installed_version 2>/dev/null || true)"
