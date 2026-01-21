@@ -1253,6 +1253,14 @@ cron_emit_preflight() {
     local enforced_user="${2:-${INM_EXEC_USER:-}}"
     local current_user="${3:-$(id -un 2>/dev/null || true)}"
     local invoked_user="${4:-${INM_INVOKED_BY:-$current_user}}"
+    local cli_config_ready=false
+    local app_env_ready=false
+    if [[ -n "${INM_SELF_ENV_FILE:-}" && -f "${INM_SELF_ENV_FILE}" ]]; then
+        cli_config_ready=true
+    fi
+    if [[ -n "${INM_PATH_APP_ENV_FILE:-}" && -f "${INM_PATH_APP_ENV_FILE}" ]]; then
+        app_env_ready=true
+    fi
     if [[ -z "${INM_SELF_INSTANCE_ID:-}" ]]; then
         env_resolve_instance_id "${INM_PATH_BASE_DIR:-}" "${INM_PATH_APP_ENV_FILE:-}" >/dev/null 2>&1 || true
     fi
@@ -1739,7 +1747,11 @@ cron_emit_preflight() {
         cron_emit WARN "artisan schedule: jobs for another instance (${#artisan_unknown[@]}): $(cron_join_entries "${artisan_unknown[@]}")"
         unknown_hint_needed=true
     else
-        cron_emit WARN "artisan schedule: no jobs detected"
+        if [[ "$cli_config_ready" == true && "$app_env_ready" == true ]]; then
+            cron_emit ERR "artisan schedule: no jobs detected"
+        else
+            cron_emit WARN "artisan schedule: no jobs detected"
+        fi
     fi
 
     if (( ${#backup_entries[@]} > 0 )); then
