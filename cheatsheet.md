@@ -100,8 +100,8 @@ inm core cron uninstall
 ```bash
 inm env get app APP_URL
 inm env set app APP_URL="https://example.test"
-inm env get cli INM_BASE_DIRECTORY
-inm env set cli INM_NOTIFY_TARGETS="email"
+inm env get cli INM_PATH_BASE_DIR
+inm env set cli INM_NOTIFY_TARGETS_LIST="email"
 ```
 
 ## Cache / Versions

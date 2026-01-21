@@ -3,14 +3,14 @@
 # ---------------------------------------------------------------------
 # enforce_ownership()
 # Apply ownership recursively to existing paths.
-# Consumes: args: paths; env: INM_ENFORCED_USER/INM_ENFORCED_GROUP; tools: chown, realpath.
+# Consumes: args: paths; env: INM_EXEC_USER/INM_EXEC_GROUP; tools: chown, realpath.
 # Computes: validates path safety and applies chown -R.
 # Returns: 0 always; logs warnings on failures.
 # ---------------------------------------------------------------------
 enforce_ownership() {
     local paths=("$@")
-    local owner="${INM_ENFORCED_USER:-${ENFORCED_USER:-}}"
-    local group="${INM_ENFORCED_GROUP:-${ENFORCED_GROUP:-}}"
+    local owner="${INM_EXEC_USER:-${ENFORCED_USER:-}}"
+    local group="${INM_EXEC_GROUP:-${ENFORCED_GROUP:-}}"
     if [[ -z "$owner" ]]; then
         log debug "[EU] No enforced user configured; skipping chown."
         return 0
@@ -387,39 +387,39 @@ fs_emit_permissions_preflight() {
         return 0
     fi
 
-    local expected_group="${INM_ENFORCED_GROUP:-}"
+    local expected_group="${INM_EXEC_GROUP:-}"
     if [ -z "$expected_group" ]; then
         expected_group="$(id -gn "$enforced_user" 2>/dev/null || true)"
         [[ -z "$expected_group" ]] && expected_group="$enforced_user"
     fi
     local expected_owner="${enforced_user}:${expected_group}"
-    local dir_mode="${INM_DIR_MODE:-2750}"
-    local backup_dir_mode="${INM_BACKUP_DIR_MODE:-}"
-    local file_mode="${INM_FILE_MODE:-640}"
-    local env_mode="${INM_ENV_MODE:-600}"
-    local cli_env_mode="${INM_CLI_ENV_MODE:-600}"
+    local dir_mode="${INM_PERM_DIR_MODE:-2750}"
+    local backup_dir_mode="${INM_BACKUP_DIR_PERM_MODE:-}"
+    local file_mode="${INM_PERM_FILE_MODE:-640}"
+    local env_mode="${INM_PERM_APP_ENV_MODE:-600}"
+    local cli_env_mode="${INM_PERM_CLI_ENV_MODE:-600}"
     if [[ -z "$backup_dir_mode" ]]; then
         backup_dir_mode="$dir_mode"
     fi
     local perm_paths=()
     local cli_env_path=""
     local backup_dir_path=""
-    if [ -n "${INM_BASE_DIRECTORY:-}" ]; then
-        perm_paths+=("${INM_BASE_DIRECTORY%/}")
+    if [ -n "${INM_PATH_BASE_DIR:-}" ]; then
+        perm_paths+=("${INM_PATH_BASE_DIR%/}")
     fi
-    if [ -n "${INM_BACKUP_DIRECTORY:-}" ]; then
-        backup_dir_path="$(expand_path_vars "$INM_BACKUP_DIRECTORY")"
+    if [ -n "${INM_BACKUP_DIR:-}" ]; then
+        backup_dir_path="$(expand_path_vars "$INM_BACKUP_DIR")"
         perm_paths+=("$backup_dir_path")
     fi
-    if [ -n "${INM_CACHE_LOCAL_DIRECTORY:-}" ]; then
-        perm_paths+=("$(expand_path_vars "$INM_CACHE_LOCAL_DIRECTORY")")
+    if [ -n "${INM_CACHE_LOCAL_DIR:-}" ]; then
+        perm_paths+=("$(expand_path_vars "$INM_CACHE_LOCAL_DIR")")
     fi
-    if [ -n "${INM_CACHE_GLOBAL_DIRECTORY:-}" ]; then
-        perm_paths+=("$(expand_path_vars "$INM_CACHE_GLOBAL_DIRECTORY")")
+    if [ -n "${INM_CACHE_GLOBAL_DIR:-}" ]; then
+        perm_paths+=("$(expand_path_vars "$INM_CACHE_GLOBAL_DIR")")
     fi
-    if [ -n "${INM_HISTORY_LOG_FILE:-}" ]; then
+    if [ -n "${INM_LOG_OPS_FILE:-}" ]; then
         local hist_path
-        hist_path="$(expand_path_vars "$INM_HISTORY_LOG_FILE")"
+        hist_path="$(expand_path_vars "$INM_LOG_OPS_FILE")"
         if [ -n "$hist_path" ]; then
             perm_paths+=("$(dirname "$hist_path")")
             perm_paths+=("$hist_path")

@@ -236,6 +236,14 @@ else
     exit 1
 fi
 
+if [ -f "${LIB_DIR}/services/self_migrations.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/services/self_migrations.sh"
+else
+    echo "[ERR] Missing self migrations service module: ${LIB_DIR}/services/self_migrations.sh" >&2
+    exit 1
+fi
+
 if [ -f "${LIB_DIR}/services/install.sh" ]; then
     # shellcheck source=/dev/null
     source "${LIB_DIR}/services/install.sh"
@@ -535,7 +543,7 @@ fi
 log debug "Context: ${CMD_CONTEXT:-<none>} Action: ${CMD_ACTION:-<none>} Legacy: ${LEGACY_CMD:-<none>} Force: $force_update | Debug: $DEBUG | Dry-Run (not implemented): $DRY_RUN"
 
 startup_update_notice() {
-    local enabled="${INM_AUTO_UPDATE_CHECK:-false}"
+    local enabled="${INM_UPDATE_CHECK_ENABLE:-false}"
     if [[ -n "${NAMED_ARGS[check_updates]:-}" || -n "${NAMED_ARGS[check-updates]:-}" ]]; then
         enabled="${NAMED_ARGS[check_updates]:-${NAMED_ARGS[check-updates]:-}}"
     fi

@@ -86,14 +86,14 @@ preflight_compute_context() {
 # ---------------------------------------------------------------------
 # preflight_hydrate_app_url()
 # Populate APP_URL from the app .env if missing.
-# Consumes: env: APP_URL, INM_ENV_FILE.
+# Consumes: env: APP_URL, INM_PATH_APP_ENV_FILE.
 # Computes: APP_URL if empty and .env contains it.
 # Returns: 0 after attempting hydration.
 # ---------------------------------------------------------------------
 preflight_hydrate_app_url() {
-    if [ -z "${APP_URL:-}" ] && [ -f "${INM_ENV_FILE:-}" ]; then
+    if [ -z "${APP_URL:-}" ] && [ -f "${INM_PATH_APP_ENV_FILE:-}" ]; then
         local app_url
-        app_url=$(grep -E '^APP_URL=' "$INM_ENV_FILE" 2>/dev/null | head -n1 | sed -E 's/^APP_URL=//' | tr -d '"'\'' ')
+        app_url=$(grep -E '^APP_URL=' "$INM_PATH_APP_ENV_FILE" 2>/dev/null | head -n1 | sed -E 's/^APP_URL=//' | tr -d '"'\'' ')
         if [ -n "$app_url" ]; then
             APP_URL="$app_url"
         fi
@@ -485,50 +485,50 @@ preflight_emit_env_cli() {
     }
 
     if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_SELF_ENV_FILE" ]; then
-        if [[ -z "${INM_INSTANCE_ID:-}" ]]; then
-            env_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}" >/dev/null 2>&1 || true
+        if [[ -z "${INM_SELF_INSTANCE_ID:-}" ]]; then
+            env_resolve_instance_id "${INM_PATH_BASE_DIR:-}" "${INM_PATH_APP_ENV_FILE:-}" >/dev/null 2>&1 || true
         fi
-        local cli_keys=(INM_INSTANCE_ID INM_ENFORCED_USER INM_BASE_DIRECTORY INM_INSTALLATION_DIRECTORY INM_BACKUP_DIRECTORY INM_CACHE_GLOBAL_DIRECTORY INM_CACHE_LOCAL_DIRECTORY INM_HISTORY_LOG_FILE INM_HISTORY_LOG_MAX_SIZE INM_HISTORY_LOG_ROTATE)
+        local cli_keys=(INM_SELF_INSTANCE_ID INM_EXEC_USER INM_PATH_BASE_DIR INM_PATH_APP_DIR INM_BACKUP_DIR INM_CACHE_GLOBAL_DIR INM_CACHE_LOCAL_DIR INM_LOG_OPS_FILE INM_LOG_OPS_MAX_SIZE INM_LOG_OPS_ROTATE_COUNT)
         local k
         for k in "${cli_keys[@]}"; do
             local v="${!k}"
             env_emit INFO "${k}=${v:-<unset>}"
         done
-        local notify_enabled_raw="${INM_NOTIFY_ENABLED:-false}"
+        local notify_enabled_raw="${INM_NOTIFY_ENABLE:-false}"
         local notify_enabled=false
         args_is_true "$notify_enabled_raw" && notify_enabled=true
-        local notify_targets="${INM_NOTIFY_TARGETS:-<unset>}"
+        local notify_targets="${INM_NOTIFY_TARGETS_LIST:-<unset>}"
         local notify_level="${INM_NOTIFY_LEVEL:-ERR}"
-        local notify_noninteractive="${INM_NOTIFY_NONINTERACTIVE_ONLY:-true}"
+        local notify_noninteractive="${INM_NOTIFY_NONINTERACTIVE_ONLY_ENABLE:-true}"
         env_emit INFO "NOTIFY: enabled=${notify_enabled_raw} targets=${notify_targets} level=${notify_level} noninteractive=${notify_noninteractive}"
 
         if [[ "$notify_enabled" == true ]]; then
             local email_to_set="false"
             local email_from_set="false"
             local webhook_set="false"
-            [[ -n "${INM_NOTIFY_EMAIL_TO:-}" ]] && email_to_set="true"
-            [[ -n "${INM_NOTIFY_EMAIL_FROM:-}" || -n "${INM_NOTIFY_EMAIL_FROM_NAME:-}" ]] && email_from_set="true"
+            [[ -n "${INM_NOTIFY_EMAIL_TO_LIST:-}" ]] && email_to_set="true"
+            [[ -n "${INM_NOTIFY_EMAIL_FROM_ADDRESS:-}" || -n "${INM_NOTIFY_EMAIL_FROM_NAME:-}" ]] && email_from_set="true"
             [[ -n "${INM_NOTIFY_WEBHOOK_URL:-}" ]] && webhook_set="true"
             if [[ "$email_to_set" == "true" || "$email_from_set" == "true" || "$webhook_set" == "true" ]]; then
                 env_emit INFO "NOTIFY_CONTACTS: email_to=${email_to_set} email_from=${email_from_set} webhook=${webhook_set}"
             fi
 
-            local hb_enabled_raw="${INM_NOTIFY_HEARTBEAT_ENABLED:-false}"
+            local hb_enabled_raw="${INM_NOTIFY_HEARTBEAT_ENABLE:-false}"
             local hb_enabled=false
             args_is_true "$hb_enabled_raw" && hb_enabled=true
             if [[ "$hb_enabled" == true ]]; then
                 local hb_time="${INM_NOTIFY_HEARTBEAT_TIME:-06:00}"
                 local hb_level="${INM_NOTIFY_HEARTBEAT_LEVEL:-ERR}"
-                local hb_format="${INM_NOTIFY_HEARTBEAT_FORMAT:-}"
+                local hb_format="${INM_NOTIFY_HEARTBEAT_FORMAT_MODE:-}"
                 local hb_line="HEARTBEAT: enabled=true time=${hb_time} level=${hb_level}"
                 if [[ -n "$hb_format" ]]; then
                     hb_line+=" format=${hb_format}"
                 else
-                    local hb_detail="${INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL:-auto}"
+                    local hb_detail="${INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL_MODE:-auto}"
                     hb_line+=" detail=${hb_detail}"
                 fi
-                local hb_include="${INM_NOTIFY_HEARTBEAT_CHECK_INCLUDE:-${INM_NOTIFY_HEARTBEAT_INCLUDE:-}}"
-                local hb_exclude="${INM_NOTIFY_HEARTBEAT_CHECK_EXCLUDE:-${INM_NOTIFY_HEARTBEAT_EXCLUDE:-}}"
+                local hb_include="${INM_NOTIFY_HEARTBEAT_CHECK_INCLUDE:-${INM_NOTIFY_HEARTBEAT_CHECK_INCLUDE:-}}"
+                local hb_exclude="${INM_NOTIFY_HEARTBEAT_CHECK_EXCLUDE:-${INM_NOTIFY_HEARTBEAT_CHECK_EXCLUDE:-}}"
                 if [[ -n "$hb_include" ]]; then
                     hb_line+=" include=${hb_include}"
                 fi
@@ -548,7 +548,7 @@ preflight_emit_env_cli() {
 # ---------------------------------------------------------------------
 # preflight_emit_env_app()
 # Emit app env summary for preflight output.
-# Consumes: args: add_fn; env: INM_ENV_FILE; deps: read_env_value.
+# Consumes: args: add_fn; env: INM_PATH_APP_ENV_FILE; deps: read_env_value.
 # Computes: app env key summary.
 # Returns: 0 after emitting.
 # ---------------------------------------------------------------------
@@ -574,16 +574,16 @@ preflight_emit_env_app() {
         fi
     }
 
-    if [ -n "${INM_ENV_FILE:-}" ] && [ -f "$INM_ENV_FILE" ]; then
+    if [ -n "${INM_PATH_APP_ENV_FILE:-}" ] && [ -f "$INM_PATH_APP_ENV_FILE" ]; then
         local app_keys=(APP_NAME APP_URL PDF_GENERATOR APP_DEBUG)
         local k
         for k in "${app_keys[@]}"; do
             local v
-            v=$(read_env_value "$INM_ENV_FILE" "$k")
+            v=$(read_env_value "$INM_PATH_APP_ENV_FILE" "$k")
             env_emit INFO "${k}=${v:-<unset>}"
         done
     else
-        env_emit WARN "Not installed (yet) – app .env missing (${INM_ENV_FILE:-unset})"
+        env_emit WARN "Not installed (yet) – app .env missing (${INM_PATH_APP_ENV_FILE:-unset})"
     fi
 }
 
@@ -624,13 +624,13 @@ preflight_emit_filesystem() {
         fs_emit INFO "Size checks skipped (du not available)"
     fi
 
-    if [ -n "${INM_BASE_DIRECTORY:-}" ] && df -h "$INM_BASE_DIRECTORY" >/dev/null 2>&1; then
+    if [ -n "${INM_PATH_BASE_DIR:-}" ] && df -h "$INM_PATH_BASE_DIR" >/dev/null 2>&1; then
         local diskline=""
         local df_out="" used="" avail="" mount=""
-        df_out="$(df -hP "$INM_BASE_DIRECTORY" 2>/dev/null | awk 'NR==2{print $3" "$4" "$6}')" || true
+        df_out="$(df -hP "$INM_PATH_BASE_DIR" 2>/dev/null | awk 'NR==2{print $3" "$4" "$6}')" || true
         read -r used avail mount <<<"$df_out"
         if [[ "$used" =~ ^[0-9]+$ && "$avail" =~ ^[0-9]+$ ]]; then
-            df_out="$(df -h "$INM_BASE_DIRECTORY" 2>/dev/null | awk 'NR==2{print $3" "$4" "$6}')" || true
+            df_out="$(df -h "$INM_PATH_BASE_DIR" 2>/dev/null | awk 'NR==2{print $3" "$4" "$6}')" || true
             read -r used avail mount <<<"$df_out"
         fi
         if [[ -n "$used" && -n "$avail" && -n "$mount" ]]; then
@@ -642,9 +642,9 @@ preflight_emit_filesystem() {
     local fs_items=()
     if [ "$cli_config_present" = true ]; then
         fs_items=(
-            "$INM_BASE_DIRECTORY|Base dir"
+            "$INM_PATH_BASE_DIR|Base dir"
             "$INM_INSTALLATION_PATH|App dir"
-            "$INM_BACKUP_DIRECTORY|Backup dir"
+            "$INM_BACKUP_DIR|Backup dir"
         )
     else
         fs_emit INFO "Not installed (yet) – base/app/backup checks skipped (CLI config missing)"
@@ -664,7 +664,7 @@ preflight_emit_filesystem() {
             continue
         fi
         local sz=""
-        local base_dir="${INM_BASE_DIRECTORY%/}"
+        local base_dir="${INM_PATH_BASE_DIR%/}"
         if [ -d "$dir" ] && [[ "$du_available" == true ]]; then
             local du_timeout du_rc=0
             du_timeout="$(preflight_fs_du_timeout "$dir")"
@@ -705,21 +705,21 @@ preflight_emit_filesystem() {
 
     local gc_path=""
     local lc_path=""
-    if [ -n "${INM_CACHE_GLOBAL_DIRECTORY:-}" ]; then
+    if [ -n "${INM_CACHE_GLOBAL_DIR:-}" ]; then
         local enforced_cache=""
         enforced_cache="$(resolve_enforced_cache_dir 2>/dev/null || true)"
         if [[ -n "$enforced_cache" ]]; then
             gc_path="$enforced_cache"
         else
-            gc_path="$(expand_path_vars "$INM_CACHE_GLOBAL_DIRECTORY")"
+            gc_path="$(expand_path_vars "$INM_CACHE_GLOBAL_DIR")"
         fi
-        preflight_check_cache_dir "$gc_path" "global" "INM_CACHE_GLOBAL_DIRECTORY" \
+        preflight_check_cache_dir "$gc_path" "global" "INM_CACHE_GLOBAL_DIR" \
             cache_global_state cache_global_detail cache_global_mode cache_global_world_writable
     fi
 
-    if [ -n "${INM_CACHE_LOCAL_DIRECTORY:-}" ]; then
-        lc_path="$(expand_path_vars "$INM_CACHE_LOCAL_DIRECTORY")"
-        preflight_check_cache_dir "$lc_path" "local" "INM_CACHE_LOCAL_DIRECTORY" \
+    if [ -n "${INM_CACHE_LOCAL_DIR:-}" ]; then
+        lc_path="$(expand_path_vars "$INM_CACHE_LOCAL_DIR")"
+        preflight_check_cache_dir "$lc_path" "local" "INM_CACHE_LOCAL_DIR" \
             cache_local_state cache_local_detail cache_local_mode cache_local_world_writable
     fi
 
@@ -850,7 +850,7 @@ preflight_emit_network() {
 # ---------------------------------------------------------------------
 # preflight_emit_mail()
 # Emit SMTP reachability checks for preflight output.
-# Consumes: args: add_fn; env: INM_ENV_FILE/DEBUG; deps: read_env_value.
+# Consumes: args: add_fn; env: INM_PATH_APP_ENV_FILE/DEBUG; deps: read_env_value.
 # Computes: SMTP reachability lines.
 # Returns: 0 after emitting.
 # ---------------------------------------------------------------------
@@ -876,14 +876,14 @@ preflight_emit_mail() {
         fi
     }
 
-    if [ -n "${INM_ENV_FILE:-}" ] && [ -f "$INM_ENV_FILE" ]; then
+    if [ -n "${INM_PATH_APP_ENV_FILE:-}" ] && [ -f "$INM_PATH_APP_ENV_FILE" ]; then
         local smtp_mailer smtp_host smtp_port
-        smtp_mailer=$(read_env_value "$INM_ENV_FILE" "MAIL_MAILER")
+        smtp_mailer=$(read_env_value "$INM_PATH_APP_ENV_FILE" "MAIL_MAILER")
         if [ -z "$smtp_mailer" ]; then
-            smtp_mailer=$(read_env_value "$INM_ENV_FILE" "MAIL_DRIVER")
+            smtp_mailer=$(read_env_value "$INM_PATH_APP_ENV_FILE" "MAIL_DRIVER")
         fi
-        smtp_host=$(read_env_value "$INM_ENV_FILE" "MAIL_HOST")
-        smtp_port=$(read_env_value "$INM_ENV_FILE" "MAIL_PORT")
+        smtp_host=$(read_env_value "$INM_PATH_APP_ENV_FILE" "MAIL_HOST")
+        smtp_port=$(read_env_value "$INM_PATH_APP_ENV_FILE" "MAIL_PORT")
         if [ -n "$smtp_mailer" ] && [ "$smtp_mailer" != "smtp" ]; then
             mail_emit INFO "Mail: ${smtp_mailer} currently active (SMTP check skipped)"
         elif [ -n "$smtp_host" ]; then
@@ -1065,7 +1065,7 @@ preflight_emit_php_ext() {
 # ---------------------------------------------------------------------
 # preflight_fs_du_timeout()
 # Compute a timeout for du size checks based on directory contents.
-# Consumes: args: dir; env: INM_BASE_DIRECTORY, INM_BACKUP_DIRECTORY; tools: find.
+# Consumes: args: dir; env: INM_PATH_BASE_DIR, INM_BACKUP_DIR; tools: find.
 # Computes: timeout in seconds.
 # Returns: prints timeout.
 # ---------------------------------------------------------------------
@@ -1075,7 +1075,7 @@ preflight_fs_du_timeout() {
     local max=120
     local extra=0
     local normalized_dir="${dir%/}"
-    local base_dir="${INM_BASE_DIRECTORY%/}"
+    local base_dir="${INM_PATH_BASE_DIR%/}"
     if [ -n "$base_dir" ] && [ -n "$normalized_dir" ] && [ "$normalized_dir" = "$base_dir" ]; then
         if [ -d "$dir" ]; then
             local count_base
@@ -1085,7 +1085,7 @@ preflight_fs_du_timeout() {
             fi
         fi
     fi
-    if [ -n "${INM_BACKUP_DIRECTORY:-}" ] && [ "$dir" = "$INM_BACKUP_DIRECTORY" ]; then
+    if [ -n "${INM_BACKUP_DIR:-}" ] && [ "$dir" = "$INM_BACKUP_DIR" ]; then
         if [ -d "$dir" ]; then
             local count
             count=$(find "$dir" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')
@@ -1139,7 +1139,7 @@ preflight_check_cache_dir() {
         return 0
     fi
 
-    local check_user="${INM_ENFORCED_USER:-}"
+    local check_user="${INM_EXEC_USER:-}"
     if [ -z "$check_user" ]; then
         check_user="$(id -un 2>/dev/null || true)"
     fi
@@ -1337,7 +1337,7 @@ preflight_print_summary() {
 # ---------------------------------------------------------------------
 # preflight_build_notify_summary()
 # Build a notification summary from preflight results.
-# Consumes: args: format, groups_ref; env: INM_NOTIFY_HEARTBEAT_FORMAT/INM_NOTIFY_HEARTBEAT_LEVEL.
+# Consumes: args: format, groups_ref; env: INM_NOTIFY_HEARTBEAT_FORMAT_MODE/INM_NOTIFY_HEARTBEAT_LEVEL.
 # Computes: summary string for emails/webhooks (compact|full|failed).
 # Returns: prints summary to stdout.
 # ---------------------------------------------------------------------

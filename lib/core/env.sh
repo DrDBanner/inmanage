@@ -131,7 +131,7 @@ setup_environment() {
 
         if [ -f "$self_env_file" ]; then
             local line val
-            line="$(grep -E '^INM_ENFORCED_USER=' "$self_env_file" | tail -n1)"
+            line="$(grep -E '^INM_EXEC_USER=' "$self_env_file" | tail -n1)"
             if [ -n "$line" ]; then
                 val="${line#*=}"
                 val="${val%%#*}"
@@ -329,7 +329,7 @@ trace_can_guard() {
     if [[ "${DEBUG_LEVEL:-0}" -lt 2 ]]; then
         return 1
     fi
-    case "${INM_TRACE_SENSITIVE,,}" in
+    case "${INM_TRACE_SENSITIVE_GUARD_ENABLE,,}" in
         0|false|no|off) return 1 ;;
     esac
     return 0

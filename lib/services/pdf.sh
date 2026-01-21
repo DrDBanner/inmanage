@@ -7,14 +7,14 @@ __SERVICE_PDF_LOADED=1
 # ---------------------------------------------------------------------
 # do_snappdf()
 # Ensure Snappdf Chromium is available when PDF_GENERATOR=snappdf.
-# Consumes: env: PDF_GENERATOR, INM_ENV_FILE, INM_INSTALLATION_PATH, INM_CACHE_*; deps: spinner_run_mode/expand_path_vars.
+# Consumes: env: PDF_GENERATOR, INM_PATH_APP_ENV_FILE, INM_INSTALLATION_PATH, INM_CACHE_*; deps: spinner_run_mode/expand_path_vars.
 # Computes: Chromium download or cache restore.
 # Returns: 0 on success or when skipped, non-zero on failure.
 # ---------------------------------------------------------------------
 do_snappdf() {
     local pdf_gen="${PDF_GENERATOR:-}"
-    if [ -z "$pdf_gen" ] && [ -f "${INM_ENV_FILE:-}" ]; then
-        pdf_gen=$(grep -E '^PDF_GENERATOR=' "$INM_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
+    if [ -z "$pdf_gen" ] && [ -f "${INM_PATH_APP_ENV_FILE:-}" ]; then
+        pdf_gen=$(grep -E '^PDF_GENERATOR=' "$INM_PATH_APP_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
     fi
     if [[ "${pdf_gen,,}" != "snappdf" ]]; then
         local gen_label="${pdf_gen:-unset}"
@@ -39,7 +39,7 @@ do_snappdf() {
 
     resolve_snappdf_cache_dir() {
         local base dir parent
-        base="$(expand_path_vars "${INM_CACHE_GLOBAL_DIRECTORY:-}")"
+        base="$(expand_path_vars "${INM_CACHE_GLOBAL_DIR:-}")"
         if [[ -n "$base" ]]; then
             dir="${base%/}/snappdf"
             parent="$(dirname "$dir")"
@@ -48,7 +48,7 @@ do_snappdf() {
                 [[ -w "$dir" ]] && printf "%s" "$dir" && return 0
             fi
         fi
-        base="$(expand_path_vars "${INM_CACHE_LOCAL_DIRECTORY:-}")"
+        base="$(expand_path_vars "${INM_CACHE_LOCAL_DIR:-}")"
         if [[ -n "$base" ]]; then
             dir="${base%/}/snappdf"
             mkdir -p "$dir" 2>/dev/null || true
@@ -109,7 +109,7 @@ do_snappdf() {
 
     if [[ -z "$existing_bin" && "$skip_download" != true ]]; then
         log debug "[SNAP] Downloading Chromium via snappdf CLI if needed."
-        if spinner_run_mode normal "Downloading Chromium (snappdf)..." "$INM_PHP_EXECUTABLE" "$snappdf_cli" download >/dev/null 2>&1; then
+        if spinner_run_mode normal "Downloading Chromium (snappdf)..." "$INM_RUNTIME_PHP_BIN" "$snappdf_cli" download >/dev/null 2>&1; then
             log ok "[SNAP] Snappdf download finished."
             local cache_dir=""
             local cache_versions=""
@@ -129,7 +129,7 @@ do_snappdf() {
         log warn "[SNAP] vendor/autoload.php missing; cannot verify snappdf."
         return 1
     fi
-    local probe_dir="${INM_CACHE_LOCAL_DIRECTORY:-/tmp}"
+    local probe_dir="${INM_CACHE_LOCAL_DIR:-/tmp}"
     if [[ -n "$probe_dir" ]]; then
         mkdir -p "$probe_dir" 2>/dev/null || true
     fi
@@ -137,12 +137,12 @@ do_snappdf() {
         probe_dir="/tmp"
     fi
     if [[ ! -w "$probe_dir" ]]; then
-        log warn "[SNAP] Probe directory not writable; cannot verify snappdf. Set INM_CACHE_LOCAL_DIRECTORY to a writable path."
+        log warn "[SNAP] Probe directory not writable; cannot verify snappdf. Set INM_CACHE_LOCAL_DIR to a writable path."
         return 1
     fi
 
     local tmp_pdf="${probe_dir%/}/snappdf_probe_$$.pdf"
-    local php_exec="${INM_PHP_EXECUTABLE:-php}"
+    local php_exec="${INM_RUNTIME_PHP_BIN:-php}"
     local probe_file=""
     probe_file="$(mktemp "${probe_dir%/}/snappdf_probe_XXXX.php" 2>/dev/null || true)"
     if [[ -z "$probe_file" ]]; then
@@ -244,7 +244,7 @@ snappdf_warn_missing_libs() {
 # ---------------------------------------------------------------------
 # snappdf_emit_preflight()
 # Run Snappdf preflight probe and emit results (WRITE).
-# Consumes: args: add_fn, fast, skip_snappdf; env: INM_ENV_FILE, INM_INSTALLATION_PATH, INM_CACHE_*; deps: preflight_pick_probe_dir/preflight_write_probe_file/expand_path_vars.
+# Consumes: args: add_fn, fast, skip_snappdf; env: INM_PATH_APP_ENV_FILE, INM_INSTALLATION_PATH, INM_CACHE_*; deps: preflight_pick_probe_dir/preflight_write_probe_file/expand_path_vars.
 # Returns: 0 after emitting results.
 # ---------------------------------------------------------------------
 snappdf_emit_preflight() {
@@ -257,8 +257,8 @@ snappdf_emit_preflight() {
     fi
 
     local pdf_gen="${PDF_GENERATOR:-}"
-    if [ -z "$pdf_gen" ] && [ -f "${INM_ENV_FILE:-}" ]; then
-        pdf_gen=$(grep -E '^PDF_GENERATOR=' "$INM_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
+    if [ -z "$pdf_gen" ] && [ -f "${INM_PATH_APP_ENV_FILE:-}" ]; then
+        pdf_gen=$(grep -E '^PDF_GENERATOR=' "$INM_PATH_APP_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
     fi
     if [[ "${pdf_gen,,}" != "snappdf" ]]; then
         "$add_fn" INFO "SNAPPDF" "PDF_GENERATOR not 'snappdf' (current: ${pdf_gen:-unset}); check skipped"
@@ -308,20 +308,20 @@ snappdf_emit_preflight() {
     local probe_dir=""
     local cache_local=""
     local cache_global=""
-    if [ -n "${INM_CACHE_LOCAL_DIRECTORY:-}" ]; then
-        cache_local="$(expand_path_vars "$INM_CACHE_LOCAL_DIRECTORY")"
+    if [ -n "${INM_CACHE_LOCAL_DIR:-}" ]; then
+        cache_local="$(expand_path_vars "$INM_CACHE_LOCAL_DIR")"
     fi
-    if [ -n "${INM_CACHE_GLOBAL_DIRECTORY:-}" ]; then
-        cache_global="$(expand_path_vars "$INM_CACHE_GLOBAL_DIRECTORY")"
+    if [ -n "${INM_CACHE_GLOBAL_DIR:-}" ]; then
+        cache_global="$(expand_path_vars "$INM_CACHE_GLOBAL_DIR")"
     fi
     preflight_pick_probe_dir probe_dir "$cache_local" "$cache_global" "/tmp"
     if [[ -z "$probe_dir" ]]; then
-        "$add_fn" WARN "SNAPPDF" "Probe dir not writable; set INM_CACHE_LOCAL_DIRECTORY to a writable path."
+        "$add_fn" WARN "SNAPPDF" "Probe dir not writable; set INM_CACHE_LOCAL_DIR to a writable path."
         return 0
     fi
 
     local tmp_pdf="${probe_dir%/}/snappdf_probe.pdf"
-    local php_exec="${INM_PHP_EXECUTABLE:-php}"
+    local php_exec="${INM_RUNTIME_PHP_BIN:-php}"
     local probe_file=""
     if ! preflight_write_probe_file "$probe_dir" "snappdf_probe" ".php" probe_file; then
         "$add_fn" WARN "SNAPPDF" "Failed to create probe file; cannot verify snappdf."

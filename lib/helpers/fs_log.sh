@@ -3,14 +3,14 @@
 # ---------------------------------------------------------------------
 # ops_log_resolve_dir()
 # Resolve base directory for history log storage.
-# Consumes: env: INM_BASE_DIRECTORY/INM_SELF_ENV_FILE.
+# Consumes: env: INM_PATH_BASE_DIR/INM_SELF_ENV_FILE.
 # Computes: base dir path.
 # Returns: dir on stdout; 1 if unavailable.
 # ---------------------------------------------------------------------
 ops_log_resolve_dir() {
     local base=""
-    if [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
-        base="${INM_BASE_DIRECTORY%/}/.inmanage"
+    if [[ -n "${INM_PATH_BASE_DIR:-}" ]]; then
+        base="${INM_PATH_BASE_DIR%/}/.inmanage"
     elif [[ -n "${INM_SELF_ENV_FILE:-}" ]]; then
         base="$(dirname "$INM_SELF_ENV_FILE")"
     fi
@@ -23,16 +23,16 @@ ops_log_resolve_dir() {
 # ---------------------------------------------------------------------
 # ops_log_path()
 # Resolve history log file path.
-# Consumes: env: INM_HISTORY_LOG_FILE/INM_BASE_DIRECTORY/INM_SELF_ENV_FILE; deps: path_expand_no_eval (optional).
+# Consumes: env: INM_LOG_OPS_FILE/INM_PATH_BASE_DIR/INM_SELF_ENV_FILE; deps: path_expand_no_eval (optional).
 # Computes: absolute log file path.
 # Returns: path on stdout; 1 if unavailable.
 # ---------------------------------------------------------------------
 ops_log_path() {
-    local path="${INM_HISTORY_LOG_FILE:-}"
+    local path="${INM_LOG_OPS_FILE:-}"
     if [[ -n "$path" ]]; then
         path="$(path_expand_no_eval "$path")"
-        if [[ "$path" != /* && -n "${INM_BASE_DIRECTORY:-}" ]]; then
-            path="${INM_BASE_DIRECTORY%/}/${path#/}"
+        if [[ "$path" != /* && -n "${INM_PATH_BASE_DIR:-}" ]]; then
+            path="${INM_PATH_BASE_DIR%/}/${path#/}"
         fi
         printf "%s" "$path"
         return 0
@@ -128,7 +128,7 @@ ops_log_write() {
     log_dir="$(dirname "$log_file")"
     local current_user=""
     current_user="$(id -un 2>/dev/null || true)"
-    local enforced_user="${INM_ENFORCED_USER:-}"
+    local enforced_user="${INM_EXEC_USER:-}"
     local prefer_enforced=false
     if [[ -n "$enforced_user" && "$current_user" != "$enforced_user" ]]; then
         if command -v sudo >/dev/null 2>&1 && sudo -n -u "$enforced_user" true 2>/dev/null; then
@@ -185,8 +185,8 @@ ops_log_write() {
         fi
         if [[ -n "$write_user" && "$write_user" != "$(id -un 2>/dev/null || true)" ]] && command -v sudo >/dev/null 2>&1; then
             if sudo -n -u "$write_user" true 2>/dev/null; then
-                local max_raw="${INM_HISTORY_LOG_MAX_SIZE:-}"
-                local rotate="${INM_HISTORY_LOG_ROTATE:-0}"
+                local max_raw="${INM_LOG_OPS_MAX_SIZE:-}"
+                local rotate="${INM_LOG_OPS_ROTATE_COUNT:-0}"
                 sudo -n -u "$write_user" sh -c '
 log_file="$1"
 max_raw="$2"
@@ -268,14 +268,14 @@ ops_log_parse_size() {
 # ---------------------------------------------------------------------
 # ops_log_rotate_if_needed()
 # Rotate log when exceeding max size.
-# Consumes: args: log_file; env: INM_HISTORY_LOG_MAX_SIZE/INM_HISTORY_LOG_ROTATE.
+# Consumes: args: log_file; env: INM_LOG_OPS_MAX_SIZE/INM_LOG_OPS_ROTATE_COUNT.
 # Computes: rotation via renames.
 # Returns: 0 always.
 # ---------------------------------------------------------------------
 ops_log_rotate_if_needed() {
     local log_file="$1"
     [[ -z "$log_file" || ! -f "$log_file" ]] && return 0
-    local max_raw="${INM_HISTORY_LOG_MAX_SIZE:-}"
+    local max_raw="${INM_LOG_OPS_MAX_SIZE:-}"
     [[ -z "$max_raw" || "$max_raw" == "0" ]] && return 0
     local max_bytes=""
     max_bytes="$(ops_log_parse_size "$max_raw" 2>/dev/null || true)"
@@ -286,7 +286,7 @@ ops_log_rotate_if_needed() {
     if [[ "$size" -lt "$max_bytes" ]]; then
         return 0
     fi
-    local rotate="${INM_HISTORY_LOG_ROTATE:-0}"
+    local rotate="${INM_LOG_OPS_ROTATE_COUNT:-0}"
     if [[ -z "$rotate" || "$rotate" == "0" ]]; then
         return 0
     fi
@@ -411,8 +411,8 @@ history_log_append() {
     if declare -F log_redact_emails >/dev/null 2>&1; then
         message="$(log_redact_emails "$message")"
     fi
-    if [[ -n "${INM_INSTANCE_ID:-}" && "$message" != *"[instance=${INM_INSTANCE_ID}]"* ]]; then
-        message="[instance=${INM_INSTANCE_ID}] ${message}"
+    if [[ -n "${INM_SELF_INSTANCE_ID:-}" && "$message" != *"[instance=${INM_SELF_INSTANCE_ID}]"* ]]; then
+        message="[instance=${INM_SELF_INSTANCE_ID}] ${message}"
     fi
     line="${ts} | ${action} | ${level} | ${message}"
     # Avoid sensitive values in history details.
@@ -436,8 +436,8 @@ history_log_append() {
     fi
 
     local write_user=""
-    if [[ -n "${INM_ENFORCED_USER:-}" ]]; then
-        write_user="${INM_ENFORCED_USER}"
+    if [[ -n "${INM_EXEC_USER:-}" ]]; then
+        write_user="${INM_EXEC_USER}"
     elif [[ -f "$log_file" ]]; then
         local og
         og="$(_fs_get_owner "$log_file")"

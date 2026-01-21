@@ -7,7 +7,7 @@ __SERVICE_CLEANUP_LOADED=1
 # ---------------------------------------------------------------------
 # cleanup_old_versions()
 # Remove old update and rollback directories.
-# Consumes: env: INM_INSTALLATION_PATH, INM_INSTALLATION_DIRECTORY, INM_KEEP_BACKUPS; deps: safe_rm_rf.
+# Consumes: env: INM_INSTALLATION_PATH, INM_PATH_APP_DIR, INM_BACKUP_RETENTION; deps: safe_rm_rf.
 # Computes: directory cleanup for old versions.
 # Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
@@ -21,11 +21,11 @@ cleanup_old_versions() {
     local rollback_dirs
     local install_parent
     local install_name
-    local keep="${INM_KEEP_BACKUPS:-2}"
+    local keep="${INM_BACKUP_RETENTION:-2}"
     install_parent="$(dirname "${INM_INSTALLATION_PATH%/}")"
     install_name="$(basename "${INM_INSTALLATION_PATH%/}")"
     if [ -z "$install_name" ] || [ "$install_name" = "." ]; then
-        install_name="$(basename "${INM_INSTALLATION_DIRECTORY}")"
+        install_name="$(basename "${INM_PATH_APP_DIR}")"
     fi
 
     update_dirs=$(find "$install_parent" -maxdepth 1 -type d -name "${install_name}_*" ! -name "${install_name}_rollback_*" 2>/dev/null | sort -r | tail -n +$((keep + 1)))
@@ -54,7 +54,7 @@ cleanup_old_versions() {
 # ---------------------------------------------------------------------
 # cleanup_old_backups()
 # Remove old backup files based on retention rules.
-# Consumes: env: INM_BASE_DIRECTORY, INM_BACKUP_DIRECTORY, INM_KEEP_BACKUPS; globals: NAMED_ARGS.
+# Consumes: env: INM_PATH_BASE_DIR, INM_BACKUP_DIR, INM_BACKUP_RETENTION; globals: NAMED_ARGS.
 # Computes: backup pruning with optional stats.
 # Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
@@ -64,8 +64,8 @@ cleanup_old_backups() {
         return 0
     fi
     log debug "[COB] Cleaning up old backups."
-    local backup_path="$INM_BASE_DIRECTORY$INM_BACKUP_DIRECTORY"
-    local keep="${INM_KEEP_BACKUPS:-2}"
+    local backup_path="$INM_PATH_BASE_DIR$INM_BACKUP_DIR"
+    local keep="${INM_BACKUP_RETENTION:-2}"
     local -A type_items=()
     local -A type_seen=()
     local -A keep_set=()
@@ -135,7 +135,7 @@ cleanup_old_backups() {
     if [ -d "$backup_path" ]; then
         local resolved_backup resolved_base resolved_install
         resolved_backup="$(realpath "$backup_path" 2>/dev/null || echo "$backup_path")"
-        resolved_base="$(realpath "${INM_BASE_DIRECTORY:-}" 2>/dev/null || echo "${INM_BASE_DIRECTORY:-}")"
+        resolved_base="$(realpath "${INM_PATH_BASE_DIR:-}" 2>/dev/null || echo "${INM_PATH_BASE_DIR:-}")"
         resolved_install="$(realpath "${INM_INSTALLATION_PATH:-}" 2>/dev/null || echo "${INM_INSTALLATION_PATH:-}")"
         if [[ -z "$resolved_backup" || "$resolved_backup" == "/" || "$resolved_backup" == "." || "$resolved_backup" == ".." ]]; then
             log err "[COB] Refusing to clean backups with unsafe path: ${backup_path:-<empty>}"
@@ -289,7 +289,7 @@ cleanup() {
         return 0
     fi
 
-    local keep="${INM_KEEP_BACKUPS:-2}"
+    local keep="${INM_BACKUP_RETENTION:-2}"
     local cache_keep="${INM_CACHE_GLOBAL_RETENTION:-3}"
     log debug "[CLEAN] Removing old versions/backups/cache (keep backups/rollbacks: ${keep}, cache: ${cache_keep})"
     cleanup_old_versions

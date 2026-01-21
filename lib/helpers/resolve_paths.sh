@@ -34,14 +34,14 @@ resolve_script_path() {
 # ---------------------------------------------------------------------
 # resolve_cli_command_path()
 # Resolve INmanage CLI command path for cron usage.
-# Consumes: env: SCRIPT_PATH/INM_BASE_DIRECTORY; tools: realpath/command.
+# Consumes: env: SCRIPT_PATH/INM_PATH_BASE_DIR; tools: realpath/command.
 # Computes: executable path.
 # Returns: path on stdout; 1 if not found.
 # ---------------------------------------------------------------------
 resolve_cli_command_path() {
     local candidate
     local resolved=""
-    local base_clean="${INM_BASE_DIRECTORY%/}"
+    local base_clean="${INM_PATH_BASE_DIR%/}"
     local candidates=()
     if [[ -n "${SCRIPT_PATH:-}" ]]; then
         candidates+=("$SCRIPT_PATH")

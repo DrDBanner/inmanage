@@ -142,7 +142,7 @@ self_write_version_file() {
 # ---------------------------------------------------------------------
 # install_self()
 # Install the CLI into system/user/project locations and create symlinks.
-# Consumes: env: NAMED_ARGS, INM_BASE_DIRECTORY, RUN_AS_USER, XDG_DATA_HOME; deps: self_detect_web_user.
+# Consumes: env: NAMED_ARGS, INM_PATH_BASE_DIR, RUN_AS_USER, XDG_DATA_HOME; deps: self_detect_web_user.
 # Computes: install path selection and file copy/symlink actions.
 # Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
@@ -213,7 +213,7 @@ install_self() {
   local symlink_dir="${NAMED_ARGS[symlink_dir]:-${NAMED_ARGS[--symlink-dir]:-}}"
 
   # Derive a base_dir for project mode defaults
-  local base_dir="${INM_BASE_DIRECTORY:-$PWD}"
+  local base_dir="${INM_PATH_BASE_DIR:-$PWD}"
   base_dir="$(ensure_trailing_slash "$base_dir")"
 
   if [[ -z "$install_mode" ]]; then
@@ -338,7 +338,7 @@ install_self() {
 
   case "$install_mode" in
     1)
-      log info "[SELF] Global install selected; set INM_ENFORCED_USER to the user that owns the app files (often www-data/nginx/apache/httpd, or your login user on shared hosting)."
+      log info "[SELF] Global install selected; set INM_EXEC_USER to the user that owns the app files (often www-data/nginx/apache/httpd, or your login user on shared hosting)."
       if [[ ! -d "$link_dir" ]]; then
         if ! mkdir -p "$link_dir" 2>/dev/null; then
           if command -v sudo &>/dev/null && [[ "$can_prompt" == true ]]; then
@@ -561,7 +561,7 @@ self_switch_mode() {
 # ---------------------------------------------------------------------
 # self_uninstall()
 # Remove CLI symlinks and optionally delete install directory.
-# Consumes: env: NAMED_ARGS, XDG_DATA_HOME, INM_BASE_DIRECTORY, DRY_RUN; deps: safe_rm_rf.
+# Consumes: env: NAMED_ARGS, XDG_DATA_HOME, INM_PATH_BASE_DIR, DRY_RUN; deps: safe_rm_rf.
 # Computes: symlink cleanup and optional deletion.
 # Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
@@ -575,8 +575,8 @@ self_uninstall() {
   user_data_home="${user_data_home%/}"
   local default_user_dir="${user_data_home}/inmanage"
   local default_project_dir=""
-  if [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
-      default_project_dir="${INM_BASE_DIRECTORY%/}/.inmanage/cli"
+  if [[ -n "${INM_PATH_BASE_DIR:-}" ]]; then
+      default_project_dir="${INM_PATH_BASE_DIR%/}/.inmanage/cli"
   fi
   local mode="unknown"
   if [[ "$root" == "/usr/local/share/inmanage" ]]; then
@@ -587,7 +587,7 @@ self_uninstall() {
       mode="project"
   elif [[ -n "$default_project_dir" && "$root" == "$default_project_dir" ]]; then
       mode="project"
-  elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$root" == "${INM_BASE_DIRECTORY%/}"* ]]; then
+  elif [[ -n "${INM_PATH_BASE_DIR:-}" && "$root" == "${INM_PATH_BASE_DIR%/}"* ]]; then
       mode="project"
   fi
 
@@ -609,8 +609,8 @@ self_uninstall() {
           local project_root=""
           if [[ "$root" == */.inmanage/cli ]]; then
               project_root="$(dirname "$(dirname "$root")")"
-          elif [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
-              project_root="${INM_BASE_DIRECTORY%/}"
+          elif [[ -n "${INM_PATH_BASE_DIR:-}" ]]; then
+              project_root="${INM_PATH_BASE_DIR%/}"
           fi
           if [[ -n "$project_root" ]]; then
               links+=("${project_root%/}/inmanage" "${project_root%/}/inm")
@@ -657,7 +657,7 @@ self_uninstall() {
 # ---------------------------------------------------------------------
 # self_version()
 # Show CLI version and install metadata.
-# Consumes: env: INM_SELF_INSTALL_MODE, INM_BASE_DIRECTORY; deps: git_collect_info/self_resolve_path.
+# Consumes: env: INM_SELF_INSTALL_MODE, INM_PATH_BASE_DIR; deps: git_collect_info/self_resolve_path.
 # Computes: version output.
 # Returns: 0 after logging.
 # ---------------------------------------------------------------------
@@ -872,13 +872,13 @@ legacy_create_symlinks() {
 # ---------------------------------------------------------------------
 # maybe_migrate_legacy_cli()
 # Detect and migrate legacy CLI installs when applicable.
-# Consumes: args: original args; env: INM_CLI_COMPATIBILITY, NAMED_ARGS, INM_BASE_DIRECTORY.
+# Consumes: args: original args; env: INM_SELF_CLI_COMPAT_MODE, NAMED_ARGS, INM_PATH_BASE_DIR.
 # Computes: migration flow and re-exec.
 # Returns: 0 if no migration, otherwise execs new CLI.
 # ---------------------------------------------------------------------
 maybe_migrate_legacy_cli() {
   local args=("$@")
-  local compat="${INM_CLI_COMPATIBILITY:-}"
+  local compat="${INM_SELF_CLI_COMPAT_MODE:-}"
   if [[ -n "${INM_LEGACY_MIGRATION_DONE:-}" ]]; then
     return 0
   fi
@@ -896,7 +896,7 @@ maybe_migrate_legacy_cli() {
     return 0
   fi
 
-  local base_dir="${INM_BASE_DIRECTORY:-$PWD}"
+  local base_dir="${INM_PATH_BASE_DIR:-$PWD}"
   base_dir="${base_dir%/}"
   local script_path
   script_path="$(legacy_resolve_path "$0")"
@@ -918,8 +918,8 @@ maybe_migrate_legacy_cli() {
 
   local current_user
   current_user="$(whoami)"
-  if [[ -n "${INM_ENFORCED_USER:-}" && "$current_user" == "${INM_ENFORCED_USER}" && -n "${SUDO_USER:-}" && "$SUDO_USER" != "$current_user" ]]; then
-    log warn "[SELF] Legacy CLI detected while running as ${INM_ENFORCED_USER}. Re-run as your admin user to migrate."
+  if [[ -n "${INM_EXEC_USER:-}" && "$current_user" == "${INM_EXEC_USER}" && -n "${SUDO_USER:-}" && "$SUDO_USER" != "$current_user" ]]; then
+    log warn "[SELF] Legacy CLI detected while running as ${INM_EXEC_USER}. Re-run as your admin user to migrate."
     legacy_warn_shell_alias
     return 0
   fi
@@ -941,7 +941,7 @@ maybe_migrate_legacy_cli() {
 
   if [[ "$do_migrate" != true ]]; then
     if [ -f "${INM_SELF_ENV_FILE:-}" ]; then
-      env_set cli "INM_CLI_COMPATIBILITY=legacy" >/dev/null 2>&1 || true
+      env_set cli "INM_SELF_CLI_COMPAT_MODE=legacy" >/dev/null 2>&1 || true
     fi
     log info "[SELF] Staying on legacy bootstrap. To migrate later: inmanage self install"
     legacy_warn_shell_alias
@@ -969,9 +969,10 @@ maybe_migrate_legacy_cli() {
   fi
 
   if [ -f "${INM_SELF_ENV_FILE:-}" ]; then
-    env_set cli "INM_CLI_COMPATIBILITY=ultron" >/dev/null 2>&1 || true
+    env_set cli "INM_SELF_CLI_COMPAT_MODE=ultron" >/dev/null 2>&1 || true
   fi
-  export INM_CLI_COMPATIBILITY="ultron"
+  export INM_SELF_CLI_COMPAT_MODE="ultron"
+  export INM_SELF_CLI_COMPAT_MODE="ultron"
   legacy_warn_shell_alias
 
   log ok "[SELF] Migration complete. Re-launching..."

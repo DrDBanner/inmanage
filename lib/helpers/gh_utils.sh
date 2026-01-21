@@ -298,8 +298,8 @@ gh_release_download() {
     fi
     local global_cache=""
     local local_cache=""
-    global_cache="$(expand_path_vars "${INM_CACHE_GLOBAL_DIRECTORY:-$HOME/.cache/inmanage}")"
-    local_cache="$(expand_path_vars "${INM_CACHE_LOCAL_DIRECTORY:-./.cache}")"
+    global_cache="$(expand_path_vars "${INM_CACHE_GLOBAL_DIR:-$HOME/.cache/inmanage}")"
+    local_cache="$(expand_path_vars "${INM_CACHE_LOCAL_DIR:-./.cache}")"
     local cached_from=""
     local cached_fallback_dir=""
     local cached_fallback_file=""

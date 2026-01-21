@@ -84,7 +84,7 @@ cron_strip_legacy_lines() {
             match_scope=0
             if (have_base && line ~ base_re) match_scope=1
             if (have_env && line ~ env_re) match_scope=1
-            if (line ~ /INM_INSTANCE_ID=/) {print; next}
+            if (line ~ /INM_SELF_INSTANCE_ID=|INM_INSTANCE_ID=/) {print; next}
             if (match_scope && line ~ /(inmanage(\.sh)?|inm(\.sh)?|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup)/) next
             print
         }
@@ -102,6 +102,7 @@ cron_strip_instance_only() {
         $0 ~ "^# INMANAGE INSTANCE "id_re" BEGIN" {skip=1; next}
         $0 ~ "^# INMANAGE INSTANCE "id_re" END" {skip=0; next}
         skip {next}
+        $0 ~ "INM_SELF_INSTANCE_ID="id_re {next}
         $0 ~ "INM_INSTANCE_ID="id_re {next}
         {print}
     ' "$infile" > "$outfile"
@@ -118,7 +119,7 @@ cron_strip_all_inmanage() {
         /^# INMANAGE CRON END/ {skip=0; next}
         skip {next}
         /^# Invoice Ninja cronjobs/ {next}
-        /INM_INSTANCE_ID=/ {next}
+        /INM_SELF_INSTANCE_ID=|INM_INSTANCE_ID=/ {next}
         /(inmanage(\.sh)?|inm(\.sh)?|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup)/ {next}
         {print}
     ' "$infile" > "$outfile"
@@ -142,7 +143,7 @@ cron_read_crontab() {
 # ---------------------------------------------------------------------
 # install_cronjob()
 # Install cron jobs for scheduler/backup/heartbeat.
-# Consumes: args: user/jobs/mode/backup_time/heartbeat_time; env: INM_ENFORCED_USER.
+# Consumes: args: user/jobs/mode/backup_time/heartbeat_time; env: INM_EXEC_USER.
 # Computes: cron.d or user crontab entries.
 # Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
@@ -169,17 +170,17 @@ install_cronjob() {
     parse_named_args args "${normalized_args[@]}"
 
     local user
-    user="$(args_get args "${INM_ENFORCED_USER:-}" user)"
+    user="$(args_get args "${INM_EXEC_USER:-}" user)"
     local jobs_raw
     jobs_raw="$(args_get args "essential" jobs cron_jobs)"
     local cron_mode
     cron_mode="$(args_get args "auto" cron_mode mode)"
     cron_mode="${cron_mode,,}"
-    local base_clean="${INM_BASE_DIRECTORY%/}"
+    local base_clean="${INM_PATH_BASE_DIR%/}"
     if [[ -z "$base_clean" ]]; then
         base_clean="$(pwd)"
     fi
-    local env_clean="${INM_ENV_FILE%/}"
+    local env_clean="${INM_PATH_APP_ENV_FILE%/}"
     local instance_id
     instance_id="$(env_resolve_instance_id "$base_clean" "$env_clean")"
     local cron_file_default="/etc/cron.d/inmanage-${instance_id}"
@@ -527,17 +528,17 @@ install_cronjob() {
             echo "* * * * * ${user_prefix}$(artisan_cmd_string) schedule:run >> /dev/null 2>&1"
         fi
         if [[ "$job_backup" == true ]]; then
-            echo "${backup_cron_expr} ${user_prefix}$INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core backup' >> /dev/null 2>&1"
+            echo "${backup_cron_expr} ${user_prefix}$INM_EXEC_SHELL_BIN -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core backup' >> /dev/null 2>&1"
         fi
         if [[ "$job_heartbeat" == true ]]; then
-            echo "${heartbeat_cron_expr} ${user_prefix}$INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core health --notify-heartbeat' >> /dev/null 2>&1"
+            echo "${heartbeat_cron_expr} ${user_prefix}$INM_EXEC_SHELL_BIN -c 'cd ${base_clean_escaped} && ${cli_cmd_escaped} core health --notify-heartbeat' >> /dev/null 2>&1"
         fi
         if [[ "$job_test" == true ]]; then
             local test_file="crontestfile.${instance_id}"
             local test_file_escaped
             test_file_escaped="$(escape_squote "$test_file")"
             echo "# INMANAGE CRON TEST ${instance_id}"
-            echo "* * * * * ${user_prefix}$INM_ENFORCED_SHELL -c 'cd ${base_clean_escaped} && ${touch_cmd_escaped} ${test_file_escaped}' >> /dev/null 2>&1"
+            echo "* * * * * ${user_prefix}$INM_EXEC_SHELL_BIN -c 'cd ${base_clean_escaped} && ${touch_cmd_escaped} ${test_file_escaped}' >> /dev/null 2>&1"
         fi
         echo "${instance_block_end}"
     }
@@ -688,7 +689,7 @@ install_cronjob() {
 # ---------------------------------------------------------------------
 # uninstall_cronjob()
 # Remove INmanage cron jobs.
-# Consumes: args: user/mode; env: INM_ENFORCED_USER.
+# Consumes: args: user/mode; env: INM_EXEC_USER.
 # Computes: cron file removal or crontab cleanup.
 # Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
@@ -724,11 +725,11 @@ uninstall_cronjob() {
     local jobs="${jobs_raw,,}"
     local instance_id_override=""
     instance_id_override="$(args_get args "" instance_id instance uuid)"
-    local base_clean="${INM_BASE_DIRECTORY%/}"
+    local base_clean="${INM_PATH_BASE_DIR%/}"
     if [[ -z "$base_clean" ]]; then
         base_clean="$(pwd)"
     fi
-    local env_clean="${INM_ENV_FILE%/}"
+    local env_clean="${INM_PATH_APP_ENV_FILE%/}"
     local instance_id
     instance_id="$(env_resolve_instance_id "$base_clean" "$env_clean")"
     if [[ -n "$instance_id_override" ]]; then
@@ -962,7 +963,7 @@ uninstall_cronjob() {
             else
                 cron_strip_instance_block "$tmpfile" "$tmpclean" "$instance_id"
                 if [[ "$remove_legacy" == true ]]; then
-                    cron_strip_legacy_lines "$tmpclean" "$tmpfile" "$INM_BASE_DIRECTORY" "$INM_ENV_FILE"
+                    cron_strip_legacy_lines "$tmpclean" "$tmpfile" "$INM_PATH_BASE_DIR" "$INM_PATH_APP_ENV_FILE"
                 else
                     mv -f "$tmpclean" "$tmpfile"
                 fi
@@ -972,7 +973,7 @@ uninstall_cronjob() {
                     log warn "[CRON] No matching instance id found in user crontab (id=${instance_id_override})."
                 else
                     local has_inmanage=false
-                    if grep -Eq 'INM_INSTANCE_ID=|inmanage|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup' "$tmporig" 2>/dev/null; then
+                    if grep -Eq 'INM_SELF_INSTANCE_ID=|INM_INSTANCE_ID=|inmanage|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup' "$tmporig" 2>/dev/null; then
                         has_inmanage=true
                     fi
                     if [[ "$has_inmanage" == true ]]; then
@@ -1033,7 +1034,7 @@ uninstall_cronjob() {
                 log warn "[CRON] No matching instance id found in ${cron_file} (id=${instance_id_override})."
             else
                 local has_inmanage=false
-                if grep -Eq 'INM_INSTANCE_ID=|inmanage|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup' "$tmporig" 2>/dev/null; then
+                if grep -Eq 'INM_SELF_INSTANCE_ID=|INM_INSTANCE_ID=|inmanage|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup' "$tmporig" 2>/dev/null; then
                     has_inmanage=true
                 fi
                 if [[ "$has_inmanage" == true ]]; then
@@ -1076,17 +1077,17 @@ uninstall_cronjob() {
 # ---------------------------------------------------------------------
 # cron_emit_preflight()
 # Emit cron/scheduler status for preflight output.
-# Consumes: args: add_fn, enforced_user, current_user, invoked_user; env: INM_BASE_DIRECTORY/INM_INSTALLATION_PATH/INM_NOTIFY_*.
+# Consumes: args: add_fn, enforced_user, current_user, invoked_user; env: INM_PATH_BASE_DIR/INM_INSTALLATION_PATH/INM_NOTIFY_*.
 # Computes: cron presence and job status lines.
 # Returns: 0 after emitting.
 # ---------------------------------------------------------------------
 cron_emit_preflight() {
     local add_fn="$1"
-    local enforced_user="${2:-${INM_ENFORCED_USER:-}}"
+    local enforced_user="${2:-${INM_EXEC_USER:-}}"
     local current_user="${3:-$(id -un 2>/dev/null || true)}"
     local invoked_user="${4:-${INM_INVOKED_BY:-$current_user}}"
-    if [[ -z "${INM_INSTANCE_ID:-}" ]]; then
-        env_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}" >/dev/null 2>&1 || true
+    if [[ -z "${INM_SELF_INSTANCE_ID:-}" ]]; then
+        env_resolve_instance_id "${INM_PATH_BASE_DIR:-}" "${INM_PATH_APP_ENV_FILE:-}" >/dev/null 2>&1 || true
     fi
     local emit_fn=""
     if [[ -n "$add_fn" ]] && declare -F "$add_fn" >/dev/null 2>&1; then
@@ -1334,10 +1335,10 @@ cron_emit_preflight() {
         cron_emit INFO "Instance ID: ${instance_id}"
     fi
 
-    local base_clean="${INM_BASE_DIRECTORY%/}"
+    local base_clean="${INM_PATH_BASE_DIR%/}"
     local app_clean="${INM_INSTALLATION_PATH%/}"
-    local env_clean="${INM_ENV_FILE%/}"
-    local instance_id="${INM_INSTANCE_ID:-}"
+    local env_clean="${INM_PATH_APP_ENV_FILE%/}"
+    local instance_id="${INM_SELF_INSTANCE_ID:-}"
     local base_re="" app_re="" env_re="" scope_re=""
     [ -n "$base_clean" ] && base_re="$(escape_regex "$base_clean")"
     [ -n "$app_clean" ] && app_re="$(escape_regex "$app_clean")"
@@ -1350,8 +1351,8 @@ cron_emit_preflight() {
     local inmanage_re="(inmanage(\\.sh)?|inm(\\.sh)?|notify-heartbeat|artisan[[:space:]]+schedule:run|core[[:space:]]+backup)"
     cron_line_matches_scope() {
         local line="$1"
-        if [[ "$line" =~ INM_INSTANCE_ID=([A-Za-z0-9._:-]+) ]]; then
-            if [[ -n "$instance_id" && "${BASH_REMATCH[1]}" == "$instance_id" ]]; then
+        if [[ "$line" =~ INM_(SELF_)?INSTANCE_ID=([A-Za-z0-9._:-]+) ]]; then
+            if [[ -n "$instance_id" && "${BASH_REMATCH[2]}" == "$instance_id" ]]; then
                 return 0
             fi
             return 1
@@ -1426,8 +1427,8 @@ cron_emit_preflight() {
     cron_entry_instance_hint() {
         local line="$1"
         local hint=""
-        if [[ "$line" =~ INM_INSTANCE_ID=([A-Za-z0-9._:-]+) ]]; then
-            printf "id=%s" "${BASH_REMATCH[1]}"
+        if [[ "$line" =~ INM_(SELF_)?INSTANCE_ID=([A-Za-z0-9._:-]+) ]]; then
+            printf "id=%s" "${BASH_REMATCH[2]}"
             return 0
         fi
         if [[ "$line" =~ --base-directory(=|[[:space:]])([^[:space:]]+) ]]; then
@@ -1480,8 +1481,8 @@ cron_emit_preflight() {
     local idx line source run_as
     cron_line_in_scope() {
         local line="$1"
-        if [[ "$line" =~ INM_INSTANCE_ID=([A-Za-z0-9._:-]+) ]]; then
-            if [[ -n "$instance_id" && "${BASH_REMATCH[1]}" == "$instance_id" ]]; then
+        if [[ "$line" =~ INM_(SELF_)?INSTANCE_ID=([A-Za-z0-9._:-]+) ]]; then
+            if [[ -n "$instance_id" && "${BASH_REMATCH[2]}" == "$instance_id" ]]; then
                 return 0
             fi
             return 1
@@ -1603,26 +1604,26 @@ cron_emit_preflight() {
     else
         local hb_enabled=false
         local hb_targets_email=false
-        local notify_targets="${INM_NOTIFY_TARGETS:-}"
+        local notify_targets="${INM_NOTIFY_TARGETS_LIST:-}"
         notify_targets="${notify_targets,,}"
         notify_targets="${notify_targets// /}"
         if [[ -n "$notify_targets" && ",${notify_targets}," == *",email,"* ]]; then
             hb_targets_email=true
         fi
-        if args_is_true "${INM_NOTIFY_HEARTBEAT_ENABLED:-false}" && [[ "$hb_targets_email" == true ]]; then
+        if args_is_true "${INM_NOTIFY_HEARTBEAT_ENABLE:-false}" && [[ "$hb_targets_email" == true ]]; then
             hb_enabled=true
         fi
         if [[ "$hb_enabled" == true ]]; then
             cron_emit WARN "heartbeat: no jobs detected"
         else
-            if args_is_true "${INM_NOTIFY_HEARTBEAT_ENABLED:-false}" && [[ "$hb_targets_email" != true ]]; then
-                cron_emit INFO "heartbeat: not configured (INM_NOTIFY_TARGETS excludes email)"
+            if args_is_true "${INM_NOTIFY_HEARTBEAT_ENABLE:-false}" && [[ "$hb_targets_email" != true ]]; then
+                cron_emit INFO "heartbeat: not configured (INM_NOTIFY_TARGETS_LIST excludes email)"
             else
                 cron_emit INFO "heartbeat: not enabled for this instance"
             fi
         fi
     fi
     if [[ "$unknown_hint_needed" == true ]]; then
-        cron_emit INFO "Hint: add INM_INSTANCE_ID=${instance_id} to manual cron lines or run 'inm core cron install' so jobs map to this instance."
+        cron_emit INFO "Hint: add INM_SELF_INSTANCE_ID=${instance_id} to manual cron lines or run 'inm core cron install' so jobs map to this instance."
     fi
 }

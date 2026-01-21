@@ -80,8 +80,8 @@ run_installation() {
 
     if [ "$mode" = "Provisioned" ]; then
         local provision_rel="${INM_PROVISION_ENV_FILE:-.inmanage/.env.provision}"
-        if [ -n "${INM_BASE_DIRECTORY:-}" ]; then
-            env_file="${INM_BASE_DIRECTORY%/}/${provision_rel#/}"
+        if [ -n "${INM_PATH_BASE_DIR:-}" ]; then
+            env_file="${INM_PATH_BASE_DIR%/}/${provision_rel#/}"
         else
             env_file="$provision_rel"
             if [[ "$env_file" != /* ]]; then
@@ -89,8 +89,8 @@ run_installation() {
             fi
         fi
         # If migration backup hint present, stash for restore phase
-        if [ -z "${INM_MIGRATION_BACKUP:-}" ] && [ -f "$env_file" ]; then
-            INM_MIGRATION_BACKUP=$(grep -E '^INM_MIGRATION_BACKUP=' "$env_file" 2>/dev/null | tail -n1 | cut -d= -f2-)
+        if [ -z "${INM_BACKUP_MIGRATION_SOURCE:-}" ] && [ -f "$env_file" ]; then
+            INM_BACKUP_MIGRATION_SOURCE="$(read_env_value_safe "$env_file" "INM_BACKUP_MIGRATION_SOURCE" 2>/dev/null)"
         fi
     else
         env_file="${install_parent}/${install_name}_temp/.env.example"
@@ -163,8 +163,8 @@ run_installation() {
         resolve_env_paths || true
         local new_env_file=""
         local provision_rel="${INM_PROVISION_ENV_FILE:-.inmanage/.env.provision}"
-        if [ -n "${INM_BASE_DIRECTORY:-}" ]; then
-            new_env_file="${INM_BASE_DIRECTORY%/}/${provision_rel#/}"
+        if [ -n "${INM_PATH_BASE_DIR:-}" ]; then
+            new_env_file="${INM_PATH_BASE_DIR%/}/${provision_rel#/}"
         else
             new_env_file="$provision_rel"
             if [[ "$new_env_file" != /* ]]; then
@@ -173,8 +173,8 @@ run_installation() {
         fi
         if [ -f "$new_env_file" ]; then
             env_file="$new_env_file"
-            if [ -z "${INM_MIGRATION_BACKUP:-}" ]; then
-                INM_MIGRATION_BACKUP=$(grep -E '^INM_MIGRATION_BACKUP=' "$env_file" 2>/dev/null | tail -n1 | cut -d= -f2-)
+            if [ -z "${INM_BACKUP_MIGRATION_SOURCE:-}" ]; then
+                INM_BACKUP_MIGRATION_SOURCE="$(read_env_value_safe "$env_file" "INM_BACKUP_MIGRATION_SOURCE" 2>/dev/null)"
             fi
         elif [[ "$new_env_file" != "$env_file" ]]; then
             log warn "[PROV] Provision file path from INM_* not found; keeping $env_file"
@@ -292,14 +292,14 @@ run_installation() {
     fi
     log info "[TAR] Installation files deployed successfully."
     enforce_ownership "$install_path"
-    if [[ -n "${INM_DIR_MODE:-}" ]]; then
-        enforce_dir_permissions "$INM_DIR_MODE" "$install_path"
+    if [[ -n "${INM_PERM_DIR_MODE:-}" ]]; then
+        enforce_dir_permissions "$INM_PERM_DIR_MODE" "$install_path"
     fi
-    if [[ -n "${INM_FILE_MODE:-}" ]]; then
-        enforce_file_permissions "$INM_FILE_MODE" "$install_path"
+    if [[ -n "${INM_PERM_FILE_MODE:-}" ]]; then
+        enforce_file_permissions "$INM_PERM_FILE_MODE" "$install_path"
     fi
-    if [[ -n "${INM_ENV_MODE:-}" ]]; then
-        enforce_file_mode "$INM_ENV_MODE" "${install_path%/}/.env"
+    if [[ -n "${INM_PERM_APP_ENV_MODE:-}" ]]; then
+        enforce_file_mode "$INM_PERM_APP_ENV_MODE" "${install_path%/}/.env"
     fi
 
     if [ ! -x "$install_path/artisan" ]; then
@@ -327,17 +327,17 @@ run_installation() {
     # shellcheck disable=SC2059
     if [ "$mode" = "Provisioned" ]; then
         provision_prepare_database || return 1
-        # Migration-aware: if INM_MIGRATION_BACKUP is set, attempt restore after deploy
-        if [ -n "${INM_MIGRATION_BACKUP:-}" ]; then
-            log debug "[PROV] Migration backup detected: ${INM_MIGRATION_BACKUP}"
+        # Migration-aware: if INM_BACKUP_MIGRATION_SOURCE is set, attempt restore after deploy
+        if [ -n "${INM_BACKUP_MIGRATION_SOURCE:-}" ]; then
+            log debug "[PROV] Migration backup detected: ${INM_BACKUP_MIGRATION_SOURCE}"
             local backup_path=""
-            if [ "${INM_MIGRATION_BACKUP}" = "LATEST" ]; then
-                if [ -d "${INM_BACKUP_DIRECTORY:-./.backups}" ]; then
+            if [ "${INM_BACKUP_MIGRATION_SOURCE}" = "LATEST" ]; then
+                if [ -d "${INM_BACKUP_DIR:-./.backups}" ]; then
                     # shellcheck disable=SC2012
-                    backup_path=$(ls -1t "${INM_BACKUP_DIRECTORY:-./.backups}"/InvoiceNinja_* 2>/dev/null | head -n1)
+                    backup_path=$(ls -1t "${INM_BACKUP_DIR:-./.backups}"/InvoiceNinja_* 2>/dev/null | head -n1)
                 fi
             else
-                backup_path="$INM_MIGRATION_BACKUP"
+                backup_path="$INM_BACKUP_MIGRATION_SOURCE"
             fi
             if [ -n "$backup_path" ]; then
                 log debug "[PROV] Restoring migration backup: $backup_path"
@@ -351,7 +351,7 @@ run_installation() {
                 call_with_named_args run_restore || log warn "[PROV] Migration restore failed; continuing with fresh setup."
                 NAMED_ARGS=("${saved_named[@]}")
             else
-                log warn "[PROV] No backup found for migration hint (${INM_MIGRATION_BACKUP}); continuing with fresh setup."
+                log warn "[PROV] No backup found for migration hint (${INM_BACKUP_MIGRATION_SOURCE}); continuing with fresh setup."
             fi
         fi
         export INM_PROVISION_FILE_USED="$env_file"
@@ -363,7 +363,7 @@ run_installation() {
         if [[ -n "${NAMED_ARGS[cron_jobs]:-}" || -n "${NAMED_ARGS[jobs]:-}" ]]; then
             cron_jobs_set=true
         fi
-        local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
+        local cron_user="${INM_EXEC_USER:-$(whoami)}"
         local cron_ok=true
         local cron_skipped=false
         local cron_mode
@@ -377,16 +377,16 @@ run_installation() {
         if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
             load_env_file_raw "$INM_SELF_ENV_FILE" || true
         fi
-        local hb_enabled="${INM_NOTIFY_HEARTBEAT_ENABLED:-}"
+        local hb_enabled="${INM_NOTIFY_HEARTBEAT_ENABLE:-}"
         local hb_time="${INM_NOTIFY_HEARTBEAT_TIME:-}"
         if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
             local cfg_file="$INM_SELF_ENV_FILE"
-            if [[ "$cfg_file" != /* ]] && [ -n "${INM_BASE_DIRECTORY:-}" ]; then
-                cfg_file="${INM_BASE_DIRECTORY%/}/${cfg_file#/}"
+            if [[ "$cfg_file" != /* ]] && [ -n "${INM_PATH_BASE_DIR:-}" ]; then
+                cfg_file="${INM_PATH_BASE_DIR%/}/${cfg_file#/}"
             fi
             local hb_from_file
             local hb_time_from_file
-            hb_from_file="$(read_env_value_safe "$cfg_file" "INM_NOTIFY_HEARTBEAT_ENABLED" 2>/dev/null)"
+            hb_from_file="$(read_env_value_safe "$cfg_file" "INM_NOTIFY_HEARTBEAT_ENABLE" 2>/dev/null)"
             hb_time_from_file="$(read_env_value_safe "$cfg_file" "INM_NOTIFY_HEARTBEAT_TIME" 2>/dev/null)"
             if [ -n "$hb_from_file" ]; then
                 hb_enabled="$hb_from_file"
@@ -430,7 +430,7 @@ run_installation() {
     run_hook "post-install" || return 1
 
     if [[ "${NAMED_ARGS[override_enforced_user]:-}" == "true" || "${INM_OVERRIDE_ENFORCED_USER:-}" == "true" ]]; then
-        if [[ "$EUID" -eq 0 && -n "${INM_ENFORCED_USER:-}" ]]; then
+        if [[ "$EUID" -eq 0 && -n "${INM_EXEC_USER:-}" ]]; then
             local cfg_dir=""
             if [[ -n "${INM_SELF_ENV_FILE:-}" ]]; then
                 cfg_dir="$(dirname "$INM_SELF_ENV_FILE")"
@@ -450,7 +450,7 @@ run_installation() {
         run_artisan cache:clear >/dev/null 2>&1 || log warn "[TAR] artisan cache:clear failed"
     fi
 
-    cd "$INM_BASE_DIRECTORY" || return 1
+    cd "$INM_PATH_BASE_DIR" || return 1
     return 0
 }
 

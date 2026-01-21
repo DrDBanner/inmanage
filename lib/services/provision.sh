@@ -12,7 +12,7 @@ __SERVICE_PROVISION_LOADED=1
 # ---------------------------------------------------------------------
 # spawn_provision_file()
 # Create a provision file template for Invoice Ninja + INmanage.
-# Consumes: env: INM_PROVISION_ENV_FILE, INM_BASE_DIRECTORY; globals: NAMED_ARGS.
+# Consumes: env: INM_PROVISION_ENV_FILE, INM_PATH_BASE_DIR; globals: NAMED_ARGS.
 # Computes: provision file content.
 # Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
@@ -23,7 +23,7 @@ spawn_provision_file() {
     fi
     local target="${NAMED_ARGS[provision_file]:-${INM_PROVISION_ENV_FILE:-.inmanage/.env.provision}}"
     local force="${NAMED_ARGS[force]:-${force_update:-false}}"
-    local migration_backup="${NAMED_ARGS[backup_file]:-${NAMED_ARGS[backup-file]:-${INM_MIGRATION_BACKUP:-}}}"
+    local migration_backup="${NAMED_ARGS[backup_file]:-${NAMED_ARGS[backup-file]:-${INM_BACKUP_MIGRATION_SOURCE:-}}}"
     local latest_backup="${NAMED_ARGS[latest_backup]:-${NAMED_ARGS[latest-backup]:-false}}"
 
     if [[ "$target" != /* ]]; then
@@ -41,7 +41,7 @@ spawn_provision_file() {
         return 0
     fi
 
-    local env_example="${INM_ENV_EXAMPLE_FILE:-${INM_BASE_DIRECTORY%/}/.inmanage/.env.example}"
+    local env_example="${INM_ENV_EXAMPLE_FILE:-${INM_PATH_BASE_DIR%/}/.inmanage/.env.example}"
     if [[ "$env_example" != /* ]]; then
         env_example="$(pwd)/${env_example}"
     fi
@@ -67,8 +67,8 @@ spawn_provision_file() {
         fi
     fi
 
-    if [ -z "$src_env" ] && [ -f "${INM_ENV_FILE:-}" ]; then
-        src_env="$INM_ENV_FILE"
+    if [ -z "$src_env" ] && [ -f "${INM_PATH_APP_ENV_FILE:-}" ]; then
+        src_env="$INM_PATH_APP_ENV_FILE"
         log debug "[PROV] Seeding from app env: $src_env"
     elif [ -z "$src_env" ] && [ -f "${SCRIPT_DIR:-.}/.env.example" ]; then
         src_env="${SCRIPT_DIR:-.}/.env.example"
@@ -120,10 +120,10 @@ spawn_provision_file() {
         sed -i '/^DB_PORT=/a DB_ELEVATED_USERNAME=\nDB_ELEVATED_PASSWORD=' "$target" 2>/dev/null || true
     fi
     if [ -n "$migration_backup" ]; then
-        printf "\nINM_MIGRATION_BACKUP=%s\n" "$migration_backup" >> "$target"
+        printf "\nINM_BACKUP_MIGRATION_SOURCE=%s\n" "$migration_backup" >> "$target"
         log debug "[PROV] Added migration backup reference: $migration_backup"
     elif [ "$latest_backup" = true ]; then
-        printf "\nINM_MIGRATION_BACKUP=LATEST\n" >> "$target"
+        printf "\nINM_BACKUP_MIGRATION_SOURCE=LATEST\n" >> "$target"
         log debug "[PROV] Will use latest backup during provisioned install."
     fi
 
@@ -223,17 +223,17 @@ maybe_setup_heartbeat_notifications() {
     load_env_file_raw "$INM_SELF_ENV_FILE" || true
 
     local changed=false
-    local heartbeat_enabled="${INM_NOTIFY_HEARTBEAT_ENABLED,,}"
-    if [[ -z "${INM_NOTIFY_HEARTBEAT_ENABLED:-}" ]]; then
-        env_set cli INM_NOTIFY_HEARTBEAT_ENABLED=true >/dev/null 2>&1 && changed=true
+    local heartbeat_enabled="${INM_NOTIFY_HEARTBEAT_ENABLE,,}"
+    if [[ -z "${INM_NOTIFY_HEARTBEAT_ENABLE:-}" ]]; then
+        env_set cli INM_NOTIFY_HEARTBEAT_ENABLE=true >/dev/null 2>&1 && changed=true
         heartbeat_enabled=true
     fi
     if [[ "$heartbeat_enabled" == "true" ]]; then
-        if [[ "${INM_NOTIFY_ENABLED,,}" != "true" ]]; then
-            env_set cli INM_NOTIFY_ENABLED=true >/dev/null 2>&1 && changed=true
+        if [[ "${INM_NOTIFY_ENABLE,,}" != "true" ]]; then
+            env_set cli INM_NOTIFY_ENABLE=true >/dev/null 2>&1 && changed=true
         fi
-        if [[ -z "${INM_NOTIFY_TARGETS:-}" ]]; then
-            env_set cli INM_NOTIFY_TARGETS=email >/dev/null 2>&1 && changed=true
+        if [[ -z "${INM_NOTIFY_TARGETS_LIST:-}" ]]; then
+            env_set cli INM_NOTIFY_TARGETS_LIST=email >/dev/null 2>&1 && changed=true
         fi
         if [[ -z "${INM_NOTIFY_HEARTBEAT_LEVEL:-}" ]]; then
             env_set cli INM_NOTIFY_HEARTBEAT_LEVEL=WARN >/dev/null 2>&1 && changed=true
@@ -244,10 +244,10 @@ maybe_setup_heartbeat_notifications() {
         log info "[${scope}] Heartbeat defaults applied (INM_NOTIFY_*)."
     fi
 
-    local notify_enabled="${INM_NOTIFY_ENABLED,,}"
-    heartbeat_enabled="${INM_NOTIFY_HEARTBEAT_ENABLED,,}"
+    local notify_enabled="${INM_NOTIFY_ENABLE,,}"
+    heartbeat_enabled="${INM_NOTIFY_HEARTBEAT_ENABLE,,}"
     if [[ "$notify_enabled" != "true" || "$heartbeat_enabled" != "true" ]]; then
-        log warn "[${scope}] Heartbeat cron installed but notifications are disabled (INM_NOTIFY_ENABLED/INM_NOTIFY_HEARTBEAT_ENABLED)."
+        log warn "[${scope}] Heartbeat cron installed but notifications are disabled (INM_NOTIFY_ENABLE/INM_NOTIFY_HEARTBEAT_ENABLE)."
         return 0
     fi
 
@@ -265,8 +265,8 @@ maybe_setup_heartbeat_notifications() {
 
     local can_test=false
     if [[ "$want_email" == true ]]; then
-        if [ -f "${INM_ENV_FILE:-}" ]; then
-            load_env_file_raw "$INM_ENV_FILE" || true
+        if [ -f "${INM_PATH_APP_ENV_FILE:-}" ]; then
+            load_env_file_raw "$INM_PATH_APP_ENV_FILE" || true
         fi
         local mailer="${MAIL_MAILER:-${MAIL_DRIVER:-}}"
         mailer="${mailer,,}"
@@ -274,8 +274,8 @@ maybe_setup_heartbeat_notifications() {
             log warn "[${scope}] MAIL_MAILER is '${mailer}', SMTP required for notify-test."
         elif [[ -z "${MAIL_HOST:-}" || -z "${MAIL_FROM_ADDRESS:-}" ]]; then
             log warn "[${scope}] SMTP not configured (MAIL_HOST/MAIL_FROM_ADDRESS). Set in app .env or .env.provision."
-        elif [[ -z "${INM_NOTIFY_EMAIL_TO:-}" ]]; then
-            log warn "[${scope}] INM_NOTIFY_EMAIL_TO is empty; skipping email notify-test."
+        elif [[ -z "${INM_NOTIFY_EMAIL_TO_LIST:-}" ]]; then
+            log warn "[${scope}] INM_NOTIFY_EMAIL_TO_LIST is empty; skipping email notify-test."
         else
             can_test=true
         fi
@@ -442,7 +442,7 @@ provision_post_install() {
             if [[ -n "${NAMED_ARGS[cron_jobs]:-}" || -n "${NAMED_ARGS[jobs]:-}" ]]; then
                 cron_jobs_set=true
             fi
-            local cron_user="${INM_ENFORCED_USER:-$(whoami)}"
+            local cron_user="${INM_EXEC_USER:-$(whoami)}"
             local cron_ok=true
             local cron_skipped=false
             local cron_mode
@@ -456,28 +456,28 @@ provision_post_install() {
             if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
                 load_env_file_raw "$INM_SELF_ENV_FILE" || true
             fi
-            local hb_enabled="${INM_NOTIFY_HEARTBEAT_ENABLED:-}"
+            local hb_enabled="${INM_NOTIFY_HEARTBEAT_ENABLE:-}"
             local hb_time="${INM_NOTIFY_HEARTBEAT_TIME:-}"
             local cfg_file=""
             local prov_file=""
             cfg_file="${INM_SELF_ENV_FILE:-}"
             prov_file="${INM_PROVISION_FILE_USED:-${INM_PROVISION_ENV_FILE:-}}"
-            if [ -z "$cfg_file" ] && [ -n "${INM_BASE_DIRECTORY:-}" ]; then
-                cfg_file="${INM_BASE_DIRECTORY%/}/.inmanage/.env.inmanage"
+            if [ -z "$cfg_file" ] && [ -n "${INM_PATH_BASE_DIR:-}" ]; then
+                cfg_file="${INM_PATH_BASE_DIR%/}/.inmanage/.env.inmanage"
             fi
-            if [ -z "$prov_file" ] && [ -n "${INM_BASE_DIRECTORY:-}" ]; then
-                prov_file="${INM_BASE_DIRECTORY%/}/.inmanage/.env.provision"
+            if [ -z "$prov_file" ] && [ -n "${INM_PATH_BASE_DIR:-}" ]; then
+                prov_file="${INM_PATH_BASE_DIR%/}/.inmanage/.env.provision"
             fi
-            if [ -n "$cfg_file" ] && [[ "$cfg_file" != /* ]] && [ -n "${INM_BASE_DIRECTORY:-}" ]; then
-                cfg_file="${INM_BASE_DIRECTORY%/}/${cfg_file#/}"
+            if [ -n "$cfg_file" ] && [[ "$cfg_file" != /* ]] && [ -n "${INM_PATH_BASE_DIR:-}" ]; then
+                cfg_file="${INM_PATH_BASE_DIR%/}/${cfg_file#/}"
             fi
-            if [ -n "$prov_file" ] && [[ "$prov_file" != /* ]] && [ -n "${INM_BASE_DIRECTORY:-}" ]; then
-                prov_file="${INM_BASE_DIRECTORY%/}/${prov_file#/}"
+            if [ -n "$prov_file" ] && [[ "$prov_file" != /* ]] && [ -n "${INM_PATH_BASE_DIR:-}" ]; then
+                prov_file="${INM_PATH_BASE_DIR%/}/${prov_file#/}"
             fi
             if [ -n "$cfg_file" ] && [ -f "$cfg_file" ]; then
                 local hb_from_cfg
                 local hb_time_from_cfg
-                hb_from_cfg="$(read_env_value_safe "$cfg_file" "INM_NOTIFY_HEARTBEAT_ENABLED" 2>/dev/null)"
+                hb_from_cfg="$(read_env_value_safe "$cfg_file" "INM_NOTIFY_HEARTBEAT_ENABLE" 2>/dev/null)"
                 hb_time_from_cfg="$(read_env_value_safe "$cfg_file" "INM_NOTIFY_HEARTBEAT_TIME" 2>/dev/null)"
                 if [ -n "$hb_from_cfg" ]; then
                     hb_enabled="$hb_from_cfg"
@@ -489,7 +489,7 @@ provision_post_install() {
             if [ -n "$prov_file" ] && [ -f "$prov_file" ]; then
                 local hb_from_prov
                 local hb_time_from_prov
-                hb_from_prov="$(read_env_value_safe "$prov_file" "INM_NOTIFY_HEARTBEAT_ENABLED" 2>/dev/null)"
+                hb_from_prov="$(read_env_value_safe "$prov_file" "INM_NOTIFY_HEARTBEAT_ENABLE" 2>/dev/null)"
                 hb_time_from_prov="$(read_env_value_safe "$prov_file" "INM_NOTIFY_HEARTBEAT_TIME" 2>/dev/null)"
                 if [ -n "$hb_from_prov" ]; then
                     hb_enabled="$hb_from_prov"
@@ -529,8 +529,8 @@ provision_post_install() {
             if [[ "$cron_ok" == true ]]; then
                 maybe_setup_heartbeat_notifications "PROV"
             fi
-            if [ -f "${INM_ENV_FILE:-}" ]; then
-                load_env_file_raw "$INM_ENV_FILE" || log warn "[PROV] Failed to load app env for summary."
+            if [ -f "${INM_PATH_APP_ENV_FILE:-}" ]; then
+                load_env_file_raw "$INM_PATH_APP_ENV_FILE" || log warn "[PROV] Failed to load app env for summary."
             fi
             print_provisioned_summary "$cron_ok" "$cron_jobs" "$cron_skipped"
         fi
@@ -544,16 +544,16 @@ provision_post_install() {
 # ---------------------------------------------------------------------
 # provision_prebackup_db()
 # Create a pre-provision database backup when needed.
-# Consumes: env: INM_BACKUP_DIRECTORY, DB_*; deps: dump_database.
+# Consumes: env: INM_BACKUP_DIR, DB_*; deps: dump_database.
 # Computes: pre-provision SQL dump.
 # Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
 provision_prebackup_db() {
     # Hydrate DB vars from app env if not set
-    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -f "${INM_ENV_FILE:-}" ]; then
-        log debug "[PROV] Loading DB vars from app env: $INM_ENV_FILE"
-        if ! load_env_file_raw "$INM_ENV_FILE"; then
-            log warn "[PROV] Failed to parse app env: $INM_ENV_FILE"
+    if { [ -z "${DB_USERNAME:-}" ] || [ -z "${DB_HOST:-}" ] || [ -z "${DB_DATABASE:-}" ]; } && [ -f "${INM_PATH_APP_ENV_FILE:-}" ]; then
+        log debug "[PROV] Loading DB vars from app env: $INM_PATH_APP_ENV_FILE"
+        if ! load_env_file_raw "$INM_PATH_APP_ENV_FILE"; then
+            log warn "[PROV] Failed to parse app env: $INM_PATH_APP_ENV_FILE"
         fi
     fi
 
@@ -562,7 +562,7 @@ provision_prebackup_db() {
         return 1
     fi
 
-    local backup_dir="${INM_BACKUP_DIRECTORY:-./.backups}"
+    local backup_dir="${INM_BACKUP_DIR:-./.backups}"
     mkdir -p "$backup_dir" 2>/dev/null || {
         log err "[PROV] Cannot create backup directory: $backup_dir"
         return 1
@@ -589,7 +589,7 @@ provision_prebackup_db() {
     fi
     log debug "[PROV] Pre-provision backup saved: $target_file"
     enforce_ownership "$backup_dir"
-    local backup_dir_mode="${INM_BACKUP_DIR_MODE:-${INM_DIR_MODE:-2750}}"
+    local backup_dir_mode="${INM_BACKUP_DIR_PERM_MODE:-${INM_PERM_DIR_MODE:-2750}}"
     enforce_permissions "$backup_dir_mode" "$backup_dir"
     cleanup_old_backups || log warn "[PROV] Backup cleanup failed."
     return 0
@@ -613,9 +613,9 @@ provision_prepare_database() {
         return 0
     fi
     # Load app env to hydrate DB_* vars if not already set
-    if [ -f "${INM_ENV_FILE:-}" ]; then
-        if ! load_env_file_raw "${INM_ENV_FILE}"; then
-            log warn "[PROV] Failed to parse app env: ${INM_ENV_FILE}"
+    if [ -f "${INM_PATH_APP_ENV_FILE:-}" ]; then
+        if ! load_env_file_raw "${INM_PATH_APP_ENV_FILE}"; then
+            log warn "[PROV] Failed to parse app env: ${INM_PATH_APP_ENV_FILE}"
         fi
     fi
 

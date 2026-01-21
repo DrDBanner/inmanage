@@ -84,7 +84,7 @@ cli_parse_version_file() {
 # ---------------------------------------------------------------------
 # cli_detect_install_mode()
 # Determine install mode from env or path heuristics.
-# Consumes: args: root; env: INM_SELF_INSTALL_MODE, INM_BASE_DIRECTORY, XDG_DATA_HOME, HOME.
+# Consumes: args: root; env: INM_SELF_INSTALL_MODE, INM_PATH_BASE_DIR, XDG_DATA_HOME, HOME.
 # Computes: mode string.
 # Returns: prints install mode.
 # ---------------------------------------------------------------------
@@ -103,16 +103,16 @@ cli_detect_install_mode() {
         user_data_home="${user_data_home%/}"
         local user_dir_default="${user_data_home}/inmanage"
         local project_dir_default=""
-        if [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
-            project_dir_default="${INM_BASE_DIRECTORY%/}/.inmanage/cli"
+        if [[ -n "${INM_PATH_BASE_DIR:-}" ]]; then
+            project_dir_default="${INM_PATH_BASE_DIR%/}/.inmanage/cli"
         fi
         if [[ "$root" == "/usr/local/share/inmanage" ]]; then
             mode="system"
         elif [[ -n "${HOME:-}" && "$root" == "$user_dir_default" ]]; then
             mode="user"
-        elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$root" == "$project_dir_default" ]]; then
+        elif [[ -n "${INM_PATH_BASE_DIR:-}" && "$root" == "$project_dir_default" ]]; then
             mode="project"
-        elif [[ -n "${INM_BASE_DIRECTORY:-}" && "$root" == "${INM_BASE_DIRECTORY%/}"* ]]; then
+        elif [[ -n "${INM_PATH_BASE_DIR:-}" && "$root" == "${INM_PATH_BASE_DIR%/}"* ]]; then
             mode="project"
         fi
     fi
@@ -172,7 +172,7 @@ cli_collect_mtime_info() {
 # ---------------------------------------------------------------------
 # cli_collect_info()
 # Collect CLI metadata into an assoc array.
-# Consumes: args: out assoc name, optional root; env: INM_SELF_INSTALL_MODE, INM_BASE_DIRECTORY.
+# Consumes: args: out assoc name, optional root; env: INM_SELF_INSTALL_MODE, INM_PATH_BASE_DIR.
 # Computes: root/version/git/install/mtime fields.
 # Returns: 0 after populating out assoc.
 # ---------------------------------------------------------------------

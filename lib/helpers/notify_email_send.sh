@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------
 # notify_send_email()
 # Send an email via SMTP using app .env settings.
-# Consumes: args: subject, body, body_html; env: INM_NOTIFY_* / INM_ENV_FILE; deps: read_env_value/expand_path_vars.
+# Consumes: args: subject, body, body_html; env: INM_NOTIFY_* / INM_PATH_APP_ENV_FILE; deps: read_env_value/expand_path_vars.
 # Computes: SMTP session via inline PHP.
 # Returns: 0 on success, 1 on failure.
 # ---------------------------------------------------------------------
@@ -11,12 +11,12 @@ notify_send_email() {
     local subject="$1"
     local body="$2"
     local body_html="${3:-}"
-    local to="${INM_NOTIFY_EMAIL_TO:-}"
+    local to="${INM_NOTIFY_EMAIL_TO_LIST:-}"
     if [ -z "$to" ]; then
-        log warn "[NOTIFY] Email target missing (INM_NOTIFY_EMAIL_TO)."
+        log warn "[NOTIFY] Email target missing (INM_NOTIFY_EMAIL_TO_LIST)."
         return 1
     fi
-    local env_file="${INM_ENV_FILE:-}"
+    local env_file="${INM_PATH_APP_ENV_FILE:-}"
     env_file="$(expand_path_vars "$env_file")"
     if [ -z "$env_file" ] || [ ! -f "$env_file" ]; then
         log warn "[NOTIFY] App .env missing; cannot read MAIL_* settings."
@@ -36,8 +36,8 @@ notify_send_email() {
     from="$(read_env_value "$env_file" "MAIL_FROM_ADDRESS")"
     from_name="$(read_env_value "$env_file" "MAIL_FROM_NAME")"
 
-    if [ -n "${INM_NOTIFY_EMAIL_FROM:-}" ]; then
-        from="${INM_NOTIFY_EMAIL_FROM}"
+    if [ -n "${INM_NOTIFY_EMAIL_FROM_ADDRESS:-}" ]; then
+        from="${INM_NOTIFY_EMAIL_FROM_ADDRESS}"
     fi
     if [ -n "${INM_NOTIFY_EMAIL_FROM_NAME:-}" ]; then
         from_name="${INM_NOTIFY_EMAIL_FROM_NAME}"
@@ -57,11 +57,11 @@ notify_send_email() {
     port="${port:-587}"
     enc="${enc:-tls}"
     if [ -z "$from" ]; then
-        log warn "[NOTIFY] Email sender missing (MAIL_FROM_ADDRESS or INM_NOTIFY_EMAIL_FROM)."
+        log warn "[NOTIFY] Email sender missing (MAIL_FROM_ADDRESS or INM_NOTIFY_EMAIL_FROM_ADDRESS)."
         return 1
     fi
 
-    local php_exec="${INM_PHP_EXECUTABLE:-}"
+    local php_exec="${INM_RUNTIME_PHP_BIN:-}"
     if [ -z "$php_exec" ]; then
         php_exec="$(command -v php 2>/dev/null || true)"
     fi
@@ -75,7 +75,7 @@ notify_send_email() {
     if ! output=$(printf '%s' "$body" | INM_SMTP_HOST="$host" INM_SMTP_PORT="$port" \
         INM_SMTP_USER="$user" INM_SMTP_PASS="$pass" INM_SMTP_ENCRYPTION="$enc" \
         INM_SMTP_FROM="$from" INM_SMTP_FROM_NAME="$from_name" INM_SMTP_TO="$to" \
-        INM_SMTP_SUBJECT="$subject" INM_SMTP_TIMEOUT="${INM_NOTIFY_SMTP_TIMEOUT:-10}" \
+        INM_SMTP_SUBJECT="$subject" INM_SMTP_TIMEOUT="${INM_NOTIFY_SMTP_TIMEOUT_SECONDS:-10}" \
         INM_SMTP_BODY_HTML="$body_html" \
         "$php_exec" -r '
 $host = getenv("INM_SMTP_HOST");

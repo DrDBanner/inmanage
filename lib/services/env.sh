@@ -15,7 +15,7 @@ fi
 # ---------------------------------------------------------------------
 # resolve_env_file()
 # Resolve the env file path for app or CLI targets.
-# Consumes: args: target; env: INM_ENV_FILE, INM_SELF_ENV_FILE; deps: expand_placeholders.
+# Consumes: args: target; env: INM_PATH_APP_ENV_FILE, INM_SELF_ENV_FILE; deps: expand_placeholders.
 # Computes: validated env file path.
 # Returns: prints path or non-zero on failure.
 # ---------------------------------------------------------------------
@@ -24,7 +24,7 @@ resolve_env_file() {
     local path=""
     case "$target" in
         app)
-            path="${INM_ENV_FILE:-}"
+            path="${INM_PATH_APP_ENV_FILE:-}"
             # shellcheck disable=SC2016
         if [[ "$path" == *'${'* ]]; then
             path="$(expand_placeholders "$path")"
@@ -52,7 +52,7 @@ resolve_env_file() {
 # ---------------------------------------------------------------------
 # _env_owner_for()
 # Determine the owner to use for an env file.
-# Consumes: args: env_file; env: INM_ENFORCED_USER; deps: _fs_get_owner.
+# Consumes: args: env_file; env: INM_EXEC_USER; deps: _fs_get_owner.
 # Computes: owner username.
 # Returns: prints owner name.
 # ---------------------------------------------------------------------
@@ -62,7 +62,7 @@ _env_owner_for() {
     og="$(_fs_get_owner "$env_file")"
     owner="${og%%:*}"
     if [[ -z "$owner" || "$owner" == "$og" ]]; then
-        owner="${INM_ENFORCED_USER:-}"
+        owner="${INM_EXEC_USER:-}"
     fi
     if [[ -z "$owner" ]]; then
         owner="$(whoami 2>/dev/null || true)"
@@ -73,7 +73,7 @@ _env_owner_for() {
 # ---------------------------------------------------------------------
 # _env_owner_for_path()
 # Determine the owner for a target path (file or parent).
-# Consumes: args: path; env: INM_ENFORCED_USER; deps: _fs_get_owner.
+# Consumes: args: path; env: INM_EXEC_USER; deps: _fs_get_owner.
 # Computes: owner username.
 # Returns: prints owner name.
 # ---------------------------------------------------------------------
@@ -88,7 +88,7 @@ _env_owner_for_path() {
     fi
     owner="${og%%:*}"
     if [[ -z "$owner" || "$owner" == "$og" ]]; then
-        owner="${INM_ENFORCED_USER:-}"
+        owner="${INM_EXEC_USER:-}"
     fi
     if [[ -z "$owner" ]]; then
         owner="$(whoami 2>/dev/null || true)"
@@ -456,8 +456,8 @@ env_unset() {
         cmd='grep -v -E "^[[:space:]]*(export[[:space:]]+)?${KEY}[[:space:]]*=" "$ENV_FILE" > "$TMP" 2>/dev/null || true'
         _env_run_shell "$access" "$owner" "$cmd" KEY="$key" ENV_FILE="$env_file" TMP="$tmp_file" || return 1
         _env_replace_file "$access" "$owner" "$env_file" "$tmp_file" || return 1
-        if [[ "$target" == "app" && -n "${INM_ENV_MODE:-}" ]]; then
-            _env_run "$access" "$owner" chmod "${INM_ENV_MODE}" "$env_file" 2>/dev/null || true
+        if [[ "$target" == "app" && -n "${INM_PERM_APP_ENV_MODE:-}" ]]; then
+            _env_run "$access" "$owner" chmod "${INM_PERM_APP_ENV_MODE}" "$env_file" 2>/dev/null || true
         fi
         log ok "[ENV] Removed $key from $env_file"
     else
@@ -606,8 +606,8 @@ env_set() {
     if [[ "$target" == "cli" && -n "$current_mode" ]]; then
         _env_run "$access" "$owner" chmod "$current_mode" "$env_file" 2>/dev/null || true
     fi
-    if [[ "$target" == "app" && -n "${INM_ENV_MODE:-}" ]]; then
-        _env_run "$access" "$owner" chmod "${INM_ENV_MODE}" "$env_file" 2>/dev/null || true
+    if [[ "$target" == "app" && -n "${INM_PERM_APP_ENV_MODE:-}" ]]; then
+        _env_run "$access" "$owner" chmod "${INM_PERM_APP_ENV_MODE}" "$env_file" 2>/dev/null || true
     fi
     log ok "[ENV] Set $key in $env_file"
 }
@@ -644,15 +644,16 @@ env_instance_id_hash() {
 # ---------------------------------------------------------------------
 # env_resolve_instance_id()
 # Ensure a stable instance id exists in CLI config.
-# Consumes: args: base, env; env: INM_INSTANCE_ID, INM_SELF_ENV_FILE; deps: env_set.
+# Consumes: args: base, env; env: INM_SELF_INSTANCE_ID, INM_SELF_ENV_FILE; deps: env_set.
 # Computes: instance id string; may persist to CLI config.
 # Returns: prints instance id.
 # ---------------------------------------------------------------------
 env_resolve_instance_id() {
     local base="${1%/}"
     local env="${2%/}"
-    local existing="${INM_INSTANCE_ID:-}"
+    local existing="${INM_SELF_INSTANCE_ID:-}"
     if [[ -n "$existing" ]]; then
+        export INM_SELF_INSTANCE_ID="$existing"
         printf "%s" "$existing"
         return 0
     fi
@@ -665,9 +666,9 @@ env_resolve_instance_id() {
     if [[ -z "$generated" ]]; then
         generated="$(env_instance_id_hash "$base" "$env")"
     fi
-    export INM_INSTANCE_ID="$generated"
+    export INM_SELF_INSTANCE_ID="$generated"
     if [[ -n "${INM_SELF_ENV_FILE:-}" && -f "${INM_SELF_ENV_FILE}" ]]; then
-        env_set cli "INM_INSTANCE_ID=${generated}" >/dev/null 2>&1 || true
+        env_set cli "INM_SELF_INSTANCE_ID=${generated}" >/dev/null 2>&1 || true
     fi
     printf "%s" "$generated"
 }

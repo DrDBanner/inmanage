@@ -279,7 +279,7 @@ backup_suffix_for_compress() {
 # run_backup()
 # Create backups (db/env/app/storage/uploads/extras) with optional bundle/compress.
 # Consumes: args: --compress/--include-app/--extra/--name/...; env: INM_*; helpers: fs_*, env_set_file_value, tar/zip/rsync.
-# Computes: backup artifacts in INM_BACKUP_DIRECTORY.
+# Computes: backup artifacts in INM_BACKUP_DIR.
 # Returns: 0 on success, 1 on failure.
 # ---------------------------------------------------------------------
 run_backup() {
@@ -312,8 +312,8 @@ run_backup() {
     args_is_true "$no_prune" && no_prune_enabled=true
     local force="${force_update:-false}"
     local simulate="${DRY_RUN:-false}"
-    local backup_dir="${INM_BACKUP_DIRECTORY%/}"
-    local backup_dir_mode="${INM_BACKUP_DIR_MODE:-${INM_DIR_MODE:-2750}}"
+    local backup_dir="${INM_BACKUP_DIR%/}"
+    local backup_dir_mode="${INM_BACKUP_DIR_PERM_MODE:-${INM_PERM_DIR_MODE:-2750}}"
 
     case "$compress" in
         tar.gz|zip|false) ;;
@@ -328,14 +328,14 @@ run_backup() {
         [[ "$include_app_explicit" == false ]] && include_app=true
     fi
 
-    local install_root="${INM_INSTALLATION_PATH:-$(compute_installation_path "${INM_BASE_DIRECTORY:-}" "${INM_INSTALLATION_DIRECTORY:-}")}"
+    local install_root="${INM_INSTALLATION_PATH:-$(compute_installation_path "${INM_PATH_BASE_DIR:-}" "${INM_PATH_APP_DIR:-}")}"
     install_root="${install_root%/}"
     if [[ -z "$install_root" ]]; then
         if [[ "$simulate" == true ]]; then
-            log err "[DRY-RUN] Would fail: installation path undetermined (INM_INSTALLATION_PATH/INM_BASE_DIRECTORY/INM_INSTALLATION_DIRECTORY)."
+            log err "[DRY-RUN] Would fail: installation path undetermined (INM_INSTALLATION_PATH/INM_PATH_BASE_DIR/INM_PATH_APP_DIR)."
             return 0
         fi
-        log err "[BACKUP] Could not determine installation path (check INM_INSTALLATION_PATH/INM_BASE_DIRECTORY/INM_INSTALLATION_DIRECTORY)."
+        log err "[BACKUP] Could not determine installation path (check INM_INSTALLATION_PATH/INM_PATH_BASE_DIR/INM_PATH_APP_DIR)."
         return 1
     fi
     if [[ ! -d "$install_root" ]]; then
@@ -349,7 +349,7 @@ run_backup() {
 
     run_hook "pre-backup" || return 1
 
-    local env_source="${INM_ENV_FILE:-${install_root}/.env}"
+    local env_source="${INM_PATH_APP_ENV_FILE:-${install_root}/.env}"
     if [[ "$create_migration_export" == "true" && "$simulate" != true && ! -f "$env_source" ]]; then
         log err "[BACKUP] Migration export requested but .env not found at $env_source"
         return 1
@@ -360,7 +360,7 @@ run_backup() {
     ts="$(date +%Y-%m-%d_%H-%M)"
     local base_name=""
     if [[ -z "$name" ]]; then
-        base_name="${INM_PROGRAM_NAME:-invoiceninja}_${ts}"
+        base_name="${INM_SELF_PROGRAM_NAME:-invoiceninja}_${ts}"
     else
         local append_ts=true
         if [[ "$name_provided" == true && "$name" =~ [0-9]{8}([_-][0-9]{4})? ]]; then
@@ -368,13 +368,13 @@ run_backup() {
         elif [[ "$name_provided" == true && "$name" =~ [0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
             append_ts=false
         fi
-        base_name="${INM_PROGRAM_NAME:-invoiceninja}_${name}"
+        base_name="${INM_SELF_PROGRAM_NAME:-invoiceninja}_${name}"
         if [[ "$append_ts" == true ]]; then
             base_name+="_${ts}"
         fi
     fi
     local app_dir_name
-    app_dir_name="$(basename "${INM_INSTALLATION_DIRECTORY:-$install_root}")"
+    app_dir_name="$(basename "${INM_PATH_APP_DIR:-$install_root}")"
 
     BACKUP_EXTRA_PATHS=()
     if [[ -n "$extra_raw" ]]; then
@@ -395,11 +395,11 @@ run_backup() {
             return 0
         fi
         if [[ "$simulate" == true ]]; then
-            log info "[DRY-RUN] Would prune old backups (keep=${INM_KEEP_BACKUPS:-2})."
+            log info "[DRY-RUN] Would prune old backups (keep=${INM_BACKUP_RETENTION:-2})."
             return 0
         fi
         if declare -F cleanup_old_backups >/dev/null 2>&1; then
-            log info "[BACKUP] Pruning old backups (keep=${INM_KEEP_BACKUPS:-2})."
+            log info "[BACKUP] Pruning old backups (keep=${INM_BACKUP_RETENTION:-2})."
             cleanup_old_backups
         else
             log warn "[BACKUP] cleanup_old_backups not available; skipping prune."

@@ -28,6 +28,6 @@ env_set_file_value() {
     local file="$1"
     local key="$2"
     local value="$3"
-    INM_ENV_FILE="$file" env_set app "${key}=${value}" >/dev/null || return 1
+    INM_PATH_APP_ENV_FILE="$file" env_set app "${key}=${value}" >/dev/null || return 1
     return 0
 }

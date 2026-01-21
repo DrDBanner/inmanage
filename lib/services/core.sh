@@ -91,8 +91,28 @@ compute_sha256() {
 # Returns: 0 (best effort).
 # ---------------------------------------------------------------------
 apply_cache_file_mode() {
+    local scope=""
+    local local_dir=""
+    if declare -F expand_path_vars >/dev/null 2>&1; then
+        local_dir="$(expand_path_vars "${INM_CACHE_LOCAL_DIR:-}")"
+    else
+        local_dir="${INM_CACHE_LOCAL_DIR:-}"
+    fi
+    if [[ -n "$local_dir" ]]; then
+        local path
+        for path in "$@"; do
+            if [[ "$path" == "$local_dir"* ]]; then
+                scope="local"
+                break
+            fi
+        done
+    fi
     local mode
-    mode="$(cache_file_mode)"
+    if [[ -n "$scope" ]]; then
+        mode="$(cache_file_mode "$scope")"
+    else
+        mode="$(cache_file_mode)"
+    fi
     chmod "$mode" "$@" 2>/dev/null || true
 }
 
@@ -179,12 +199,12 @@ cleanup_cache() {
 # ---------------------------------------------------------------------
 # resolve_php_exec()
 # Resolve a usable PHP CLI binary.
-# Consumes: env: INM_PHP_EXECUTABLE; system PATH and /usr/iports.
+# Consumes: env: INM_RUNTIME_PHP_BIN; system PATH and /usr/iports.
 # Computes: PHP executable path.
 # Returns: prints php path to stdout.
 # ---------------------------------------------------------------------
 resolve_php_exec() {
-    local php_exec="${INM_PHP_EXECUTABLE:-}"
+    local php_exec="${INM_RUNTIME_PHP_BIN:-}"
     if [[ -n "$php_exec" && -x "$php_exec" ]]; then
         printf "%s" "$php_exec"
         return 0
@@ -263,7 +283,7 @@ run_artisan() {
 # ---------------------------------------------------------------------
 # show_versions_summary()
 # Display installed, cached, and upstream versions.
-# Consumes: env: INM_CACHE_GLOBAL_DIRECTORY, INM_CACHE_LOCAL_DIRECTORY.
+# Consumes: env: INM_CACHE_GLOBAL_DIR, INM_CACHE_LOCAL_DIR.
 # Computes: version summary.
 # Returns: 0 after logging.
 # ---------------------------------------------------------------------
@@ -279,7 +299,7 @@ show_versions_summary() {
     latest="$(get_latest_version || true)"
 
     # Read-only cache listing (avoid sudo on info/version)
-    for candidate in "${INM_CACHE_GLOBAL_DIRECTORY:-$HOME/.cache/inmanage}" "${INM_CACHE_LOCAL_DIRECTORY:-$PWD/.cache}"; do
+    for candidate in "${INM_CACHE_GLOBAL_DIR:-$HOME/.cache/inmanage}" "${INM_CACHE_LOCAL_DIR:-$PWD/.cache}"; do
         if [ -d "$candidate" ] && [ -r "$candidate" ]; then
             cache_dir="$candidate"
             shopt -s nullglob

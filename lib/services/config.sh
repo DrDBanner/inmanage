@@ -73,7 +73,7 @@ write_config_setting() {
     if [[ "$key" =~ (^|_)(PASS(WORD)?|TOKEN|SECRET|KEY|CREDENTIALS)$ ]]; then
         inline_comment=""
     fi
-    if [[ "$key" == "INM_PHP_EXECUTABLE" && -z "$value" ]]; then
+    if [[ "$key" == "INM_RUNTIME_PHP_BIN" && -z "$value" ]]; then
         value="php"
         if [ -n "$inline_comment" ]; then
             inline_comment="${inline_comment} Auto-set to 'php' because the binary was not detected."
@@ -128,7 +128,7 @@ write_config_defaults() {
 # ---------------------------------------------------------------------
 # persist_derived_config()
 # Persist derived defaults to a config file when enabled.
-# Consumes: env: INM_SELF_ENV_FILE, INM_DEFAULT_SELF_ENV_FILE, INM_CLI_ENV_MODE; globals: NAMED_ARGS.
+# Consumes: env: INM_SELF_ENV_FILE, INM_DEFAULT_SELF_ENV_FILE, INM_PERM_CLI_ENV_MODE; globals: NAMED_ARGS.
 # Computes: config file creation and defaults write.
 # Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
@@ -162,18 +162,18 @@ persist_derived_config() {
     log info "[PDC] Writing derived config to: $INM_SELF_ENV_FILE"
 
     write_config_defaults
-    if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+    if ! grep -q "^INM_SELF_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
         local inst_id
-        inst_id="$(config_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}")"
-        if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
-            echo "INM_INSTANCE_ID=\"${inst_id}\"" >> "$INM_SELF_ENV_FILE"
+        inst_id="$(config_resolve_instance_id "${INM_PATH_BASE_DIR:-}" "${INM_PATH_APP_ENV_FILE:-}")"
+        if ! grep -q "^INM_SELF_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+            echo "INM_SELF_INSTANCE_ID=\"${inst_id}\"" >> "$INM_SELF_ENV_FILE"
         fi
     fi
-    if ! grep -q "^INM_CLI_COMPATIBILITY=" "$INM_SELF_ENV_FILE"; then
-        echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$INM_SELF_ENV_FILE"
+    if ! grep -q "^INM_SELF_CLI_COMPAT_MODE=" "$INM_SELF_ENV_FILE"; then
+        echo "INM_SELF_CLI_COMPAT_MODE=\"ultron\"" >> "$INM_SELF_ENV_FILE"
     fi
 
-    local cli_env_mode="${INM_CLI_ENV_MODE:-600}"
+    local cli_env_mode="${default_settings[INM_PERM_CLI_ENV_MODE]:-${INM_PERM_CLI_ENV_MODE:-600}}"
     chmod "$cli_env_mode" "$INM_SELF_ENV_FILE" 2>/dev/null
     log ok "[PDC] Config persisted successfully"
     INM_CONFIG_CREATED_THIS_RUN=true
@@ -213,11 +213,11 @@ _config_read_value() {
 config_expected_owner() {
     local config_file="$1"
     local user group
-    user="$(_config_read_value "INM_ENFORCED_USER" "$config_file")"
+    user="$(_config_read_value "INM_EXEC_USER" "$config_file")"
     if [[ -z "$user" ]]; then
         return 0
     fi
-    group="$(_config_read_value "INM_ENFORCED_GROUP" "$config_file")"
+    group="$(_config_read_value "INM_EXEC_GROUP" "$config_file")"
     if [[ -z "$group" ]]; then
         group="$(id -gn "$user" 2>/dev/null || true)"
         [[ -z "$group" ]] && group="$user"
@@ -259,6 +259,13 @@ create_own_config() {
     log debug "[COC] init."
     INM_SELF_ENV_FILE="${NAMED_ARGS[target_file]:-${INM_SELF_ENV_FILE:-$INM_DEFAULT_SELF_ENV_FILE}}"
 
+    local -A named_args_canon=()
+    local key
+    for key in "${!NAMED_ARGS[@]}"; do
+        [[ "$key" == INM_* ]] || continue
+        named_args_canon["$key"]="${NAMED_ARGS[$key]}"
+    done
+
     # shellcheck disable=SC2154
     if [ -f "$INM_SELF_ENV_FILE" ] && [ "$force_update" != true ]; then
         log debug "[COC] Config file '$INM_SELF_ENV_FILE' already exists. Use create_config --force to recreate."
@@ -270,7 +277,7 @@ create_own_config() {
     local non_interactive=true
     # shellcheck disable=SC2154
     for key in "${prompt_order[@]}"; do
-        if [ -z "${NAMED_ARGS[$key]+_}" ]; then
+        if [ -z "${named_args_canon[$key]+_}" ]; then
             non_interactive=false
             break
         fi
@@ -290,21 +297,21 @@ create_own_config() {
         log info "[COC] All values provided via --key=value args. Skipping interactive prompt."
         for key in "${prompt_order[@]}"; do
             # shellcheck disable=SC2004
-            default_settings[$key]="${NAMED_ARGS[$key]:-${default_settings[$key]}}"
+            default_settings[$key]="${named_args_canon[$key]:-${default_settings[$key]}}"
         done
     fi
 
     for key in "${!default_settings[@]}"; do
-        if [ -n "${NAMED_ARGS[$key]+_}" ]; then
+        if [ -n "${named_args_canon[$key]+_}" ]; then
             # shellcheck disable=SC2004
-            default_settings[$key]="${NAMED_ARGS[$key]}"
+            default_settings[$key]="${named_args_canon[$key]}"
         fi
     done
 
     local target_dir
     target_dir="$(dirname "$INM_SELF_ENV_FILE")"
-    local enforced_user="${default_settings[INM_ENFORCED_USER]:-}"
-    local enforced_group="${default_settings[INM_ENFORCED_GROUP]:-}"
+    local enforced_user="${default_settings[INM_EXEC_USER]:-}"
+    local enforced_group="${default_settings[INM_EXEC_GROUP]:-}"
     local current_user=""
     current_user="$(id -un 2>/dev/null || true)"
     if [[ -z "$enforced_user" ]]; then
@@ -374,20 +381,20 @@ create_own_config() {
     }
 
     write_config_defaults "$tmp_file"
-    for key in "${!NAMED_ARGS[@]}"; do
+    for key in "${!named_args_canon[@]}"; do
         if [ -z "${default_settings[$key]+_}" ]; then
-            echo "$key=\"${NAMED_ARGS[$key]}\"" >> "$tmp_file"
+            echo "$key=\"${named_args_canon[$key]}\"" >> "$tmp_file"
         fi
     done
-    if ! grep -q "^INM_INSTANCE_ID=" "$tmp_file"; then
+    if ! grep -q "^INM_SELF_INSTANCE_ID=" "$tmp_file"; then
         local inst_id
-        inst_id="$(config_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}")"
-        if ! grep -q "^INM_INSTANCE_ID=" "$tmp_file"; then
-            echo "INM_INSTANCE_ID=\"${inst_id}\"" >> "$tmp_file"
+        inst_id="$(config_resolve_instance_id "${INM_PATH_BASE_DIR:-}" "${INM_PATH_APP_ENV_FILE:-}")"
+        if ! grep -q "^INM_SELF_INSTANCE_ID=" "$tmp_file"; then
+            echo "INM_SELF_INSTANCE_ID=\"${inst_id}\"" >> "$tmp_file"
         fi
     fi
-    if ! grep -q "^INM_CLI_COMPATIBILITY=" "$tmp_file"; then
-        echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$tmp_file"
+    if ! grep -q "^INM_SELF_CLI_COMPAT_MODE=" "$tmp_file"; then
+        echo "INM_SELF_CLI_COMPAT_MODE=\"ultron\"" >> "$tmp_file"
     fi
 
     if [[ "$use_sudo" == true ]]; then
@@ -408,7 +415,7 @@ create_own_config() {
         fi
     fi
 
-    local cli_env_mode="${default_settings[INM_CLI_ENV_MODE]:-${INM_CLI_ENV_MODE:-600}}"
+    local cli_env_mode="${default_settings[INM_PERM_CLI_ENV_MODE]:-${INM_PERM_CLI_ENV_MODE:-600}}"
     if [[ "$use_sudo" == true ]]; then
         sudo chmod "$cli_env_mode" "$INM_SELF_ENV_FILE" 2>/dev/null || true
     else
@@ -421,17 +428,17 @@ create_own_config() {
     warn_cli_config_owner_mismatch "$INM_SELF_ENV_FILE"
 
     local history_file=""
-    if [[ -n "${INM_HISTORY_LOG_FILE:-}" ]]; then
+    if [[ -n "${INM_LOG_OPS_FILE:-}" ]]; then
         if declare -F path_expand_no_eval >/dev/null 2>&1; then
-            history_file="$(path_expand_no_eval "$INM_HISTORY_LOG_FILE")"
+            history_file="$(path_expand_no_eval "$INM_LOG_OPS_FILE")"
         else
-            history_file="$INM_HISTORY_LOG_FILE"
+            history_file="$INM_LOG_OPS_FILE"
         fi
-        if [[ "$history_file" != /* && -n "${INM_BASE_DIRECTORY:-}" ]]; then
-            history_file="${INM_BASE_DIRECTORY%/}/${history_file#/}"
+        if [[ "$history_file" != /* && -n "${INM_PATH_BASE_DIR:-}" ]]; then
+            history_file="${INM_PATH_BASE_DIR%/}/${history_file#/}"
         fi
-    elif [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
-        history_file="${INM_BASE_DIRECTORY%/}/.inmanage/history.log"
+    elif [[ -n "${INM_PATH_BASE_DIR:-}" ]]; then
+        history_file="${INM_PATH_BASE_DIR%/}/.inmanage/history.log"
     fi
     if [[ -n "$history_file" ]]; then
         local history_dir
@@ -466,12 +473,12 @@ fi
         fi
     fi
 
-    if [ -z "$INM_BASE_DIRECTORY" ]; then
-        log err "[COC] 'INM_BASE_DIRECTORY' is empty. Aborting."
+    if [ -z "$INM_PATH_BASE_DIR" ]; then
+        log err "[COC] 'INM_PATH_BASE_DIR' is empty. Aborting."
         exit 1
     fi
 
-    INM_ENV_EXAMPLE_FILE="${INM_BASE_DIRECTORY%/}/.inmanage/.env.example"
+    INM_ENV_EXAMPLE_FILE="${INM_PATH_BASE_DIR%/}/.inmanage/.env.example"
     log debug "[COC] INM_ENV_EXAMPLE_FILE set to $INM_ENV_EXAMPLE_FILE"
 
     log info "[COC] Downloading .env.example for provisioning"
@@ -529,7 +536,7 @@ spawn_cli_config() {
     INM_SELF_ENV_FILE="$target"
 
     local -A saved_defaults=()
-    local -a extra_keys=()
+    local -A extra_values=()
     local key
     for key in "${!NAMED_ARGS[@]}"; do
         [[ "$key" == INM_* ]] || continue
@@ -537,25 +544,25 @@ spawn_cli_config() {
             saved_defaults["$key"]="${default_settings[$key]}"
             default_settings["$key"]="${NAMED_ARGS[$key]}"
         else
-            extra_keys+=("$key")
+            extra_values["$key"]="${NAMED_ARGS[$key]}"
         fi
     done
 
     write_config_defaults
-    if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+    if ! grep -q "^INM_SELF_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
         local inst_id
-        inst_id="$(config_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}")"
-        if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
-            echo "INM_INSTANCE_ID=\"${inst_id}\"" >> "$INM_SELF_ENV_FILE"
+        inst_id="$(config_resolve_instance_id "${INM_PATH_BASE_DIR:-}" "${INM_PATH_APP_ENV_FILE:-}")"
+        if ! grep -q "^INM_SELF_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+            echo "INM_SELF_INSTANCE_ID=\"${inst_id}\"" >> "$INM_SELF_ENV_FILE"
         fi
     fi
-    if ! grep -q "^INM_CLI_COMPATIBILITY=" "$INM_SELF_ENV_FILE"; then
-        echo "INM_CLI_COMPATIBILITY=\"ultron\"" >> "$INM_SELF_ENV_FILE"
+    if ! grep -q "^INM_SELF_CLI_COMPAT_MODE=" "$INM_SELF_ENV_FILE"; then
+        echo "INM_SELF_CLI_COMPAT_MODE=\"ultron\"" >> "$INM_SELF_ENV_FILE"
     fi
 
-    for key in "${extra_keys[@]}"; do
+    for key in "${!extra_values[@]}"; do
         local escaped
-        escaped="$(_config_escape_value "${NAMED_ARGS[$key]}")"
+        escaped="$(_config_escape_value "${extra_values[$key]}")"
         printf '%s="%s"\n' "$key" "$escaped" >> "$INM_SELF_ENV_FILE"
     done
 
@@ -563,7 +570,7 @@ spawn_cli_config() {
         default_settings["$key"]="${saved_defaults[$key]}"
     done
 
-    local cli_env_mode="${INM_CLI_ENV_MODE:-600}"
+    local cli_env_mode="${default_settings[INM_PERM_CLI_ENV_MODE]:-${INM_PERM_CLI_ENV_MODE:-600}}"
     chmod "$cli_env_mode" "$INM_SELF_ENV_FILE" 2>/dev/null
     log ok "[CFG] Config written: $INM_SELF_ENV_FILE"
     INM_CONFIG_CREATED_THIS_RUN=true

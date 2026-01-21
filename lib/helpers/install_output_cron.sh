@@ -88,18 +88,18 @@ cron_jobs_summary() {
 # ---------------------------------------------------------------------
 # print_cron_manual_instructions()
 # Print manual cron installation instructions.
-# Consumes: args: jobs, user; env: INM_BASE_DIRECTORY, INM_CRON_BACKUP_TIME, INM_NOTIFY_HEARTBEAT_TIME, INM_ENFORCED_SHELL.
+# Consumes: args: jobs, user; env: INM_PATH_BASE_DIR, INM_CRON_BACKUP_TIME, INM_NOTIFY_HEARTBEAT_TIME, INM_EXEC_SHELL_BIN.
 # Computes: cron command lines for selected jobs.
 # Returns: 0 after printing.
 # ---------------------------------------------------------------------
 print_cron_manual_instructions() {
     local jobs="${1:-artisan}"
-    local user="${2:-$INM_ENFORCED_USER}"
+    local user="${2:-$INM_EXEC_USER}"
     local cli_cmd
     cli_cmd="$(install_cli_hint)"
-    local base_clean="${INM_BASE_DIRECTORY%/}"
+    local base_clean="${INM_PATH_BASE_DIR%/}"
     local instance_id
-    instance_id="$(env_resolve_instance_id "$base_clean" "${INM_ENV_FILE:-}")"
+    instance_id="$(env_resolve_instance_id "$base_clean" "${INM_PATH_APP_ENV_FILE:-}")"
 
     printf "%bCron install failed.%b\n" "$MAGENTA" "$RESET"
     cron_jobs_flags "$jobs"
@@ -117,7 +117,7 @@ print_cron_manual_instructions() {
     fi
     if [[ "$CRON_JOB_BACKUP" == true ]]; then
         printf "  %b%s %s * * * %s %s -c \"%s/inmanage core backup\" >> /dev/null 2>&1%b\n" \
-            "$CYAN" "$backup_min" "$backup_hour" "$user" "$INM_ENFORCED_SHELL" "$base_clean" "$RESET"
+            "$CYAN" "$backup_min" "$backup_hour" "$user" "$INM_EXEC_SHELL_BIN" "$base_clean" "$RESET"
     fi
     if [[ "$CRON_JOB_HEARTBEAT" == true ]]; then
         local heartbeat_time="${INM_NOTIFY_HEARTBEAT_TIME:-06:00}"
@@ -128,7 +128,7 @@ print_cron_manual_instructions() {
             heartbeat_min="${heartbeat_time#*:}"
         fi
         printf "  %b%s %s * * * %s %s -c \"%s/inmanage core health --notify-heartbeat\" >> /dev/null 2>&1%b\n" \
-            "$CYAN" "$heartbeat_min" "$heartbeat_hour" "$user" "$INM_ENFORCED_SHELL" "$base_clean" "$RESET"
+            "$CYAN" "$heartbeat_min" "$heartbeat_hour" "$user" "$INM_EXEC_SHELL_BIN" "$base_clean" "$RESET"
     fi
     printf "\n"
 }

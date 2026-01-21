@@ -7,7 +7,7 @@ __HELPER_DB_CLIENT_LOADED=1
 # ---------------------------------------------------------------------
 # select_db_client()
 # Pick a MySQL-compatible client available on the system.
-# Consumes: args: allow_prompt, db_config_present; env: INM_DB_CLIENT; deps: prompt_var.
+# Consumes: args: allow_prompt, db_config_present; env: INM_DB_CLIENT_MODE; deps: prompt_var.
 # Computes: mysql/mariadb selection.
 # Returns: prints client name or empty string.
 # ---------------------------------------------------------------------
@@ -27,10 +27,10 @@ select_db_client() {
         db_client="mariadb"
     elif [ "$have_mysql" = true ] && [ "$have_mariadb" = true ]; then
         db_client="mysql"
-        if [ -n "${INM_DB_CLIENT:-}" ]; then
-            case "${INM_DB_CLIENT,,}" in
+        if [ -n "${INM_DB_CLIENT_MODE:-}" ]; then
+            case "${INM_DB_CLIENT_MODE,,}" in
                 mysql|mariadb)
-                    db_client="${INM_DB_CLIENT,,}"
+                    db_client="${INM_DB_CLIENT_MODE,,}"
                     ;;
             esac
         elif [ "$db_config_present" != true ] && [ "$allow_prompt" = true ] && [[ -t 0 ]]; then

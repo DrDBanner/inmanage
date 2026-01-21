@@ -92,26 +92,26 @@ notify_is_interactive() {
 # ---------------------------------------------------------------------
 # notify_is_enabled()
 # Check whether notifications are enabled.
-# Consumes: env: INM_NOTIFY_ENABLED.
+# Consumes: env: INM_NOTIFY_ENABLE.
 # Computes: boolean decision.
 # Returns: 0 if enabled, 1 otherwise.
 # ---------------------------------------------------------------------
 notify_is_enabled() {
-    notify_bool "${INM_NOTIFY_ENABLED:-false}"
+    notify_bool "${INM_NOTIFY_ENABLE:-false}"
 }
 
 # ---------------------------------------------------------------------
 # notify_noninteractive_only()
 # Check whether notifications are limited to non-interactive runs.
-# Consumes: env: INM_NOTIFY_NONINTERACTIVE_ONLY.
+# Consumes: env: INM_NOTIFY_NONINTERACTIVE_ONLY_ENABLE.
 # Computes: boolean decision.
 # Returns: 0 if non-interactive only, 1 otherwise.
 # ---------------------------------------------------------------------
 notify_noninteractive_only() {
-    if [ -z "${INM_NOTIFY_NONINTERACTIVE_ONLY+x}" ]; then
+    if [ -z "${INM_NOTIFY_NONINTERACTIVE_ONLY_ENABLE+x}" ]; then
         return 0
     fi
-    notify_bool "${INM_NOTIFY_NONINTERACTIVE_ONLY:-true}"
+    notify_bool "${INM_NOTIFY_NONINTERACTIVE_ONLY_ENABLE:-true}"
 }
 
 # ---------------------------------------------------------------------
@@ -135,14 +135,14 @@ notify_should_send() {
 # ---------------------------------------------------------------------
 # notify_resolve_targets()
 # Resolve notification targets from config.
-# Consumes: env: INM_NOTIFY_TARGETS, INM_NOTIFY_EMAIL_TO.
+# Consumes: env: INM_NOTIFY_TARGETS_LIST, INM_NOTIFY_EMAIL_TO_LIST.
 # Computes: target list string.
 # Returns: prints targets.
 # ---------------------------------------------------------------------
 notify_resolve_targets() {
-    local targets="${INM_NOTIFY_TARGETS:-}"
+    local targets="${INM_NOTIFY_TARGETS_LIST:-}"
     targets="${targets//[[:space:]]/}"
-    if [ -z "$targets" ] && [ -n "${INM_NOTIFY_EMAIL_TO:-}" ]; then
+    if [ -z "$targets" ] && [ -n "${INM_NOTIFY_EMAIL_TO_LIST:-}" ]; then
         targets="email"
     fi
     printf "%s" "$targets"
@@ -213,8 +213,8 @@ notify_format_body() {
     fi
     rows+=("Host|$host")
     rows+=("User|$run_user")
-    if [ -n "${INM_BASE_DIRECTORY:-}" ]; then
-        rows+=("Base|${INM_BASE_DIRECTORY%/}")
+    if [ -n "${INM_PATH_BASE_DIR:-}" ]; then
+        rows+=("Base|${INM_PATH_BASE_DIR%/}")
     fi
     if [ -n "${APP_URL:-}" ]; then
         rows+=("APP_URL|${APP_URL%/}")
@@ -381,7 +381,7 @@ notify_emit_heartbeat() {
     local warn="$3"
     local err="$4"
     local details="${5:-}"
-    if ! notify_bool "${INM_NOTIFY_HEARTBEAT_ENABLED:-false}"; then
+    if ! notify_bool "${INM_NOTIFY_HEARTBEAT_ENABLE:-false}"; then
         log debug "[NOTIFY] Heartbeat disabled; skipping."
         return 0
     fi
@@ -416,7 +416,7 @@ notify_send_test() {
     local err="$4"
     local details="${5:-}"
     if ! notify_is_enabled; then
-        log warn "[NOTIFY] Notifications disabled (set INM_NOTIFY_ENABLED=true)."
+        log warn "[NOTIFY] Notifications disabled (set INM_NOTIFY_ENABLE=true)."
         return 1
     fi
     local summary counts

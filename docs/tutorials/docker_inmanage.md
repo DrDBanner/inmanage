@@ -424,12 +424,12 @@ Create the INmanage CLI config (copy/paste):
 ```bash
 docker compose exec --user www-data app bash -lc "mkdir -p /var/www/.inmanage"
 docker compose exec --user www-data app bash -lc "cat > /var/www/.inmanage/.env.inmanage <<'EOF'
-INM_ENFORCED_USER=www-data
-INM_BASE_DIRECTORY=/var/www
-INM_INSTALLATION_DIRECTORY=./html
-INM_BACKUP_DIRECTORY=./.backup
-INM_CACHE_LOCAL_DIRECTORY=./.cache
-INM_FORCE_READ_DB_PW=Y
+INM_EXEC_USER=www-data
+INM_PATH_BASE_DIR=/var/www
+INM_PATH_APP_DIR=./html
+INM_BACKUP_DIR=./.backup
+INM_CACHE_LOCAL_DIR=./.cache
+INM_DB_FORCE_READ_PW_ENABLE=Y
 EOF"
 ```
 
@@ -463,10 +463,10 @@ MAIL_PASSWORD=change-me
 MAIL_ENCRYPTION=tls
 MAIL_FROM_ADDRESS=ops@example.com
 MAIL_FROM_NAME=Billing
-INM_NOTIFY_ENABLED=true
-INM_NOTIFY_TARGETS=email
-INM_NOTIFY_EMAIL_TO=ops@example.com
-INM_NOTIFY_HEARTBEAT_ENABLED=true
+INM_NOTIFY_ENABLE=true
+INM_NOTIFY_TARGETS_LIST=email
+INM_NOTIFY_EMAIL_TO_LIST=ops@example.com
+INM_NOTIFY_HEARTBEAT_ENABLE=true
 INM_NOTIFY_HEARTBEAT_TIME=06:00
 INM_NOTIFY_HEARTBEAT_LEVEL=WARN
 EOF"

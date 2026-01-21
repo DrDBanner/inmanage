@@ -80,13 +80,13 @@ res_warn_env_unreadable() {
 # resolve_env_paths()
 # Detect Invoice Ninja .env and related paths via flags or heuristic.
 # Consumes: args: NAMED_ARGS; env: INM_*; deps: file_read_state/ensure_trailing_slash/compute_installation_path.
-# Computes: INM_SELF_ENV_FILE, INM_ENV_FILE, INM_BASE_DIRECTORY, INM_INSTALLATION_DIRECTORY, INM_INSTALLATION_PATH.
+# Computes: INM_SELF_ENV_FILE, INM_PATH_APP_ENV_FILE, INM_PATH_BASE_DIR, INM_PATH_APP_DIR, INM_INSTALLATION_PATH.
 # Returns: 0 always (logs warnings on issues).
 # ---------------------------------------------------------------------
 resolve_env_paths() {
     log debug "[RES] Resolving environment paths... (args: $*)"
 
-    unset -v INM_SELF_ENV_FILE INM_PROVISION_ENV_FILE INM_ENV_FILE INM_BASE_DIRECTORY INM_INSTALLATION_DIRECTORY INM_INSTALLATION_PATH
+    unset -v INM_SELF_ENV_FILE INM_PROVISION_ENV_FILE INM_PATH_APP_ENV_FILE INM_PATH_BASE_DIR INM_PATH_APP_DIR INM_INSTALLATION_PATH
 
     if [ -n "${NAMED_ARGS[ninja_location]}" ]; then
         local ninja_dir="${NAMED_ARGS[ninja_location]}"
@@ -101,18 +101,18 @@ resolve_env_paths() {
             local env_state
             env_state="$(file_read_state "$ninja_dir/.env")"
             if [ "$env_state" = "readable" ]; then
-                INM_BASE_DIRECTORY="$(dirname "$(realpath "$ninja_dir")")/"
-                INM_INSTALLATION_DIRECTORY="$(basename "$ninja_dir")"
-                INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
-                INM_ENV_FILE="$ninja_dir/.env"
-                log debug "[RES] Using .env from --ninja-location: $INM_ENV_FILE"
-                if [ -z "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_BASE_DIRECTORY/.inmanage/.env.inmanage" ]; then
-                    INM_SELF_ENV_FILE="$INM_BASE_DIRECTORY/.inmanage/.env.inmanage"
+                INM_PATH_BASE_DIR="$(dirname "$(realpath "$ninja_dir")")/"
+                INM_PATH_APP_DIR="$(basename "$ninja_dir")"
+                INM_INSTALLATION_PATH="$(compute_installation_path "$INM_PATH_BASE_DIR" "$INM_PATH_APP_DIR")"
+                INM_PATH_APP_ENV_FILE="$ninja_dir/.env"
+                log debug "[RES] Using .env from --ninja-location: $INM_PATH_APP_ENV_FILE"
+                if [ -z "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_PATH_BASE_DIR/.inmanage/.env.inmanage" ]; then
+                    INM_SELF_ENV_FILE="$INM_PATH_BASE_DIR/.inmanage/.env.inmanage"
                 fi
                 return 0
             elif [ "$env_state" = "exists_unreadable" ] || [ "$env_state" = "permission" ]; then
-                INM_ENV_FILE="$ninja_dir/.env"
-                res_warn_env_unreadable "[RES] App .env not readable at $INM_ENV_FILE (permission issue)."
+                INM_PATH_APP_ENV_FILE="$ninja_dir/.env"
+                res_warn_env_unreadable "[RES] App .env not readable at $INM_PATH_APP_ENV_FILE (permission issue)."
                 return 0
             else
                 log warn "[RES] No .env found in --ninja-location: $ninja_dir (falling back to auto-detect)"
@@ -125,28 +125,35 @@ resolve_env_paths() {
     if [ -f "$PWD/.inmanage/.env.inmanage" ]; then
         if [ -r "$PWD/.inmanage/.env.inmanage" ]; then
             log debug "[RES] Loading local config: $PWD/.inmanage/.env.inmanage"
-            # shellcheck source=/dev/null
-            source "$PWD/.inmanage/.env.inmanage"
             INM_SELF_ENV_FILE="$PWD/.inmanage/.env.inmanage"
+            if declare -F load_env_file_raw >/dev/null 2>&1; then
+                load_env_file_raw "$INM_SELF_ENV_FILE" || true
+            else
+                # shellcheck source=/dev/null
+                source "$INM_SELF_ENV_FILE"
+            fi
+            if declare -F self_migrations_run_if_needed >/dev/null 2>&1; then
+                self_migrations_run_if_needed "$INM_SELF_ENV_FILE"
+            fi
         else
             log warn "[RES] Local config not readable: $PWD/.inmanage/.env.inmanage"
             INM_SELF_ENV_FILE="$PWD/.inmanage/.env.inmanage"
         fi
-        if [ -n "${INM_BASE_DIRECTORY:-}" ] && [ -n "${INM_INSTALLATION_DIRECTORY:-}" ]; then
-            INM_BASE_DIRECTORY="$(ensure_trailing_slash "${INM_BASE_DIRECTORY}")"
-            INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
-            INM_ENV_FILE="${INM_INSTALLATION_PATH%/}/.env"
-            log debug "[RES] Derived from config: base=$INM_BASE_DIRECTORY install=$INM_INSTALLATION_DIRECTORY env=$INM_ENV_FILE"
+        if [ -n "${INM_PATH_BASE_DIR:-}" ] && [ -n "${INM_PATH_APP_DIR:-}" ]; then
+            INM_PATH_BASE_DIR="$(ensure_trailing_slash "${INM_PATH_BASE_DIR}")"
+            INM_INSTALLATION_PATH="$(compute_installation_path "$INM_PATH_BASE_DIR" "$INM_PATH_APP_DIR")"
+            INM_PATH_APP_ENV_FILE="${INM_INSTALLATION_PATH%/}/.env"
+            log debug "[RES] Derived from config: base=$INM_PATH_BASE_DIR install=$INM_PATH_APP_DIR env=$INM_PATH_APP_ENV_FILE"
             local env_state
-            env_state="$(file_read_state "$INM_ENV_FILE")"
+            env_state="$(file_read_state "$INM_PATH_APP_ENV_FILE")"
             if [ "$env_state" = "readable" ]; then
                 log debug "[RES] Using .env from existing project config, skipping discovery."
                 return 0
             elif [ "$env_state" = "exists_unreadable" ] || [ "$env_state" = "permission" ]; then
-                res_warn_env_unreadable "[RES] App .env not readable at $INM_ENV_FILE (permission issue); skipping discovery."
+                res_warn_env_unreadable "[RES] App .env not readable at $INM_PATH_APP_ENV_FILE (permission issue); skipping discovery."
                 return 0
             else
-                res_log_missing_env "[RES] App .env not found at $INM_ENV_FILE (from config); continuing discovery."
+                res_log_missing_env "[RES] App .env not found at $INM_PATH_APP_ENV_FILE (from config); continuing discovery."
             fi
         fi
     fi
@@ -181,44 +188,44 @@ resolve_env_paths() {
 
     if [ ${#candidates[@]} -eq 0 ]; then
         if [ ${#unreadable_candidates[@]} -gt 0 ]; then
-            INM_ENV_FILE="${unreadable_candidates[0]}"
-            res_warn_env_unreadable "[RES] App .env not readable: $INM_ENV_FILE (permission issue)."
+            INM_PATH_APP_ENV_FILE="${unreadable_candidates[0]}"
+            res_warn_env_unreadable "[RES] App .env not readable: $INM_PATH_APP_ENV_FILE (permission issue)."
             return 0
         fi
-        if [ -z "${INM_ENV_FILE:-}" ]; then
+        if [ -z "${INM_PATH_APP_ENV_FILE:-}" ]; then
             # Last resort: derive from base/install if set, otherwise warn only
-            if [ -n "${INM_BASE_DIRECTORY:-}" ] && [ -n "${INM_INSTALLATION_DIRECTORY:-}" ]; then
-                INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
-                INM_ENV_FILE="${INM_INSTALLATION_PATH%/}/.env"
-                res_log_missing_env "[RES] No .env found; deriving path: $INM_ENV_FILE"
+            if [ -n "${INM_PATH_BASE_DIR:-}" ] && [ -n "${INM_PATH_APP_DIR:-}" ]; then
+                INM_INSTALLATION_PATH="$(compute_installation_path "$INM_PATH_BASE_DIR" "$INM_PATH_APP_DIR")"
+                INM_PATH_APP_ENV_FILE="${INM_INSTALLATION_PATH%/}/.env"
+                res_log_missing_env "[RES] No .env found; deriving path: $INM_PATH_APP_ENV_FILE"
             else
                 res_log_missing_env "[RES] Could not find a usable .env file. Please specify --ninja-location=…"
                 return 0
             fi
         fi
     elif [ ${#candidates[@]} -eq 1 ]; then
-        INM_ENV_FILE="${candidates[0]}"
-        log debug "[RES] Found .env: $INM_ENV_FILE"
+        INM_PATH_APP_ENV_FILE="${candidates[0]}"
+        log debug "[RES] Found .env: $INM_PATH_APP_ENV_FILE"
     else
         if [ "${NAMED_ARGS[force]}" = true ]; then
             log err "[RES] Multiple .env files found, but --force was used. Cannot decide."
             exit 1
         fi
-        INM_ENV_FILE="$(select_from_candidates "Select your Invoice Ninja .env file:" "${candidates[@]}")" || exit 1
+        INM_PATH_APP_ENV_FILE="$(select_from_candidates "Select your Invoice Ninja .env file:" "${candidates[@]}")" || exit 1
     fi
 
-    if [ -n "${INM_ENV_FILE:-}" ]; then
+    if [ -n "${INM_PATH_APP_ENV_FILE:-}" ]; then
         if command -v realpath >/dev/null 2>&1; then
-            INM_ENV_FILE="$(realpath "$INM_ENV_FILE" 2>/dev/null || echo "$INM_ENV_FILE")"
+            INM_PATH_APP_ENV_FILE="$(realpath "$INM_PATH_APP_ENV_FILE" 2>/dev/null || echo "$INM_PATH_APP_ENV_FILE")"
         fi
-        INM_BASE_DIRECTORY="$(dirname "$(dirname "$INM_ENV_FILE")")/"
-        INM_INSTALLATION_DIRECTORY="$(basename "$(dirname "$INM_ENV_FILE")")"
-        INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
+        INM_PATH_BASE_DIR="$(dirname "$(dirname "$INM_PATH_APP_ENV_FILE")")/"
+        INM_PATH_APP_DIR="$(basename "$(dirname "$INM_PATH_APP_ENV_FILE")")"
+        INM_INSTALLATION_PATH="$(compute_installation_path "$INM_PATH_BASE_DIR" "$INM_PATH_APP_DIR")"
 
-        log debug "[RES] Detected base: $INM_BASE_DIRECTORY"
-        log debug "[RES] Detected install dir: $INM_INSTALLATION_DIRECTORY"
+        log debug "[RES] Detected base: $INM_PATH_BASE_DIR"
+        log debug "[RES] Detected install dir: $INM_PATH_APP_DIR"
         log debug "[RES] Install path: $INM_INSTALLATION_PATH"
-        log debug "[RES] Using: $INM_ENV_FILE"
+        log debug "[RES] Using: $INM_PATH_APP_ENV_FILE"
     fi
 
     # Prefer config alongside the base directory (not inside Invoice Ninja)
@@ -236,12 +243,12 @@ resolve_env_paths() {
 
         # Anchor relative config root to detected base directory
         if [[ "$config_root" != /* ]]; then
-            config_root="${INM_BASE_DIRECTORY%/}/${config_root#/}"
+            config_root="${INM_PATH_BASE_DIR%/}/${config_root#/}"
         fi
 
         local cfg_candidates=(
             "${config_root%/}/${config_basename}"
-            "${INM_BASE_DIRECTORY%/}/${config_basename}"          # backward compat if user placed it here
+            "${INM_PATH_BASE_DIR%/}/${config_basename}"          # backward compat if user placed it here
         )
         for cfg in "${cfg_candidates[@]}"; do
             if [ -f "$cfg" ]; then

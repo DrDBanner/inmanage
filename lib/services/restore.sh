@@ -30,7 +30,7 @@ run_restore() {
     fi
     local target_arg
     target_arg="$(args_get ARGS "" target bundle_target)"
-    local target_default="${INM_INSTALLATION_PATH:-${INM_BASE_DIRECTORY%/}/${INM_INSTALLATION_DIRECTORY#/}}"
+    local target_default="${INM_INSTALLATION_PATH:-${INM_PATH_BASE_DIR%/}/${INM_PATH_APP_DIR#/}}"
     local target="${target_arg:-$target_default}"
     local prebackup
     prebackup="false"
@@ -51,23 +51,23 @@ run_restore() {
     local simulate="${DRY_RUN:-false}"
 
     if [[ "$simulate" != true ]]; then
-        mkdir -p "$INM_BACKUP_DIRECTORY" 2>/dev/null || true
+        mkdir -p "$INM_BACKUP_DIR" 2>/dev/null || true
     else
-        log info "[DRY-RUN] Would ensure backup directory exists: $INM_BACKUP_DIRECTORY"
+        log info "[DRY-RUN] Would ensure backup directory exists: $INM_BACKUP_DIR"
     fi
 
     if [[ -z "$bundle" ]]; then
         local candidates=()
-        if [[ -d "$INM_BACKUP_DIRECTORY" ]]; then
-            log info "[RESTORE] Looking for backups in: $INM_BACKUP_DIRECTORY"
+        if [[ -d "$INM_BACKUP_DIR" ]]; then
+            log info "[RESTORE] Looking for backups in: $INM_BACKUP_DIR"
             while IFS= read -r entry; do
-                local path="$INM_BACKUP_DIRECTORY/$entry"
+                local path="$INM_BACKUP_DIR/$entry"
                 [[ "$entry" == *.sha256 ]] && continue
                 [[ "$entry" == restore_pre_* ]] && continue
                 if [[ -f "$path" || -d "$path" ]]; then
                     candidates+=("$path")
                 fi
-            done < <(ls -1t "$INM_BACKUP_DIRECTORY" 2>/dev/null)
+            done < <(ls -1t "$INM_BACKUP_DIR" 2>/dev/null)
         fi
 
         if [[ ${#candidates[@]} -eq 0 ]]; then
@@ -180,7 +180,7 @@ run_restore() {
     uploads_dir=$(find "$stage_root" -maxdepth 4 -type d \( -path "*/public/uploads" -o -name "uploads" \) | head -n1)
     extra_dir=$(find "$stage_root" -maxdepth 2 -type d -name "extra" | head -n1)
 
-    local app_hint="${INM_INSTALLATION_DIRECTORY#/}"
+    local app_hint="${INM_PATH_APP_DIR#/}"
     local app_hint_base
     app_hint_base="$(basename "${INM_INSTALLATION_PATH:-$target_default}")"
     if [[ -n "$app_hint" && -d "$stage_root/$app_hint" ]]; then
@@ -218,7 +218,7 @@ run_restore() {
     fi
 
     if [[ "$include_app" == true && -d "$target" ]]; then
-        pre_restore_backup="${INM_BACKUP_DIRECTORY%/}/restore_pre_$(date +%Y%m%d-%H%M%S)"
+        pre_restore_backup="${INM_BACKUP_DIR%/}/restore_pre_$(date +%Y%m%d-%H%M%S)"
         if [[ "$simulate" == true ]]; then
             log info "[DRY-RUN] Would move existing app to $pre_restore_backup before restore."
         else
@@ -416,7 +416,7 @@ run_restore() {
 # ---------------------------------------------------------------------
 # run_restore_rollback()
 # Roll back to a pre-restore backup (restore_pre_*).
-# Consumes: args: latest/name/target; env: INM_BACKUP_DIRECTORY, INM_INSTALLATION_PATH.
+# Consumes: args: latest/name/target; env: INM_BACKUP_DIR, INM_INSTALLATION_PATH.
 # Computes: app directory swap to pre-restore backup.
 # Returns: 0 on success, non-zero on failure.
 # ---------------------------------------------------------------------
@@ -431,9 +431,9 @@ run_restore_rollback() {
     parse_named_args args "$@"
 
     local target
-    target="${INM_INSTALLATION_PATH:-${INM_BASE_DIRECTORY%/}/${INM_INSTALLATION_DIRECTORY#/}}"
+    target="${INM_INSTALLATION_PATH:-${INM_PATH_BASE_DIR%/}/${INM_PATH_APP_DIR#/}}"
     target="${target%/}"
-    local backup_dir="${INM_BACKUP_DIRECTORY:-./_backups}"
+    local backup_dir="${INM_BACKUP_DIR:-./_backups}"
 
     local target_arg
     target_arg="$(app_parse_rollback_target args "latest" "$@")"

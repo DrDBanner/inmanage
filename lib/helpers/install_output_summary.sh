@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------
 # print_provisioned_summary()
 # Print the post-install summary for provisioned installs.
-# Consumes: args: cron_ok, cron_jobs, cron_skipped; env: APP_URL, INM_PROVISION_FILE_USED, INM_PROVISION_ENV_FILE, INM_BASE_DIRECTORY.
+# Consumes: args: cron_ok, cron_jobs, cron_skipped; env: APP_URL, INM_PROVISION_FILE_USED, INM_PROVISION_ENV_FILE, INM_PATH_BASE_DIR.
 # Computes: summary output and rollback/cron hints.
 # Returns: 0 after printing.
 # ---------------------------------------------------------------------
@@ -14,8 +14,8 @@ print_provisioned_summary() {
     local app_url="${APP_URL:-https://your.url}"
     local provision_file="${INM_PROVISION_FILE_USED:-${INM_PROVISION_ENV_FILE:-.inmanage/.env.provision}}"
     if [[ "$provision_file" != /* ]]; then
-        if [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
-            provision_file="${INM_BASE_DIRECTORY%/}/${provision_file#/}"
+        if [[ -n "${INM_PATH_BASE_DIR:-}" ]]; then
+            provision_file="${INM_PATH_BASE_DIR%/}/${provision_file#/}"
         else
             provision_file="$(pwd)/${provision_file#/}"
         fi
@@ -53,7 +53,7 @@ print_provisioned_summary() {
         printf "%bCron install skipped (--no-cron-install).%b\n\n" "$YELLOW" "$RESET"
     else
         if [[ "$cron_ok" != true ]]; then
-            print_cron_manual_instructions "$cron_jobs" "${INM_ENFORCED_USER:-$(whoami)}"
+            print_cron_manual_instructions "$cron_jobs" "${INM_EXEC_USER:-$(whoami)}"
         fi
     fi
     printf "%b%bYour provision file must get removed manually once you are satisfied.%b\n" "$MAGENTA" "$BOLD" "$RESET"
@@ -104,7 +104,7 @@ print_wizard_summary() {
         printf "%bCron install skipped (--no-cron-install).%b\n\n" "$YELLOW" "$RESET"
     else
         if [[ "$cron_ok" != true ]]; then
-            print_cron_manual_instructions "$cron_jobs" "${INM_ENFORCED_USER:-$(whoami)}"
+            print_cron_manual_instructions "$cron_jobs" "${INM_EXEC_USER:-$(whoami)}"
         fi
     fi
 }

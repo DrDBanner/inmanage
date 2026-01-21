@@ -7,15 +7,15 @@ __HOOKS_HELPER_LOADED=1
 # ---------------------------------------------------------------------
 # resolve_hooks_dir()
 # Resolve the hooks directory path (absolute).
-# Consumes: env: INM_HOOKS_DIR, INM_CONFIG_ROOT, INM_BASE_DIRECTORY; cwd.
+# Consumes: env: INM_HOOK_DIR, INM_CONFIG_ROOT, INM_PATH_BASE_DIR; cwd.
 # Computes: absolute hooks directory.
 # Returns: prints hooks directory to stdout.
 # ---------------------------------------------------------------------
 resolve_hooks_dir() {
-    local hooks_dir="${INM_HOOKS_DIR:-${INM_CONFIG_ROOT%/}/hooks}"
+    local hooks_dir="${INM_HOOK_DIR:-${INM_CONFIG_ROOT%/}/hooks}"
     if [[ "$hooks_dir" != /* ]]; then
-        if [[ -n "${INM_BASE_DIRECTORY:-}" ]]; then
-            hooks_dir="${INM_BASE_DIRECTORY%/}/${hooks_dir#/}"
+        if [[ -n "${INM_PATH_BASE_DIR:-}" ]]; then
+            hooks_dir="${INM_PATH_BASE_DIR%/}/${hooks_dir#/}"
         else
             hooks_dir="$(pwd)/${hooks_dir#/}"
         fi
@@ -39,34 +39,34 @@ hook_notify_bool() {
 # ---------------------------------------------------------------------
 # hook_notify_enabled()
 # Check whether hook notifications are enabled.
-# Consumes: env: INM_NOTIFY_HOOKS_ENABLED.
+# Consumes: env: INM_NOTIFY_HOOKS_ENABLE.
 # Computes: boolean decision.
 # Returns: 0 if enabled, 1 otherwise.
 # ---------------------------------------------------------------------
 hook_notify_enabled() {
-    hook_notify_bool "${INM_NOTIFY_HOOKS_ENABLED:-true}"
+    hook_notify_bool "${INM_NOTIFY_HOOKS_ENABLE:-true}"
 }
 
 # ---------------------------------------------------------------------
 # hook_notify_success_enabled()
 # Check whether hook success notifications are enabled.
-# Consumes: env: INM_NOTIFY_HOOKS_SUCCESS.
+# Consumes: env: INM_NOTIFY_HOOKS_SUCCESS_ENABLE.
 # Computes: boolean decision.
 # Returns: 0 if enabled, 1 otherwise.
 # ---------------------------------------------------------------------
 hook_notify_success_enabled() {
-    hook_notify_bool "${INM_NOTIFY_HOOKS_SUCCESS:-false}"
+    hook_notify_bool "${INM_NOTIFY_HOOKS_SUCCESS_ENABLE:-false}"
 }
 
 # ---------------------------------------------------------------------
 # hook_notify_failure_enabled()
 # Check whether hook failure notifications are enabled.
-# Consumes: env: INM_NOTIFY_HOOKS_FAILURE.
+# Consumes: env: INM_NOTIFY_HOOKS_FAILURE_ENABLE.
 # Computes: boolean decision.
 # Returns: 0 if enabled, 1 otherwise.
 # ---------------------------------------------------------------------
 hook_notify_failure_enabled() {
-    hook_notify_bool "${INM_NOTIFY_HOOKS_FAILURE:-true}"
+    hook_notify_bool "${INM_NOTIFY_HOOKS_FAILURE_ENABLE:-true}"
 }
 
 # ---------------------------------------------------------------------
@@ -89,7 +89,7 @@ hook_notify_emit() {
 # ---------------------------------------------------------------------
 # run_hook()
 # Execute a hook script for the given event.
-# Consumes: args: event; env: INM_HOOK_* / INM_HOOKS_DIR / INM_HOOK_STRICT / DRY_RUN.
+# Consumes: args: event; env: INM_HOOK_* / INM_HOOK_DIR / INM_HOOK_STRICT_ENABLE / DRY_RUN.
 # Computes: resolves hook path and executes it.
 # Returns: hook exit code (pre-* aborts), 0 on non-strict post-* failure.
 # ---------------------------------------------------------------------
@@ -107,7 +107,7 @@ run_hook() {
 
     local event_key="${event^^}"
     event_key="${event_key//-/_}"
-    local env_var="INM_HOOK_${event_key}"
+    local env_var="INM_HOOK_${event_key}_PATHS"
     local hook_path="${!env_var:-}"
     local from_env=false
 
@@ -153,7 +153,7 @@ run_hook() {
     fi
 
     if [[ "$rc" -ne 0 ]]; then
-        local strict="${INM_HOOK_STRICT:-false}"
+        local strict="${INM_HOOK_STRICT_ENABLE:-false}"
         local fail_on_error=false
         if [[ "$event" == pre-* ]]; then
             fail_on_error=true

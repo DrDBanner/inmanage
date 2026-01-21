@@ -66,15 +66,15 @@ run_update() {
         return 0
     fi
 
-    # expand any placeholders in INM_ENV_FILE before use (without eval)
+    # expand any placeholders in INM_PATH_APP_ENV_FILE before use (without eval)
     # shellcheck disable=SC2016
-    if printf '%s' "${INM_ENV_FILE:-}" | grep -q '\${'; then
-        INM_ENV_FILE="$(expand_placeholders "$INM_ENV_FILE")"
+    if printf '%s' "${INM_PATH_APP_ENV_FILE:-}" | grep -q '\${'; then
+        INM_PATH_APP_ENV_FILE="$(expand_placeholders "$INM_PATH_APP_ENV_FILE")"
     fi
-    if [ ! -f "$INM_ENV_FILE" ]; then
+    if [ ! -f "$INM_PATH_APP_ENV_FILE" ]; then
         log warn "[UPD] No .env file found – the system is not provisioned or broken."
-        log debug "[UPD] Please check the .env file location at $INM_ENV_FILE"
-        log info "[UPD] Use 'inm spawn provision-file' to set up a new system fast, use '-h' to see more options, or move a valid .env file into '$INM_INSTALLATION_DIRECTORY' to fix a potentially broken installation."
+        log debug "[UPD] Please check the .env file location at $INM_PATH_APP_ENV_FILE"
+        log info "[UPD] Use 'inm spawn provision-file' to set up a new system fast, use '-h' to see more options, or move a valid .env file into '$INM_PATH_APP_DIR' to fix a potentially broken installation."
         return 1
     fi
 
@@ -99,9 +99,9 @@ run_update() {
     run_hook "pre-update" || return 1
 
     if ! args_is_true "$no_db_backup"; then
-        local backup_dir="${INM_BACKUP_DIRECTORY%/}"
+        local backup_dir="${INM_BACKUP_DIR%/}"
         if [[ "$backup_dir" != /* ]]; then
-            backup_dir="${INM_BASE_DIRECTORY%/}/${backup_dir#/}"
+            backup_dir="${INM_PATH_BASE_DIR%/}/${backup_dir#/}"
         fi
         mkdir -p "$backup_dir" 2>/dev/null || {
             log err "[UPD] Cannot create backup directory: $backup_dir"
@@ -155,12 +155,12 @@ run_update() {
     fi
 
     log debug "[UPD] Copying .env to $new_dir"
-    cp "$INM_ENV_FILE" "$new_dir/.env" || {
+    cp "$INM_PATH_APP_ENV_FILE" "$new_dir/.env" || {
         log err "[UPD] Failed to copy .env"
         return 1
     }
 
-    local preserve_raw="${args[preserve_paths]:-${args[preserve-paths]:-${INM_PRESERVE_PATHS:-}}}"
+    local preserve_raw="${args[preserve_paths]:-${args[preserve-paths]:-${INM_UPDATE_PRESERVE_PATHS:-}}}"
     local preserve_paths=()
     app_default_preserve_paths preserve_paths
     if [[ -n "$preserve_raw" ]]; then
@@ -189,14 +189,14 @@ run_update() {
         return 1
     }
     enforce_ownership "$install_path"
-    if [[ -n "${INM_DIR_MODE:-}" ]]; then
-        enforce_dir_permissions "$INM_DIR_MODE" "$install_path"
+    if [[ -n "${INM_PERM_DIR_MODE:-}" ]]; then
+        enforce_dir_permissions "$INM_PERM_DIR_MODE" "$install_path"
     fi
-    if [[ -n "${INM_FILE_MODE:-}" ]]; then
-        enforce_file_permissions "$INM_FILE_MODE" "$install_path"
+    if [[ -n "${INM_PERM_FILE_MODE:-}" ]]; then
+        enforce_file_permissions "$INM_PERM_FILE_MODE" "$install_path"
     fi
-    if [[ -n "${INM_ENV_MODE:-}" ]]; then
-        enforce_file_mode "$INM_ENV_MODE" "${install_path%/}/.env"
+    if [[ -n "${INM_PERM_APP_ENV_MODE:-}" ]]; then
+        enforce_file_mode "$INM_PERM_APP_ENV_MODE" "${install_path%/}/.env"
     fi
 
     log info "[UPD] Running post-activation artisan tasks"

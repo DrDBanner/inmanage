@@ -362,7 +362,7 @@ if [[ -n "$APP_ENV_PATH" ]]; then
         echo "app env file not found: $APP_ENV_PATH" >&2
         exit 1
     fi
-    export INM_ENV_FILE="$APP_ENV_PATH"
+    export INM_PATH_APP_ENV_FILE="$APP_ENV_PATH"
 fi
 if [[ -n "$INSTALL_DIR" ]]; then
     if [[ ! -d "$INSTALL_DIR" ]]; then
@@ -414,9 +414,9 @@ fi
 
 export NO_COLOR=1
 if [[ -n "$DB_CLIENT" ]]; then
-    export INM_DB_CLIENT="$DB_CLIENT"
-elif [[ "$NONINTERACTIVE" == true && -z "${INM_DB_CLIENT:-}" ]]; then
-    export INM_DB_CLIENT="mysql"
+    export INM_DB_CLIENT_MODE="$DB_CLIENT"
+elif [[ "$NONINTERACTIVE" == true && -z "${INM_DB_CLIENT_MODE:-}" ]]; then
+    export INM_DB_CLIENT_MODE="mysql"
 fi
 if [[ "$DESTRUCTIVE" == true ]]; then
     TEST_DRY_RUN=false
@@ -427,8 +427,8 @@ log "INFO" "CLI: $INM_CLI"
 log "INFO" "User: $(whoami)"
 log "INFO" "PWD: $(pwd)"
 log "INFO" "Log file: $LOG_FILE"
-if [[ -n "${INM_DB_CLIENT:-}" ]]; then
-    log "INFO" "INM_DB_CLIENT=${INM_DB_CLIENT}"
+if [[ -n "${INM_DB_CLIENT_MODE:-}" ]]; then
+    log "INFO" "INM_DB_CLIENT_MODE=${INM_DB_CLIENT_MODE}"
 fi
 log "INFO" "Repeat: $REPEAT"
 log "INFO" "INM debug: $INM_DEBUG"
@@ -450,9 +450,9 @@ detect_run_user() {
         return 0
     fi
     if [[ -f "./.inmanage/.env.inmanage" ]]; then
-        candidate="$(grep -E '^INM_ENFORCED_USER=' "./.inmanage/.env.inmanage" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ')"
+        candidate="$(grep -E '^INM_EXEC_USER=' "./.inmanage/.env.inmanage" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ')"
     elif [[ -n "${INM_SELF_ENV_FILE:-}" && -f "${INM_SELF_ENV_FILE:-}" ]]; then
-        candidate="$(grep -E '^INM_ENFORCED_USER=' "$INM_SELF_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ')"
+        candidate="$(grep -E '^INM_EXEC_USER=' "$INM_SELF_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ')"
     fi
     printf "%s" "$candidate"
 }
@@ -484,8 +484,8 @@ resolve_base_install() {
     fi
     if [[ -n "$env_file" ]]; then
         local base_dir install_dir
-        base_dir="$(grep -E '^INM_BASE_DIRECTORY=' "$env_file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ')"
-        install_dir="$(grep -E '^INM_INSTALLATION_DIRECTORY=' "$env_file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ')"
+        base_dir="$(grep -E '^INM_PATH_BASE_DIR=' "$env_file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ')"
+        install_dir="$(grep -E '^INM_PATH_APP_DIR=' "$env_file" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ')"
         if [[ -n "$base_dir" && -n "$install_dir" ]]; then
             base="$(cd "${base_dir%/}" && pwd)"
             install="$(cd "${base}/${install_dir#/}" && pwd)"
@@ -565,7 +565,7 @@ resolve_enforced_owner() {
     elif [[ -n "$INM_RUN_USER" ]]; then
         user="$INM_RUN_USER"
     elif [[ -n "$base_dir" && -f "$base_dir/.inmanage/.env.inmanage" ]]; then
-        user="$(grep -E '^INM_ENFORCED_USER=' "$base_dir/.inmanage/.env.inmanage" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ')"
+        user="$(grep -E '^INM_EXEC_USER=' "$base_dir/.inmanage/.env.inmanage" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"'\'' ')"
     fi
     if [[ -z "$user" ]]; then
         user="$(id -un 2>/dev/null || whoami 2>/dev/null || echo "root")"
@@ -595,13 +595,13 @@ prepare_cli_config() {
 
     mkdir -p "$config_dir" || return 1
     cat >"$config_file" <<EOF
-INM_BASE_DIRECTORY="${base_dir%/}/"
-INM_INSTALLATION_DIRECTORY="${install_rel}"
-INM_ENV_FILE="\${INM_BASE_DIRECTORY}\${INM_INSTALLATION_DIRECTORY}/.env"
-INM_CACHE_LOCAL_DIRECTORY="./.cache"
-INM_BACKUP_DIRECTORY="./.backup"
-INM_FORCE_READ_DB_PW="Y"
-INM_ENFORCED_USER="${owner_user}"
+INM_PATH_BASE_DIR="${base_dir%/}/"
+INM_PATH_APP_DIR="${install_rel}"
+INM_PATH_APP_ENV_FILE="\${INM_PATH_BASE_DIR}\${INM_PATH_APP_DIR}/.env"
+INM_CACHE_LOCAL_DIR="./.cache"
+INM_BACKUP_DIR="./.backup"
+INM_DB_FORCE_READ_PW_ENABLE="Y"
+INM_EXEC_USER="${owner_user}"
 EOF
     if [[ -n "$owner" ]]; then
         chown "$owner" "$config_dir" "$config_file" 2>/dev/null || true
@@ -650,15 +650,15 @@ prepare_cli_config_from_provision() {
     tmp_file="$(mktemp)"
     grep -E "^[[:space:]]*INM_[A-Za-z0-9_]+=" "$prov_file" 2>/dev/null | sed 's/^[[:space:]]*//' >"$tmp_file"
 
-    ensure_env_kv "$tmp_file" "INM_BASE_DIRECTORY" "${base_dir%/}/"
-    ensure_env_kv "$tmp_file" "INM_INSTALLATION_DIRECTORY" "$install_rel"
-    ensure_env_kv "$tmp_file" "INM_ENV_FILE" '${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}/.env'
+    ensure_env_kv "$tmp_file" "INM_PATH_BASE_DIR" "${base_dir%/}/"
+    ensure_env_kv "$tmp_file" "INM_PATH_APP_DIR" "$install_rel"
+    ensure_env_kv "$tmp_file" "INM_PATH_APP_ENV_FILE" '${INM_PATH_BASE_DIR}${INM_PATH_APP_DIR}/.env'
     if [[ -n "$owner_user" ]]; then
-        ensure_env_kv "$tmp_file" "INM_ENFORCED_USER" "$owner_user"
+        ensure_env_kv "$tmp_file" "INM_EXEC_USER" "$owner_user"
     fi
-    ensure_env_kv "$tmp_file" "INM_CACHE_LOCAL_DIRECTORY" "./.cache"
-    ensure_env_kv "$tmp_file" "INM_BACKUP_DIRECTORY" "./.backup"
-    ensure_env_kv "$tmp_file" "INM_FORCE_READ_DB_PW" "Y"
+    ensure_env_kv "$tmp_file" "INM_CACHE_LOCAL_DIR" "./.cache"
+    ensure_env_kv "$tmp_file" "INM_BACKUP_DIR" "./.backup"
+    ensure_env_kv "$tmp_file" "INM_DB_FORCE_READ_PW_ENABLE" "Y"
 
     mv "$tmp_file" "$config_file"
     if [[ -n "$owner" ]]; then
@@ -700,8 +700,8 @@ if [[ ! -f "./.inmanage/.env.inmanage" && -z "${INM_SELF_ENV_FILE:-}" ]]; then
         auto_install_dir="${resolved#*|}"
     fi
     if [[ -z "${auto_base_dir:-}" && -n "$prov_src" && -f "$prov_src" ]]; then
-        auto_base_dir="$(read_env_key "$prov_src" INM_BASE_DIRECTORY)"
-        auto_install_dir="$(read_env_key "$prov_src" INM_INSTALLATION_DIRECTORY)"
+        auto_base_dir="$(read_env_key "$prov_src" INM_PATH_BASE_DIR)"
+        auto_install_dir="$(read_env_key "$prov_src" INM_PATH_APP_DIR)"
         if [[ -n "$auto_base_dir" && -n "$auto_install_dir" && "$auto_install_dir" != /* ]]; then
             auto_install_dir="${auto_base_dir%/}/${auto_install_dir#./}"
         fi
@@ -729,7 +729,7 @@ INM_RUN_USER=""
 if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
     INM_RUN_USER="$(detect_run_user)"
     if [[ -z "$INM_RUN_USER" ]]; then
-        log "WARN" "Running as root with no run-user set; INmanage will run as root. Use --run-user or set INM_ENFORCED_USER in .inmanage/.env.inmanage."
+        log "WARN" "Running as root with no run-user set; INmanage will run as root. Use --run-user or set INM_EXEC_USER in .inmanage/.env.inmanage."
     else
         log "INFO" "Running INmanage commands as: $INM_RUN_USER"
     fi
@@ -758,7 +758,7 @@ build_inm_env() {
     INM_RUN_ENV=()
     INM_RUN_ENV_SHELL=""
     local key val
-    for key in INM_SELF_ENV_FILE INM_PROVISION_ENV_FILE INM_DB_CLIENT NO_COLOR; do
+    for key in INM_SELF_ENV_FILE INM_PROVISION_ENV_FILE INM_DB_CLIENT_MODE NO_COLOR; do
         val="${!key:-}"
         [[ -n "$val" ]] || continue
         INM_RUN_ENV+=("${key}=${val}")

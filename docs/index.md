@@ -115,7 +115,7 @@ Default paths:
 > For Docker and VM/LXC installs, see [Containers & VMs onboarding](#containers--vms-onboarding-invoice-ninja-and-inmanage). It covers where to run the installer (host vs container/sidecar) and cron placement. For many VMs, consider Ansible to automate install + config.
 > [!NOTE]
 > - `sudo -u <user> inm ...` runs the command as that OS user now.
-> - `--run-user <user>` is for install mode only (it sets which OS user the CLI install targets: paths/ownership/symlinks). It should usually match `INM_ENFORCED_USER`, but it does not change that setting.
+> - `--run-user <user>` is for install mode only (it sets which OS user the CLI install targets: paths/ownership/symlinks). It should usually match `INM_EXEC_USER`, but it does not change that setting.
 
 Installer options (`install_inmanage.sh`):
 
@@ -126,7 +126,7 @@ Installer options (`install_inmanage.sh`):
 | `--symlink-dir DIR` | mode default | Where to place `inm`/`inmanage` symlinks. |
 | `--install-owner USER:GROUP` | unset | Set ownership on install directory (system installs). |
 | `--install-perms DIR:FILE` | unset | Set permissions on install directory (e.g. `775:664`). |
-| `--run-user USER` | auto | User that will run CLI/cron tasks (used for user installs). Should usually match `INM_ENFORCED_USER`. |
+| `--run-user USER` | auto | User that will run CLI/cron tasks (used for user installs). Should usually match `INM_EXEC_USER`. |
 | `--branch BRANCH` | fetched branch | Git branch to install. |
 | `--source PATH` | unset | Use an existing checkout instead of git cloning. |
 | `-h` / `--help` | | Show installer help. |
@@ -198,7 +198,7 @@ inm
 ```
 
 > [!IMPORTANT]
-> On first run, use the user who should read/write the Invoice Ninja files (often the webserver user like `www-data`, `nginx`, `apache`, `httpd`; on shared hosting, your login user like `username`/`web234355`). This prevents permission issues. If you later switch users, set it via `inm env set cli INM_ENFORCED_USER="<user>"` and then run `sudo inm core health --fix-permissions --override-enforced-user`.
+> On first run, use the user who should read/write the Invoice Ninja files (often the webserver user like `www-data`, `nginx`, `apache`, `httpd`; on shared hosting, your login user like `username`/`web234355`). This prevents permission issues. If you later switch users, set it via `inm env set cli INM_EXEC_USER="<user>"` and then run `sudo inm core health --fix-permissions --override-enforced-user`.
 
 ## Global switches (CLI)
 
@@ -227,21 +227,21 @@ Permissions defaults (CLI config, used by `--fix-permissions`):
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `INM_ENFORCED_USER` / `INM_ENFORCED_GROUP` | `www-data` / unset | Ownership for app files. |
-| `INM_DIR_MODE` | `2750` | App directories. |
-| `INM_BACKUP_DIR_MODE` | empty | Backup directory (defaults to `INM_DIR_MODE`). |
-| `INM_FILE_MODE` | `644` | App files (skips executable files). |
-| `INM_ENV_MODE` | `600` | App `.env`. |
-| `INM_CLI_ENV_MODE` | `600` | CLI `.env.inmanage`. |
-| `INM_CACHE_DIR_MODE` / `INM_CACHE_FILE_MODE` | auto | Cache permissions (775/664 when a group is set, otherwise 750/640). |
+| `INM_EXEC_USER` / `INM_EXEC_GROUP` | `www-data` / unset | Ownership for app files. |
+| `INM_PERM_DIR_MODE` | `2750` | App directories. |
+| `INM_BACKUP_DIR_PERM_MODE` | empty | Backup directory (defaults to `INM_PERM_DIR_MODE`). |
+| `INM_PERM_FILE_MODE` | `644` | App files (skips executable files). |
+| `INM_PERM_APP_ENV_MODE` | `600` | App `.env`. |
+| `INM_PERM_CLI_ENV_MODE` | `600` | CLI `.env.inmanage`. |
+| `INM_CACHE_GLOBAL_DIR_PERM_MODE` / `INM_CACHE_GLOBAL_FILE_PERM_MODE` | auto | Global cache permissions (775/664 when group set, otherwise 750/640). Local cache uses `INM_PERM_DIR_MODE`/`INM_PERM_FILE_MODE`. |
 
-Default `INM_DIR_MODE` is security‑first (no group write). If you need shared writes, set it to `2770` (or `750` for single‑user setups). For special cases (e.g., different backup volume permissions), set `INM_BACKUP_DIR_MODE`.
+Default `INM_PERM_DIR_MODE` is security‑first (no group write). If you need shared writes, set it to `2770` (or `750` for single‑user setups). For special cases (e.g., different backup volume permissions), set `INM_BACKUP_DIR_PERM_MODE`.
 
 Quick set via CLI (run):
 
 ```bash
-inm env set cli INM_ENFORCED_USER="www-data"
-inm env set cli INM_DIR_MODE="2750"
+inm env set cli INM_EXEC_USER="www-data"
+inm env set cli INM_PERM_DIR_MODE="2750"
 ```
 
 Apply permission changes:
@@ -268,26 +268,26 @@ Hook config (CLI):
 
 | Key | Description |
 | --- | --- |
-| `INM_HOOK_PRE_INSTALL` | Script to run before install. |
-| `INM_HOOK_POST_INSTALL` | Script to run after install. |
-| `INM_HOOK_PRE_UPDATE` | Script to run before update. |
-| `INM_HOOK_POST_UPDATE` | Script to run after update. |
-| `INM_HOOK_PRE_BACKUP` | Script to run before backup. |
-| `INM_HOOK_POST_BACKUP` | Script to run after backup. |
-| `INM_HOOKS_DIR` | Override default hook directory (`.inmanage/hooks`). |
-| `INM_HOOK_STRICT` | Fail on any hook error (including post hooks). |
+| `INM_HOOK_PRE_INSTALL_PATHS` | Script to run before install. |
+| `INM_HOOK_POST_INSTALL_PATHS` | Script to run after install. |
+| `INM_HOOK_PRE_UPDATE_PATHS` | Script to run before update. |
+| `INM_HOOK_POST_UPDATE_PATHS` | Script to run after update. |
+| `INM_HOOK_PRE_BACKUP_PATHS` | Script to run before backup. |
+| `INM_HOOK_POST_BACKUP_PATHS` | Script to run after backup. |
+| `INM_HOOK_DIR` | Override default hook directory (`.inmanage/hooks`). |
+| `INM_HOOK_STRICT_ENABLE` | Fail on any hook error (including post hooks). |
 
 Quick set via CLI:
 
 ```bash
-inm env set cli INM_HOOKS_DIR="/custom/hooks/dir"
-inm env set cli INM_HOOK_STRICT="true"
+inm env set cli INM_HOOK_DIR="/custom/hooks/dir"
+inm env set cli INM_HOOK_STRICT_ENABLE="true"
 ```
 
 Behavior:
 
 - `pre-*` hooks **abort** on non‑zero exit.
-- `post-*` hooks **warn** and continue (unless `INM_HOOK_STRICT=true`).
+- `post-*` hooks **warn** and continue (unless `INM_HOOK_STRICT_ENABLE=true`).
 - Hooks are skipped in `--dry-run`.
 - Non-executable hook files are run via `bash`.
 
@@ -434,16 +434,16 @@ Config:
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `INM_HISTORY_LOG_FILE` | `${INM_BASE_DIRECTORY}/.inmanage/history.log` | Log file location. |
-| `INM_HISTORY_LOG_MAX_SIZE` | `512K` | Rotate when size exceeds this value. |
-| `INM_HISTORY_LOG_ROTATE` | `5` | Number of rotated files to keep. |
+| `INM_LOG_OPS_FILE` | `${INM_PATH_BASE_DIR}/.inmanage/history.log` | Log file location. |
+| `INM_LOG_OPS_MAX_SIZE` | `512K` | Rotate when size exceeds this value. |
+| `INM_LOG_OPS_ROTATE_COUNT` | `5` | Number of rotated files to keep. |
 
 Quick set via CLI:
 
 ```bash
-inm env set cli INM_HISTORY_LOG_FILE="/var/www/.inmanage/history.log"
-inm env set cli INM_HISTORY_LOG_MAX_SIZE="1M"
-inm env set cli INM_HISTORY_LOG_ROTATE="10"
+inm env set cli INM_LOG_OPS_FILE="/var/www/.inmanage/history.log"
+inm env set cli INM_LOG_OPS_MAX_SIZE="1M"
+inm env set cli INM_LOG_OPS_ROTATE_COUNT="10"
 ```
 
 Exclude example:
@@ -468,7 +468,7 @@ inm core cron install
 This installs artisan schedule + backup cron jobs (and heartbeat if selected).
 
 > [!NOTE]
-> Provisioned installs auto‑install cron jobs based on your `.env.provision`. By default that’s `essential` (artisan + backup). If heartbeat is enabled in the provision file and you didn’t explicitly set cron jobs, the heartbeat job is added automatically. Heartbeat summary format is controlled by `INM_NOTIFY_HEARTBEAT_FORMAT`.
+> Provisioned installs auto‑install cron jobs based on your `.env.provision`. By default that’s `essential` (artisan + backup). If heartbeat is enabled in the provision file and you didn’t explicitly set cron jobs, the heartbeat job is added automatically. Heartbeat summary format is controlled by `INM_NOTIFY_HEARTBEAT_FORMAT_MODE`.
 
 Short form (same behavior):
 
@@ -486,12 +486,12 @@ Cron switches (`inm core cron install`):
 | `--backup-time=HH:MM` | `03:24` | Backup cron schedule (24h). |
 | `--heartbeat-time=HH:MM` | `06:00` | Heartbeat cron schedule (24h). |
 | `--cron-file=path` | `/etc/cron.d/inmanage-<instance-id>` | Target cron file (root mode only). |
-| `--jobs=test` | `false` | Add a test job that touches `${INM_BASE_DIRECTORY}/crontestfile.<instance-id>` every minute. When its timestamp updates the cron setup is verified. Then remove the test job. |
+| `--jobs=test` | `false` | Add a test job that touches `${INM_PATH_BASE_DIR}/crontestfile.<instance-id>` every minute. When its timestamp updates the cron setup is verified. Then remove the test job. |
 
 > [!TIP]
 > `essential` installs artisan + backup. `all` adds the heartbeat job.
 >
-> `--jobs=test` writes `${INM_BASE_DIRECTORY}/crontestfile.<instance-id>` each minute. Only when its timestamp updates is the cron setup verified.
+> `--jobs=test` writes `${INM_PATH_BASE_DIR}/crontestfile.<instance-id>` each minute. Only when its timestamp updates is the cron setup verified.
 
 Cron uninstall:
 
@@ -519,7 +519,7 @@ Tip: `--instance-id=<id>` removes a specific instance block.
 Show instance id:
 
 ```bash
-inm env get cli INM_INSTANCE_ID
+inm env get cli INM_SELF_INSTANCE_ID
 ```
 
 ## Heartbeat notifications (INmanage)
@@ -534,15 +534,15 @@ Heartbeat is a daily, non-interactive health run that sends a summary if somethi
 4. Send a test mail.
 
 > [!TIP]
-> Provisioned installs can do this automatically: if your `.env.provision` includes valid `MAIL_*` SMTP settings and the minimum `INM_NOTIFY_*` keys (`INM_NOTIFY_ENABLED`, `INM_NOTIFY_TARGETS`, `INM_NOTIFY_HEARTBEAT_ENABLED`, `INM_NOTIFY_HEARTBEAT_LEVEL`), the installer adds the heartbeat cron job for you.
+> Provisioned installs can do this automatically: if your `.env.provision` includes valid `MAIL_*` SMTP settings and the minimum `INM_NOTIFY_*` keys (`INM_NOTIFY_ENABLE`, `INM_NOTIFY_TARGETS_LIST`, `INM_NOTIFY_HEARTBEAT_ENABLE`, `INM_NOTIFY_HEARTBEAT_LEVEL`), the installer adds the heartbeat cron job for you.
 
 ```bash
 # 1) Enable notifications + heartbeat
-inm env set cli INM_NOTIFY_ENABLED="true"
-inm env set cli INM_NOTIFY_TARGETS="email"
-inm env set cli INM_NOTIFY_HEARTBEAT_ENABLED="true"
+inm env set cli INM_NOTIFY_ENABLE="true"
+inm env set cli INM_NOTIFY_TARGETS_LIST="email"
+inm env set cli INM_NOTIFY_HEARTBEAT_ENABLE="true"
 inm env set cli INM_NOTIFY_HEARTBEAT_LEVEL="WARN"
-inm env set cli INM_NOTIFY_EMAIL_TO="you@example.com"
+inm env set cli INM_NOTIFY_EMAIL_TO_LIST="you@example.com"
 inm env set cli INM_NOTIFY_EMAIL_FROM_NAME="Heartbeat - Your Company"
 
 # 2) Install cron job (daily)
@@ -556,14 +556,14 @@ inm core health --notify-test
 > Email settings are read from the app `.env` (`MAIL_*`) and require an SMTP-style configuration.
 > OAuth-based providers configured inside the Invoice Ninja UI are not used by INmanage notifications (at the moment).
 > [!IMPORTANT]
-> For heartbeat alerts, enable both `INM_NOTIFY_ENABLED=true` (global notifications) and `INM_NOTIFY_HEARTBEAT_ENABLED=true` (daily heartbeat).
+> For heartbeat alerts, enable both `INM_NOTIFY_ENABLE=true` (global notifications) and `INM_NOTIFY_HEARTBEAT_ENABLE=true` (daily heartbeat).
 
 ### How it works
 
 1. Cron runs `inm core health --notify-heartbeat` once per day.
 2. Health checks run and a short summary is built per section (OK/WARN/ERR).
 3. A mail is sent if any result is at or above `INM_NOTIFY_HEARTBEAT_LEVEL`.
-4. `INM_NOTIFY_HEARTBEAT_FORMAT` controls the heartbeat summary format.
+4. `INM_NOTIFY_HEARTBEAT_FORMAT_MODE` controls the heartbeat summary format.
 
 In Docker, run the heartbeat from the host (cron) or a small sidecar container. The app scheduler (`schedule:work`) does not run INmanage checks.
 
@@ -573,25 +573,25 @@ Core notification config:
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `INM_NOTIFY_ENABLED=true/false` | `false` | Master switch. |
-| `INM_NOTIFY_TARGETS=email,webhook` | `email,webhook` | Comma list of targets. |
-| `INM_NOTIFY_EMAIL_TO=you@example.com` | empty | Comma-separated recipients. |
-| `INM_NOTIFY_EMAIL_FROM=addr` | empty | Optional sender override. |
+| `INM_NOTIFY_ENABLE=true/false` | `false` | Master switch. |
+| `INM_NOTIFY_TARGETS_LIST=email,webhook` | `email,webhook` | Comma list of targets. |
+| `INM_NOTIFY_EMAIL_TO_LIST=you@example.com` | empty | Comma-separated recipients. |
+| `INM_NOTIFY_EMAIL_FROM_ADDRESS=addr` | empty | Optional sender override. |
 | `INM_NOTIFY_EMAIL_FROM_NAME=name` | empty | Optional sender name override. |
 | `INM_NOTIFY_LEVEL=ERR/WARN/INFO` | `ERR` | Minimum severity to send. |
-| `INM_NOTIFY_NONINTERACTIVE_ONLY=true/false` | `true` | Only send when no TTY is attached. |
-| `INM_NOTIFY_SMTP_TIMEOUT=10` | `10` | SMTP timeout (seconds). |
+| `INM_NOTIFY_NONINTERACTIVE_ONLY_ENABLE=true/false` | `true` | Only send when no TTY is attached. |
+| `INM_NOTIFY_SMTP_TIMEOUT_SECONDS=10` | `10` | SMTP timeout (seconds). |
 | `INM_NOTIFY_WEBHOOK_URL=https://...` | empty | Webhook target URL (https only). |
 
 Heartbeat config:
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `INM_NOTIFY_HEARTBEAT_ENABLED=true/false` | `false` | Enable daily health heartbeat. |
+| `INM_NOTIFY_HEARTBEAT_ENABLE=true/false` | `true` | Enable daily health heartbeat. |
 | `INM_NOTIFY_HEARTBEAT_TIME=HH:MM` | `06:00` | Cron schedule for the heartbeat. |
 | `INM_NOTIFY_HEARTBEAT_LEVEL=ERR/WARN/INFO/OK` | `ERR` | Minimum severity for heartbeat. |
-| `INM_NOTIFY_HEARTBEAT_FORMAT=compact/full/failed` | `compact` | Heartbeat summary format. |
-| `INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL=auto/ERR/WARN/INFO/OK/ALL` | `auto` | Legacy fallback if `INM_NOTIFY_HEARTBEAT_FORMAT` is unset. |
+| `INM_NOTIFY_HEARTBEAT_FORMAT_MODE=compact/full/failed` | `compact` | Heartbeat summary format. |
+| `INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL_MODE=auto/ERR/WARN/INFO/OK/ALL` | `auto` | Legacy fallback if `INM_NOTIFY_HEARTBEAT_FORMAT_MODE` is unset. |
 | `INM_NOTIFY_HEARTBEAT_CHECK_INCLUDE=TAG1,TAG2` | empty | Optional include filter. |
 | `INM_NOTIFY_HEARTBEAT_CHECK_EXCLUDE=TAG1,TAG2` | empty | Optional exclude filter. |
 
@@ -599,9 +599,9 @@ Hooks (optional):
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `INM_NOTIFY_HOOKS_ENABLED=true/false` | `true` | Enable hook notifications. |
-| `INM_NOTIFY_HOOKS_FAILURE=true/false` | `true` | Notify when hooks fail. |
-| `INM_NOTIFY_HOOKS_SUCCESS=true/false` | `false` | Notify when hooks succeed. |
+| `INM_NOTIFY_HOOKS_ENABLE=true/false` | `true` | Enable hook notifications. |
+| `INM_NOTIFY_HOOKS_FAILURE_ENABLE=true/false` | `true` | Notify when hooks fail. |
+| `INM_NOTIFY_HOOKS_SUCCESS_ENABLE=true/false` | `false` | Notify when hooks succeed. |
 
 ### Commands
 
@@ -622,7 +622,7 @@ To add a new target, create a helper that defines:
 - `notify_transport_<name>` (adapter used by the dispatcher)
 
 Place it under `lib/helpers/notify_<name>.sh` and ensure it is sourced by `lib/services/notify.sh`.
-Targets are activated by adding `<name>` to `INM_NOTIFY_TARGETS`.
+Targets are activated by adding a target name (e.g. `email`, `webhook`) to `INM_NOTIFY_TARGETS_LIST`.
 
 ## Environment helper (CLI/App)
 
@@ -639,65 +639,65 @@ If the target env file is not readable/writable, `inm env get/set/unset/show` wi
 ## CLI config reference (.env.inmanage)
 
 This mirrors the default `.env.inmanage` generated by INmanage. Values shown are defaults; some resolve dynamically (like paths to `php`/`bash`).
+Legacy key names are auto-migrated once on load and removed; only canonical keys remain afterwards. `INM_SELF_CLI_COMPAT_MODE` is managed by the CLI to track migration state.
 
 | Key | Default | Notes |
 | --- | --- | --- |
-| `INM_BASE_DIRECTORY` | `$PWD/` | Base directory containing the app folder. |
-| `INM_INSTALLATION_DIRECTORY` | `./invoiceninja` | App directory (relative to base). |
-| `INM_ENV_FILE` | `${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}/.env` | App `.env` path. |
-| `INM_CACHE_LOCAL_DIRECTORY` | `./.cache` | Local (project) cache. |
-| `INM_CACHE_GLOBAL_DIRECTORY` | `${HOME}/.inmanage/cache` | Global cache. |
-| `INM_CACHE_DIR_MODE` | empty | Auto (775 if group set, else 750). |
-| `INM_CACHE_FILE_MODE` | empty | Auto (664 if group set, else 640). |
-| `INM_CACHE_SUDO_PROMPT` | `never` | `ask`/`never` for cache sudo. |
+| `INM_PATH_BASE_DIR` | `$PWD/` | Base directory containing the app folder. |
+| `INM_PATH_APP_DIR` | `./invoiceninja` | App directory (relative to base). |
+| `INM_PATH_APP_ENV_FILE` | `${INM_PATH_BASE_DIR}${INM_PATH_APP_DIR}/.env` | App `.env` path. |
+| `INM_CACHE_LOCAL_DIR` | `./.cache` | Local (project) cache. |
+| `INM_CACHE_GLOBAL_DIR` | `${HOME}/.inmanage/cache` | Global cache. |
+| `INM_CACHE_GLOBAL_DIR_PERM_MODE` | empty | Auto (775 if group set, else 750). Local cache uses `INM_PERM_DIR_MODE`. |
+| `INM_CACHE_GLOBAL_FILE_PERM_MODE` | empty | Auto (664 if group set, else 640). Local cache uses `INM_PERM_FILE_MODE`. |
+| `INM_CACHE_SUDO_PROMPT_MODE` | `never` | `ask`/`never` for cache sudo. |
 | `INM_CACHE_GLOBAL_RETENTION` | `3` | Keep last N cached releases. |
-| `INM_DUMP_OPTIONS` | `--default-character-set=utf8mb4 --no-tablespaces --skip-add-drop-table --quick --single-transaction` | mysqldump options. |
-| `INM_BACKUP_DIRECTORY` | `./.backup` | Backup directory. |
-| `INM_BACKUP_DIR_MODE` | empty | Optional backup directory mode (defaults to `INM_DIR_MODE`). |
-| `INM_HISTORY_LOG_FILE` | `${INM_BASE_DIRECTORY}/.inmanage/history.log` | History log path. |
-| `INM_HISTORY_LOG_MAX_SIZE` | `512K` | Rotate when size exceeds this value. |
-| `INM_HISTORY_LOG_ROTATE` | `5` | Number of rotated history logs to keep. |
-| `INM_FORCE_READ_DB_PW` | `N` | Read DB password from app `.env` (Y/N). |
-| `INM_ENFORCED_USER` | `www-data` | Ownership and execution user. |
-| `INM_ENFORCED_GROUP` | empty | Optional group override. |
-| `INM_ENFORCED_SHELL` | auto (`command -v bash`) | Shell for cron/hooks. |
-| `INM_PHP_EXECUTABLE` | auto (`command -v php`) | PHP binary. |
-| `INM_ARTISAN_STRING` | `${INM_PHP_EXECUTABLE} ${INM_BASE_DIRECTORY}${INM_INSTALLATION_DIRECTORY}/artisan` | Artisan command. |
-| `INM_PROGRAM_NAME` | `InvoiceNinja` | Label for outputs and backups. |
-| `INM_COMPATIBILITY_VERSION` | `5+` | Invoice Ninja compatibility hint. |
-| `INM_DIR_MODE` | `2750` | Directory mode for fix permissions. |
-| `INM_FILE_MODE` | `644` | File mode for fix permissions. |
-| `INM_ENV_MODE` | `600` | App `.env` mode for fix permissions. |
-| `INM_CLI_ENV_MODE` | `600` | CLI `.env.inmanage` mode for fix permissions. |
-| `INM_KEEP_BACKUPS` | `2` | Backup retention count. |
-| `INM_AUTO_UPDATE_CHECK` | `true` | Show startup update notice for app + CLI (uses last health check results). |
+| `INM_DB_DUMP_OPTIONS` | `--default-character-set=utf8mb4 --no-tablespaces --skip-add-drop-table --quick --single-transaction` | mysqldump options. |
+| `INM_BACKUP_DIR` | `./.backup` | Backup directory. |
+| `INM_BACKUP_DIR_PERM_MODE` | empty | Optional backup directory mode (defaults to `INM_PERM_DIR_MODE`). |
+| `INM_LOG_OPS_FILE` | `${INM_PATH_BASE_DIR}/.inmanage/history.log` | History log path. |
+| `INM_LOG_OPS_MAX_SIZE` | `512K` | Rotate when size exceeds this value. |
+| `INM_LOG_OPS_ROTATE_COUNT` | `5` | Number of rotated history logs to keep. |
+| `INM_DB_FORCE_READ_PW_ENABLE` | `N` | Read DB password from app `.env` (Y/N). |
+| `INM_EXEC_USER` | `www-data` | Ownership and execution user. |
+| `INM_EXEC_GROUP` | empty | Optional group override. |
+| `INM_EXEC_SHELL_BIN` | auto (`command -v bash`) | Shell for cron/hooks. |
+| `INM_RUNTIME_PHP_BIN` | auto (`command -v php`) | PHP binary. |
+| `INM_RUNTIME_ARTISAN_CMD` | `${INM_RUNTIME_PHP_BIN} ${INM_PATH_BASE_DIR}${INM_PATH_APP_DIR}/artisan` | Artisan command. |
+| `INM_SELF_PROGRAM_NAME` | `InvoiceNinja` | Label for outputs and backups. |
+| `INM_SELF_COMPAT_VERSION` | `5+` | Invoice Ninja compatibility hint. |
+| `INM_PERM_DIR_MODE` | `2750` | Directory mode for fix permissions. |
+| `INM_PERM_FILE_MODE` | `644` | File mode for fix permissions. |
+| `INM_PERM_APP_ENV_MODE` | `600` | App `.env` mode for fix permissions. |
+| `INM_PERM_CLI_ENV_MODE` | `600` | CLI `.env.inmanage` mode for fix permissions. |
+| `INM_BACKUP_RETENTION` | `2` | Backup retention count. |
+| `INM_UPDATE_CHECK_ENABLE` | `true` | Show startup update notice for app + CLI (uses last health check results). |
 | `INM_HEALTH_CHECK_INCLUDE` | empty | Include filter for health checks. |
 | `INM_HEALTH_CHECK_EXCLUDE` | empty | Exclude filter for health checks. |
 | `INM_GH_API_CREDENTIALS` | empty | GitHub API credentials (`user:pass` or `token:x-oauth`). |
-| `INM_NOTIFY_ENABLED` | `false` | Master notifications switch. |
-| `INM_NOTIFY_TARGETS` | `email,webhook` | Notification targets. |
-| `INM_NOTIFY_EMAIL_TO` | empty | Recipient list. |
-| `INM_NOTIFY_EMAIL_FROM` | empty | Sender override. |
+| `INM_NOTIFY_ENABLE` | `false` | Master notifications switch. |
+| `INM_NOTIFY_TARGETS_LIST` | `email,webhook` | Notification targets. |
+| `INM_NOTIFY_EMAIL_TO_LIST` | empty | Recipient list. |
+| `INM_NOTIFY_EMAIL_FROM_ADDRESS` | empty | Sender override. |
 | `INM_NOTIFY_EMAIL_FROM_NAME` | `Heartbeat | Invoice Ninja` | Sender name override. |
 | `INM_NOTIFY_LEVEL` | `ERR` | Minimum notify severity. |
-| `INM_NOTIFY_NONINTERACTIVE_ONLY` | `true` | Only send when no TTY. |
-| `INM_NOTIFY_SMTP_TIMEOUT` | `10` | SMTP timeout (seconds). |
-| `INM_NOTIFY_HOOKS_ENABLED` | `true` | Hook notifications on/off. |
-| `INM_NOTIFY_HOOKS_FAILURE` | `true` | Notify on hook failure. |
-| `INM_NOTIFY_HOOKS_SUCCESS` | `false` | Notify on hook success. |
-| `INM_NOTIFY_HEARTBEAT_ENABLED` | `false` | Daily heartbeat on/off. |
+| `INM_NOTIFY_NONINTERACTIVE_ONLY_ENABLE` | `true` | Only send when no TTY. |
+| `INM_NOTIFY_SMTP_TIMEOUT_SECONDS` | `10` | SMTP timeout (seconds). |
+| `INM_NOTIFY_HOOKS_ENABLE` | `true` | Hook notifications on/off. |
+| `INM_NOTIFY_HOOKS_FAILURE_ENABLE` | `true` | Notify on hook failure. |
+| `INM_NOTIFY_HOOKS_SUCCESS_ENABLE` | `false` | Notify on hook success. |
+| `INM_NOTIFY_HEARTBEAT_ENABLE` | `true` | Daily heartbeat on/off. |
 | `INM_NOTIFY_HEARTBEAT_TIME` | `06:00` | Heartbeat cron time. |
 | `INM_NOTIFY_HEARTBEAT_LEVEL` | `ERR` | Heartbeat severity. |
-| `INM_NOTIFY_HEARTBEAT_FORMAT` | `compact` | Heartbeat summary format. |
-| `INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL` | `auto` | Legacy fallback if format is unset. |
+| `INM_NOTIFY_HEARTBEAT_FORMAT_MODE` | `compact` | Heartbeat summary format. |
+| `INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL_MODE` | `auto` | Legacy fallback if format is unset. |
 | `INM_NOTIFY_HEARTBEAT_CHECK_INCLUDE` | empty | Include filter for heartbeat checks. |
 | `INM_NOTIFY_HEARTBEAT_CHECK_EXCLUDE` | empty | Exclude filter for heartbeat checks. |
 | `INM_NOTIFY_WEBHOOK_URL` | empty | Webhook URL. |
-| `INM_MIGRATION_BACKUP` | empty | Use `LATEST` or a path after provision. |
-| `INM_CLI_COMPATIBILITY` | `ultron` | Legacy/compatibility marker. |
+| `INM_BACKUP_MIGRATION_SOURCE` | empty | Use `LATEST` or a path after provision. |
+| `INM_SELF_CLI_COMPAT_MODE` | `ultron` | Self migration state (auto-managed). |
 
 This list reflects the generated file. Feature-specific `INM_*` keys are documented in their relevant sections and can be added here as needed.
-Legacy `INM_NOTIFY_HEARTBEAT_INCLUDE` and `INM_NOTIFY_HEARTBEAT_EXCLUDE` are still accepted for backward compatibility.
 
 ## Cache and downloads (INmanage)
 
@@ -705,13 +705,13 @@ Control where downloads and working files live (global vs project cache).
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `INM_CACHE_GLOBAL_DIRECTORY` | `${HOME}/.inmanage/cache` | Global cache path. |
-| `INM_CACHE_LOCAL_DIRECTORY` | `./.cache` | Local cache path (per project). |
+| `INM_CACHE_GLOBAL_DIR` | `${HOME}/.inmanage/cache` | Global cache path. |
+| `INM_CACHE_LOCAL_DIR` | `./.cache` | Local cache path (per project). |
 
 Quick set via CLI:
 
 ```bash
-inm env set cli INM_CACHE_GLOBAL_DIRECTORY="/var/cache/inmanage"
+inm env set cli INM_CACHE_GLOBAL_DIR="/var/cache/inmanage"
 ```
 
 If the global cache is not writable, inm falls back to local cache and may ask to fix permissions with sudo.
@@ -723,18 +723,18 @@ MySQL and MariaDB are both supported. If both clients are installed and the DB i
 
 | Key | Values | Description |
 | --- | --- | --- |
-| `INM_DB_CLIENT` | `mysql` or `mariadb` | Force which client binary is used. |
+| `INM_DB_CLIENT_MODE` | `mysql` or `mariadb` | Force which client binary is used. |
 
 ```bash
-INM_DB_CLIENT=mysql
+INM_DB_CLIENT_MODE=mysql
 # or
-INM_DB_CLIENT=mariadb
+INM_DB_CLIENT_MODE=mariadb
 ```
 
 Quick set via CLI:
 
 ```bash
-inm env set cli INM_DB_CLIENT="mysql"
+inm env set cli INM_DB_CLIENT_MODE="mysql"
 ```
 
 ## MySQL client config (.my.cnf) (INmanage)
@@ -744,7 +744,7 @@ Use this to avoid reading DB passwords from the app `.env` and passing them in s
 Create the file **as the enforced user** in their home directory (`~/.my.cnf`), using values from the app `.env` (run from your base directory):
 
 ```bash
-ENF_USER="$(inm env get cli INM_ENFORCED_USER)"  # read enforced user from CLI config
+ENF_USER="$(inm env get cli INM_EXEC_USER)"  # read enforced user from CLI config
 ENF_USER="${ENF_USER:-www-data}"                 # fallback if empty
 sudo -u "$ENF_USER" bash -lc 'cat > ~/.my.cnf <<EOF
 [client]
@@ -754,13 +754,13 @@ database=$(inm env get app DB_DATABASE)
 host=$(inm env get app DB_HOST)
 EOF
 chmod 600 ~/.my.cnf'
-inm env set cli INM_FORCE_READ_DB_PW="N"
+inm env set cli INM_DB_FORCE_READ_PW_ENABLE="N"
 ```
 
 Notes:
 - Replace `www-data` if your webserver user is different.
-- `INM_FORCE_READ_DB_PW=N` tells INmanage to prefer `.my.cnf` instead of reading DB_PASSWORD from the app `.env`.
-- Use `INM_FORCE_READ_DB_PW=Y` only if you do not use `.my.cnf` and want INmanage to read DB_PASSWORD from the app `.env`.
+- `INM_DB_FORCE_READ_PW_ENABLE=N` tells INmanage to prefer `.my.cnf` instead of reading DB_PASSWORD from the app `.env`.
+- Use `INM_DB_FORCE_READ_PW_ENABLE=Y` only if you do not use `.my.cnf` and want INmanage to read DB_PASSWORD from the app `.env`.
 - Keep permissions at `600` and ownership on the enforced user.
 - Store this outside your app directory and never commit it.
 - In Docker, place it on a persistent volume that matches the enforced user home (or create it inside the sidecar).
@@ -776,7 +776,7 @@ Version info:
 - `inm core versions --show-changelog` (compare link for installed -> latest)
 
 See the Global switches table for `--debug`, `--debuglevel`, and `--dry-run`.
-To suppress shell tracing around sensitive values, keep `INM_TRACE_SENSITIVE` unset/true. Set `INM_TRACE_SENSITIVE=off` to allow full tracing (may expose secrets).
+To suppress shell tracing around sensitive values, keep `INM_TRACE_SENSITIVE_GUARD_ENABLE` unset/true. Set `INM_TRACE_SENSITIVE_GUARD_ENABLE=off` to allow full tracing (may expose secrets).
 
 ## Sudo usage (INmanage)
 
@@ -786,7 +786,7 @@ If `sudo` is not available:
 
 - Run the CLI as the enforced user directly (e.g., `sudo -u www-data` is not possible, so login as that user).
 - Use a user/project install mode instead of system mode.
-- Point `INM_CACHE_GLOBAL_DIRECTORY` to a writable path or rely on the local cache (`./.cache`).
+- Point `INM_CACHE_GLOBAL_DIR` to a writable path or rely on the local cache (`./.cache`).
 - Ensure the base directory and app directory are owned by the enforced user.
 
 ## FAQ (INmanage)
@@ -829,7 +829,7 @@ core:
                               --bypass-check-sha
                               rollback [--latest|--name=DIR]
                               Provisioned install is recommended (uses .inmanage/.env.provision; create with inm spawn provision-file)
-                              Hooks: pre-install/post-install via .inmanage/hooks (override with INM_HOOKS_DIR)
+                              Hooks: pre-install/post-install via .inmanage/hooks (override with INM_HOOK_DIR)
 
   update                      Update Invoice Ninja
                               --version=<v> --force --cache-only --no-db-backup --preserve-paths=a,b
@@ -898,7 +898,7 @@ env:
   set|get|unset|show          Manage .env keys for app or cli
                               Examples:
                                 env set app APP_URL https://example.test
-                                env get cli INM_BASE_DIRECTORY
+                                env get cli INM_PATH_BASE_DIR
   user-ini apply [path]       Write recommended .user.ini (defaults to app public/)
 
 ----
@@ -984,7 +984,7 @@ core install:
   - Optional: --no-backup-cron to skip the backup cron job
   - Optional: --backup-time=HH:MM for the backup cron schedule (default 03:24)
   - Optional: --heartbeat-time=HH:MM for the heartbeat cron schedule (default 06:00)
-  - Optional hooks: pre-install and post-install (default .inmanage/hooks; override via INM_HOOKS_DIR)
+  - Optional hooks: pre-install and post-install (default .inmanage/hooks; override via INM_HOOK_DIR)
   - Optional: --bypass-check-sha to skip release digest verification (not recommended)
   - Tip: DB_ELEVATED_PASSWORD=auth_socket enables local socket auth (localhost only; requires sudo)
   - Note: INM_* keys in .env.provision apply to CLI config and are stripped from app .env
@@ -1099,7 +1099,7 @@ core cron install:
     [--backup-time=HH:MM] [--heartbeat-time=HH:MM]
 inm core cron uninstall [--mode=auto|system|crontab] [--cron-file=path] [--jobs=artisan|backup|heartbeat|test] [--instance-id=<id>]
 
-  Note: --jobs=test writes ${INM_BASE_DIRECTORY}/crontestfile.<instance-id> each minute. When its timestamp updates the cron setup is verified. Then remove the test job.
+  Note: --jobs=test writes ${INM_PATH_BASE_DIR}/crontestfile.<instance-id> each minute. When its timestamp updates the cron setup is verified. Then remove the test job.
   Without --jobs, uninstall removes the entire instance block (all jobs for that instance).
   
   Docs: https://github.com/DrDBanner/inmanage/blob/main/docs/index.md
@@ -1294,12 +1294,12 @@ Repeatable and unattended. Best for staging/production.
    - Add as many `INM_*` fields you like for CLI config; `DB_ELEVATED_*` only if the installer should create the DB/user.
    - Tip: Add these to setup your mail route and heartbeat cron in one batch.
      ```text
-     INM_NOTIFY_ENABLED="true"
-     INM_NOTIFY_TARGETS="email"
-     INM_NOTIFY_HEARTBEAT_ENABLED="true"
+     INM_NOTIFY_ENABLE="true"
+     INM_NOTIFY_TARGETS_LIST="email"
+     INM_NOTIFY_HEARTBEAT_ENABLE="true"
      INM_NOTIFY_HEARTBEAT_LEVEL="WARN"
-     INM_NOTIFY_EMAIL_TO="you@example.com"
-     INM_NOTIFY_MAIL_FROM_NAME="Heartbeat - Your Company"
+     INM_NOTIFY_EMAIL_TO_LIST="you@example.com"
+     INM_NOTIFY_EMAIL_FROM_NAME="Heartbeat - Your Company"
 
      MAIL_MAILER="smtp"
      MAIL_HOST="smtp.example.com"
@@ -1359,12 +1359,12 @@ Provision config keys:
 | --- | --- | --- |
 | `DB_ELEVATED_USERNAME` | user | Required only if the script should create the DB/user. |
 | `DB_ELEVATED_PASSWORD` | pass | Required only if the script should create the DB/user. Use `auth_socket` for local socket auth. |
-| `INM_MIGRATION_BACKUP` | `LATEST` or path | Use this backup after provision (set in `.env.provision` or `.env.inmanage`). |
+| `INM_BACKUP_MIGRATION_SOURCE` | `LATEST` or path | Use this backup after provision (set in `.env.provision` or `.env.inmanage`). |
 
 Quick set via CLI:
 
 ```bash
-inm env set cli INM_MIGRATION_BACKUP="LATEST"
+inm env set cli INM_BACKUP_MIGRATION_SOURCE="LATEST"
 ```
 
 ### Install flow (under the hood)
@@ -1393,7 +1393,7 @@ Provisioned‑only steps:
 - Pre‑provision DB backup if tables exist (unless `--no-backup`).
 - Create DB/user if needed (`DB_ELEVATED_*`), then `migrate:fresh --seed`.
 - Language seeder + `ninja:post-update` + create admin user.
-- Optional migration restore if `INM_MIGRATION_BACKUP` is set.
+- Optional migration restore if `INM_BACKUP_MIGRATION_SOURCE` is set.
 
 Clean‑only steps:
 
@@ -1477,7 +1477,7 @@ Update switches (`inm core update`):
 | `--version=v` | latest | Install a specific Invoice Ninja version. |
 | `--force` | `false` | Allow downgrade and skip confirmation prompts. |
 | `--cache-only` | `false` | Download package to cache only (no install). |
-| `--preserve-paths=a,b` | unset | Extra paths to preserve from the previous install (comma‑separated, relative to app root). Env: `INM_PRESERVE_PATHS`. |
+| `--preserve-paths=a,b` | unset | Extra paths to preserve from the previous install (comma‑separated, relative to app root). Env: `INM_UPDATE_PRESERVE_PATHS`. |
 | `--no-db-backup` | `false` | Skip the mandatory pre-update DB backup (not recommended). |
 | `--bypass-check-sha` | `false` | Skip release digest verification (not recommended). |
 
@@ -1490,11 +1490,11 @@ Default preserved paths (always kept):
 - `public/.htaccess`
 - `public/*.ini`
 - `public/.*.ini`
-Add more via `--preserve-paths=a,b` or persist in CLI config with `INM_PRESERVE_PATHS="a,b"`.
+Add more via `--preserve-paths=a,b` or persist in CLI config with `INM_UPDATE_PRESERVE_PATHS="a,b"`.
 
 Example (persist in CLI config):
 ```bash
-inm env set cli INM_PRESERVE_PATHS="public/storage,public/robots.txt,public/sitemap.xml"
+inm env set cli INM_UPDATE_PRESERVE_PATHS="public/storage,public/robots.txt,public/sitemap.xml"
 ```
 
 Update flow (under the hood):
@@ -1546,7 +1546,7 @@ Backup switches (`inm core backup`):
 | `--extra-paths=a,b` | unset | Add extra paths (comma‑separated). Relative paths resolve from app dir; absolute paths are allowed. Alias: `--extra`. |
 | `--create-migration-export` | `false` | Prompt for APP_URL + DB_* and write them into the backup `.env` (APP_KEY preserved); optionally add extra keys. |
 | `--skip-staging` | `false` | Skip staging and build the tar.gz bundle directly from live paths (faster, less consistent). |
-| `--no-prune` | `false` | Skip post-backup pruning (default keeps `INM_KEEP_BACKUPS`). |
+| `--no-prune` | `false` | Skip post-backup pruning (default keeps `INM_BACKUP_RETENTION`). |
 
 Hooks: `pre-backup` and `post-backup` are supported. See [Hooks (CLI pre/post)](#hooks-cli-prepost).
 
@@ -1573,7 +1573,7 @@ Files backup switches (`inm files backup`):
 | `--uploads=true/false` | `true` | Include `public/uploads/`. |
 | `--extra-paths=a,b` | unset | Add extra paths (comma‑separated). Relative paths resolve from app dir; absolute paths are allowed. Alias: `--extra`. |
 | `--skip-staging` | `false` | Skip staging and build the tar.gz bundle directly from live paths (faster, less consistent). |
-| `--no-prune` | `false` | Skip post-backup pruning (default keeps `INM_KEEP_BACKUPS`). |
+| `--no-prune` | `false` | Skip post-backup pruning (default keeps `INM_BACKUP_RETENTION`). |
 
 ### Offsite backups
 
@@ -1805,7 +1805,7 @@ Checklist:
 
 | Check | Notes |
 | --- | --- |
-| Enforced user | `INM_ENFORCED_USER` matches the web server user inside the VM/LXC. |
+| Enforced user | `INM_EXEC_USER` matches the web server user inside the VM/LXC. |
 | Permissions | Base/app directories are writable by that user. |
 | Cron | Installed and working (`crontab -l` as enforced user). |
 | Backups | Use INmanage backups even if you also rely on Proxmox snapshots. |
@@ -1813,7 +1813,7 @@ Checklist:
 Quick set via CLI:
 
 ```bash
-inm env set cli INM_ENFORCED_USER="www-data"
+inm env set cli INM_EXEC_USER="www-data"
 ```
 
 > [!TIP]

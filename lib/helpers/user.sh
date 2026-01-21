@@ -48,7 +48,7 @@ enforce_user_switch() {
         memyselfasscript="$(resolve_script_path "$0")"
 
         log debug "[ENV] Switching to user '${args[user]}'."
-        log debug "[ENV] If you don't want to switch users, put your current user into the INM_ENFORCED_USER variable in your config file."
+        log debug "[ENV] If you don't want to switch users, put your current user into the INM_EXEC_USER variable in your config file."
         if ! should_suppress_pre_switch_logs; then
             log info "[ENV] Hint: use --override-enforced-user to skip enforced user switching for this run."
         fi
@@ -135,7 +135,7 @@ enforce_user_switch() {
 # ---------------------------------------------------------------------
 # should_suppress_pre_switch_logs()
 # Decide whether to suppress logs before a user switch.
-# Consumes: env: INM_CHILD_REEXEC, INM_OVERRIDE_ENFORCED_USER, INM_ENFORCED_USER, DRY_RUN; global: NAMED_ARGS.
+# Consumes: env: INM_CHILD_REEXEC, INM_OVERRIDE_ENFORCED_USER, INM_EXEC_USER, DRY_RUN; global: NAMED_ARGS.
 # Computes: whether current run is pre-switch.
 # Returns: 0 to suppress logs, 1 otherwise.
 # ---------------------------------------------------------------------
@@ -146,7 +146,7 @@ should_suppress_pre_switch_logs() {
     if [[ "${NAMED_ARGS[override_enforced_user]:-}" == "true" || "${INM_OVERRIDE_ENFORCED_USER:-}" == "true" ]]; then
         return 1
     fi
-    local target_user="${INM_ENFORCED_USER:-}"
+    local target_user="${INM_EXEC_USER:-}"
     if [[ -z "$target_user" ]]; then
         return 1
     fi

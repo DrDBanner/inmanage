@@ -284,15 +284,15 @@ Use this after Snippet A (or any time your base stack already exists).
         group: "{{ web_user }}"
         mode: "0600"
         content: |
-          INM_ENFORCED_USER={{ web_user }}
-          INM_BASE_DIRECTORY={{ base_dir }}/
-          INM_INSTALLATION_DIRECTORY=./{{ install_dir }}
-          INM_BACKUP_DIRECTORY=./.backup
-          INM_FORCE_READ_DB_PW=Y
-          INM_NOTIFY_ENABLED=true
-          INM_NOTIFY_TARGETS=email
-          INM_NOTIFY_EMAIL_TO={{ notify_email }}
-          INM_NOTIFY_HEARTBEAT_ENABLED=true
+          INM_EXEC_USER={{ web_user }}
+          INM_PATH_BASE_DIR={{ base_dir }}/
+          INM_PATH_APP_DIR=./{{ install_dir }}
+          INM_BACKUP_DIR=./.backup
+          INM_DB_FORCE_READ_PW_ENABLE=Y
+          INM_NOTIFY_ENABLE=true
+          INM_NOTIFY_TARGETS_LIST=email
+          INM_NOTIFY_EMAIL_TO_LIST={{ notify_email }}
+          INM_NOTIFY_HEARTBEAT_ENABLE=true
           INM_NOTIFY_HEARTBEAT_TIME=06:00
           INM_NOTIFY_HEARTBEAT_LEVEL=WARN
 
@@ -319,10 +319,10 @@ Use this after Snippet A (or any time your base stack already exists).
           MAIL_ENCRYPTION=tls
           MAIL_FROM_ADDRESS={{ notify_email }}
           MAIL_FROM_NAME=Billing
-          INM_NOTIFY_ENABLED=true
-          INM_NOTIFY_TARGETS=email
-          INM_NOTIFY_EMAIL_TO={{ notify_email }}
-          INM_NOTIFY_HEARTBEAT_ENABLED=true
+          INM_NOTIFY_ENABLE=true
+          INM_NOTIFY_TARGETS_LIST=email
+          INM_NOTIFY_EMAIL_TO_LIST={{ notify_email }}
+          INM_NOTIFY_HEARTBEAT_ENABLE=true
           INM_NOTIFY_HEARTBEAT_TIME=06:00
           INM_NOTIFY_HEARTBEAT_LEVEL=WARN
 

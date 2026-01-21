@@ -19,8 +19,8 @@ resolve_home_base() {
     fi
     local candidate=""
     local user=""
-    if [[ -n "${INM_ENFORCED_USER:-}" && "${INM_ENFORCED_USER}" != "root" ]]; then
-        user="$INM_ENFORCED_USER"
+    if [[ -n "${INM_EXEC_USER:-}" && "${INM_EXEC_USER}" != "root" ]]; then
+        user="$INM_EXEC_USER"
     elif [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
         user="$SUDO_USER"
     fi

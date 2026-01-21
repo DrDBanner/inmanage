@@ -39,7 +39,7 @@ check_missing_settings() {
     updated=0
     for key in "${!default_settings[@]}"; do
         if ! grep -q "^$key=" "$INM_SELF_ENV_FILE"; then
-            if [[ "$key" == "INM_CLI_COMPATIBILITY" ]]; then
+            if [[ "$key" == "INM_SELF_CLI_COMPAT_MODE" ]]; then
                 local allow_compat=false
                 if [[ "${INM_CONFIG_CREATED_THIS_RUN:-}" == "true" ]]; then
                     allow_compat=true
@@ -58,8 +58,8 @@ check_missing_settings() {
                 local current_user=""
                 current_user="$(id -un 2>/dev/null || true)"
                 log err "[CMS] Config not writable: $INM_SELF_ENV_FILE"
-                if [ -n "${INM_ENFORCED_USER:-}" ] && [ "$current_user" != "$INM_ENFORCED_USER" ]; then
-                    log_hint "CMS" "Fix: sudo -u ${INM_ENFORCED_USER} bash ./inmanage.sh"
+                if [ -n "${INM_EXEC_USER:-}" ] && [ "$current_user" != "$INM_EXEC_USER" ]; then
+                    log_hint "CMS" "Fix: sudo -u ${INM_EXEC_USER} bash ./inmanage.sh"
                 else
                     log_hint "CMS" "Fix: sudo chown ${current_user:-<your-user>} \"$INM_SELF_ENV_FILE\""
                 fi
@@ -87,13 +87,13 @@ check_missing_settings() {
         log debug "[CMS] Loaded settings from $INM_SELF_ENV_FILE."
     fi
 
-    if ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+    if ! grep -q "^INM_SELF_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
         local inst_id=""
         if declare -F env_resolve_instance_id >/dev/null 2>&1; then
-            inst_id="$(env_resolve_instance_id "${INM_BASE_DIRECTORY:-}" "${INM_ENV_FILE:-}")"
+            inst_id="$(env_resolve_instance_id "${INM_PATH_BASE_DIR:-}" "${INM_PATH_APP_ENV_FILE:-}")"
         fi
-        if [[ -n "$inst_id" ]] && ! grep -q "^INM_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
-            printf 'INM_INSTANCE_ID="%s"\n' "$inst_id" >> "$INM_SELF_ENV_FILE"
+        if [[ -n "$inst_id" ]] && ! grep -q "^INM_SELF_INSTANCE_ID=" "$INM_SELF_ENV_FILE"; then
+            printf 'INM_SELF_INSTANCE_ID="%s"\n' "$inst_id" >> "$INM_SELF_ENV_FILE"
             load_env_file_raw "$INM_SELF_ENV_FILE"
         fi
     fi
@@ -184,7 +184,7 @@ check_commands_missing() {
 # ---------------------------------------------------------------------
 # check_db_tools_preflight()
 # Emit database client/dump status for preflight.
-# Consumes: args: add_fn, tag; env: INM_ENV_FILE/INM_INSTALLATION_PATH/DB_*; deps: expand_path_vars, select_db_client, select_db_dump.
+# Consumes: args: add_fn, tag; env: INM_PATH_APP_ENV_FILE/INM_INSTALLATION_PATH/DB_*; deps: expand_path_vars, select_db_client, select_db_dump.
 # Computes: DB tooling status lines.
 # Returns: 0 after emitting.
 # ---------------------------------------------------------------------
@@ -218,8 +218,8 @@ check_db_tools_preflight() {
         db_config_present=true
     else
         local env_for_db=""
-        if [ -n "${INM_ENV_FILE:-}" ]; then
-            env_for_db="$(expand_path_vars "$INM_ENV_FILE")"
+        if [ -n "${INM_PATH_APP_ENV_FILE:-}" ]; then
+            env_for_db="$(expand_path_vars "$INM_PATH_APP_ENV_FILE")"
         elif [ -n "${INM_INSTALLATION_PATH:-}" ]; then
             env_for_db="${INM_INSTALLATION_PATH%/}/.env"
         fi
@@ -255,14 +255,14 @@ check_db_tools_preflight() {
         db_client="mariadb"
     elif [ "$have_mysql" = true ] && [ "$have_mariadb" = true ]; then
         db_client="mysql"
-        if [ -n "${INM_DB_CLIENT:-}" ]; then
-            case "${INM_DB_CLIENT,,}" in
+        if [ -n "${INM_DB_CLIENT_MODE:-}" ]; then
+            case "${INM_DB_CLIENT_MODE,,}" in
                 mysql|mariadb)
-                    db_client="${INM_DB_CLIENT,,}"
-                    db_client_note=" (INM_DB_CLIENT)"
+                    db_client="${INM_DB_CLIENT_MODE,,}"
+                    db_client_note=" (INM_DB_CLIENT_MODE)"
                     ;;
                 *)
-                    db_emit WARN "INM_DB_CLIENT ignored (use mysql or mariadb)"
+                    db_emit WARN "INM_DB_CLIENT_MODE ignored (use mysql or mariadb)"
                     ;;
             esac
         else
@@ -365,7 +365,7 @@ check_envs() {
         allow_missing_config=true
     fi
 
-    if [[ "$allow_missing_config" != true && -n "${INM_BASE_DIRECTORY:-}" ]]; then
+    if [[ "$allow_missing_config" != true && -n "${INM_PATH_BASE_DIR:-}" ]]; then
         check_base_directory_valid_and_enter || {
             log err "[ENV] Base directory check failed. Aborting."
             exit 1
@@ -397,8 +397,8 @@ check_envs() {
             else
                 log info "[ENV] Using local .inmanage/.env.inmanage at $INM_SELF_ENV_FILE"
             fi
-        elif [ -n "${INM_BASE_DIRECTORY:-}" ] && [ -f "${INM_BASE_DIRECTORY%/}/.inmanage/.env.inmanage" ]; then
-            INM_SELF_ENV_FILE="${INM_BASE_DIRECTORY%/}/.inmanage/.env.inmanage"
+        elif [ -n "${INM_PATH_BASE_DIR:-}" ] && [ -f "${INM_PATH_BASE_DIR%/}/.inmanage/.env.inmanage" ]; then
+            INM_SELF_ENV_FILE="${INM_PATH_BASE_DIR%/}/.inmanage/.env.inmanage"
             if should_suppress_pre_switch_logs; then
                 log debug "[ENV] Using base .inmanage/.env.inmanage at $INM_SELF_ENV_FILE"
             else
@@ -412,8 +412,8 @@ check_envs() {
         local perm_hint=""
         if [ -d ".inmanage" ] && [ ! -x ".inmanage" ]; then
             perm_hint="$PWD/.inmanage/.env.inmanage"
-        elif [ -n "${INM_BASE_DIRECTORY:-}" ] && [ -d "${INM_BASE_DIRECTORY%/}/.inmanage" ] && [ ! -x "${INM_BASE_DIRECTORY%/}/.inmanage" ]; then
-            perm_hint="${INM_BASE_DIRECTORY%/}/.inmanage/.env.inmanage"
+        elif [ -n "${INM_PATH_BASE_DIR:-}" ] && [ -d "${INM_PATH_BASE_DIR%/}/.inmanage" ] && [ ! -x "${INM_PATH_BASE_DIR%/}/.inmanage" ]; then
+            perm_hint="${INM_PATH_BASE_DIR%/}/.inmanage/.env.inmanage"
         fi
 
         if [ -n "$perm_hint" ]; then
@@ -463,14 +463,14 @@ check_envs() {
             local current_user=""
             current_user="$(id -un 2>/dev/null || true)"
             log err "[ENV] Project config file '$INM_SELF_ENV_FILE' is not readable. Aborting."
-            if [ -n "${INM_ENFORCED_USER:-}" ] && [ "$current_user" != "$INM_ENFORCED_USER" ]; then
-                log_hint "ENV" "Run as enforced user: sudo -u ${INM_ENFORCED_USER} inm core health"
+            if [ -n "${INM_EXEC_USER:-}" ] && [ "$current_user" != "$INM_EXEC_USER" ]; then
+                log_hint "ENV" "Run as enforced user: sudo -u ${INM_EXEC_USER} inm core health"
                 log_hint "ENV" "Or run as root with: sudo inm core health --override-enforced-user"
             else
                 log_hint "ENV" "CLI config defaults to 600 for security. Fix options: run as enforced user, add your user to the app group, or relax CLI config mode."
                 log_hint "ENV" "Directory access also matters: .inmanage needs +x for your user (group membership or chmod/chgrp)."
-                log_hint "ENV" "Set mode (group): sudo inm env set cli INM_CLI_ENV_MODE=\"640\""
-                log_hint "ENV" "Set mode (world, if no secrets): sudo inm env set cli INM_CLI_ENV_MODE=\"644\""
+                log_hint "ENV" "Set mode (group): sudo inm env set cli INM_PERM_CLI_ENV_MODE=\"640\""
+                log_hint "ENV" "Set mode (world, if no secrets): sudo inm env set cli INM_PERM_CLI_ENV_MODE=\"644\""
                 log_hint "ENV" "Apply permissions: sudo inm core health --fix-permissions"
             fi
             exit 1
@@ -482,6 +482,9 @@ check_envs() {
             exit 1
         }
         log debug "[ENV] Inmanage CLI config loaded: ${INM_SELF_ENV_FILE}"
+        if declare -F self_migrations_run_if_needed >/dev/null 2>&1; then
+            self_migrations_run_if_needed "$INM_SELF_ENV_FILE" || exit 1
+        fi
 
         check_base_directory_valid_and_enter || {
             log err "[ENV] Base directory check failed. Aborting."
@@ -489,64 +492,64 @@ check_envs() {
         }
     fi
 
-    INM_ENV_FILE="$(path_expand_no_eval "${INM_ENV_FILE:-}")"
-    INM_ARTISAN_STRING="$(path_expand_no_eval "${INM_ARTISAN_STRING:-}")"
+    INM_PATH_APP_ENV_FILE="$(path_expand_no_eval "${INM_PATH_APP_ENV_FILE:-}")"
+    INM_RUNTIME_ARTISAN_CMD="$(path_expand_no_eval "${INM_RUNTIME_ARTISAN_CMD:-}")"
     INM_PROVISION_ENV_FILE="$(path_expand_no_eval "${INM_PROVISION_ENV_FILE:-}")"
     INM_SELF_ENV_FILE="$(path_expand_no_eval "${INM_SELF_ENV_FILE:-}")"
-    INM_CACHE_GLOBAL_DIRECTORY="$(path_expand_no_eval "${INM_CACHE_GLOBAL_DIRECTORY:-}")"
-    INM_CACHE_LOCAL_DIRECTORY="$(path_expand_no_eval "${INM_CACHE_LOCAL_DIRECTORY:-}")"
-    INM_BACKUP_DIRECTORY="$(path_expand_no_eval "${INM_BACKUP_DIRECTORY:-}")"
-    INM_HISTORY_LOG_FILE="$(path_expand_no_eval "${INM_HISTORY_LOG_FILE:-}")"
+    INM_CACHE_GLOBAL_DIR="$(path_expand_no_eval "${INM_CACHE_GLOBAL_DIR:-}")"
+    INM_CACHE_LOCAL_DIR="$(path_expand_no_eval "${INM_CACHE_LOCAL_DIR:-}")"
+    INM_BACKUP_DIR="$(path_expand_no_eval "${INM_BACKUP_DIR:-}")"
+    INM_LOG_OPS_FILE="$(path_expand_no_eval "${INM_LOG_OPS_FILE:-}")"
 
     # Normalize base dir to always carry a trailing slash for consistent concatenation.
-    if [ -n "${INM_BASE_DIRECTORY:-}" ]; then
-        INM_BASE_DIRECTORY="$(ensure_trailing_slash "$INM_BASE_DIRECTORY")"
-        log debug "[ENV] Normalized base directory: $INM_BASE_DIRECTORY"
+    if [ -n "${INM_PATH_BASE_DIR:-}" ]; then
+        INM_PATH_BASE_DIR="$(ensure_trailing_slash "$INM_PATH_BASE_DIR")"
+        log debug "[ENV] Normalized base directory: $INM_PATH_BASE_DIR"
     fi
 
-    # Normalize installation path in case INM_INSTALLATION_DIRECTORY is absolute.
-    INM_INSTALLATION_PATH="$(compute_installation_path "$INM_BASE_DIRECTORY" "$INM_INSTALLATION_DIRECTORY")"
+    # Normalize installation path in case INM_PATH_APP_DIR is absolute.
+    INM_INSTALLATION_PATH="$(compute_installation_path "$INM_PATH_BASE_DIR" "$INM_PATH_APP_DIR")"
     if [[ -n "${INM_INSTALLATION_PATH:-}" ]]; then
         local env_state=""
-        if [[ -n "${INM_ENV_FILE:-}" ]]; then
-            env_state="$(file_read_state "$INM_ENV_FILE")"
+        if [[ -n "${INM_PATH_APP_ENV_FILE:-}" ]]; then
+            env_state="$(file_read_state "$INM_PATH_APP_ENV_FILE")"
         fi
         if [[ "$env_state" == "exists_unreadable" || "$env_state" == "permission" ]]; then
             if [[ "${INM_ENV_WARNED:-false}" == true ]]; then
-                log debug "[ENV] App .env not readable: $INM_ENV_FILE (permission issue)."
+                log debug "[ENV] App .env not readable: $INM_PATH_APP_ENV_FILE (permission issue)."
             elif should_suppress_pre_switch_logs; then
-                log debug "[ENV] App .env not readable: $INM_ENV_FILE (permission issue)."
+                log debug "[ENV] App .env not readable: $INM_PATH_APP_ENV_FILE (permission issue)."
                 INM_ENV_WARNED=true
             else
-                log warn "[ENV] App .env not readable: $INM_ENV_FILE (permission issue)."
+                log warn "[ENV] App .env not readable: $INM_PATH_APP_ENV_FILE (permission issue)."
                 INM_ENV_WARNED=true
             fi
         fi
         # If the resolved .env path is missing, rebuild it relative to the normalized install path.
-        if [ -z "${INM_ENV_FILE:-}" ] || { [ ! -f "$INM_ENV_FILE" ] && [[ "$env_state" != "exists_unreadable" && "$env_state" != "permission" ]]; }; then
-            INM_ENV_FILE="${INM_INSTALLATION_PATH%/}/.env"
-            log debug "[ENV] Derived INM_ENV_FILE via installation path: $INM_ENV_FILE"
+        if [ -z "${INM_PATH_APP_ENV_FILE:-}" ] || { [ ! -f "$INM_PATH_APP_ENV_FILE" ] && [[ "$env_state" != "exists_unreadable" && "$env_state" != "permission" ]]; }; then
+            INM_PATH_APP_ENV_FILE="${INM_INSTALLATION_PATH%/}/.env"
+            log debug "[ENV] Derived INM_PATH_APP_ENV_FILE via installation path: $INM_PATH_APP_ENV_FILE"
         fi
         # If base directory is unset, anchor it to the install parent to keep rollbacks/backups aligned.
-        if [ -z "${INM_BASE_DIRECTORY:-}" ]; then
-            INM_BASE_DIRECTORY="$(dirname "${INM_INSTALLATION_PATH%/}")/"
-            log warn "[ENV] INM_BASE_DIRECTORY was empty; using install parent: $INM_BASE_DIRECTORY"
+        if [ -z "${INM_PATH_BASE_DIR:-}" ]; then
+            INM_PATH_BASE_DIR="$(dirname "${INM_INSTALLATION_PATH%/}")/"
+            log warn "[ENV] INM_PATH_BASE_DIR was empty; using install parent: $INM_PATH_BASE_DIR"
         fi
     fi
 
     maybe_migrate_legacy_cli "$@" || exit 1
 
-    enforce_user_switch --user="$INM_ENFORCED_USER" "$@"
+    enforce_user_switch --user="$INM_EXEC_USER" "$@"
 
     log debug "[ENV] Current working directory: $PWD"
     log debug "[ENV] Script Name: $SCRIPT_NAME"
     log debug "[ENV] Script Path: $SCRIPT_PATH"
     log debug "[ENV] Current user: $(whoami)"
     log debug "[ENV] Current shell: $SHELL"
-    log debug "[ENV] Base directory: $INM_BASE_DIRECTORY"
+    log debug "[ENV] Base directory: $INM_PATH_BASE_DIR"
     log debug "[ENV] Script location: $(realpath "$0")"
     log debug "[ENV] Current configuration file: $INM_SELF_ENV_FILE"
-    log debug "[ENV] Enforced user: ${INM_ENFORCED_USER:-<not set>}"
+    log debug "[ENV] Enforced user: ${INM_EXEC_USER:-<not set>}"
 
     if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "$INM_SELF_ENV_FILE" ]; then
         check_missing_settings
@@ -558,25 +561,25 @@ check_envs() {
 # check_base_directory_valid_and_enter()
 # ---------------------------------------------------------------------
 check_base_directory_valid_and_enter() {
-    log debug "[DIR] Checking base directory: $INM_BASE_DIRECTORY"
-    if [ -z "$INM_BASE_DIRECTORY" ]; then
+    log debug "[DIR] Checking base directory: $INM_PATH_BASE_DIR"
+    if [ -z "$INM_PATH_BASE_DIR" ]; then
         log debug "[DIR] Detecting base directory via .env/auto-discovery."
         return 0
     fi
 
-    if [ ! -d "$INM_BASE_DIRECTORY" ]; then
-        log err "[DIR] The path '$INM_BASE_DIRECTORY' does not exist or is not a directory."
+    if [ ! -d "$INM_PATH_BASE_DIR" ]; then
+        log err "[DIR] The path '$INM_PATH_BASE_DIR' does not exist or is not a directory."
         log err "Please double-check your configuration or provide a valid --base-directory."
         return 1
     fi
 
-    cd "$INM_BASE_DIRECTORY" || {
-        log err "[DIR] Couldn't change into base directory: $INM_BASE_DIRECTORY"
+    cd "$INM_PATH_BASE_DIR" || {
+        log err "[DIR] Couldn't change into base directory: $INM_PATH_BASE_DIR"
         log err "Check permissions or correct the path via --base-directory"
         return 1
     }
 
-    log debug "[DIR] Working directory changed to: $INM_BASE_DIRECTORY"
+    log debug "[DIR] Working directory changed to: $INM_PATH_BASE_DIR"
     return 0
 }
 

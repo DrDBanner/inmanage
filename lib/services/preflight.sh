@@ -29,8 +29,8 @@ run_preflight() {
     parse_named_args ARGS "$@"
     local pf_label="${INM_PREFLIGHT_LABEL:-PREFLIGHT}"
     local enforced_owner=""
-    local enforced_user="${ENFORCED_USER:-${INM_ENFORCED_USER:-}}"
-    local enforced_group="${INM_ENFORCED_GROUP:-}"
+    local enforced_user="${ENFORCED_USER:-${INM_EXEC_USER:-}}"
+    local enforced_group="${INM_EXEC_GROUP:-}"
     local fast="${ARGS[fast]:-false}"
     local skip_snappdf="${ARGS[skip_snappdf]:-false}"
     local skip_github="${ARGS[skip_github]:-false}"
@@ -50,11 +50,11 @@ run_preflight() {
         enforced_owner can_enforce current_user cli_config_present
     invoked_user="${INM_INVOKED_BY:-$current_user}"
     # Resolve env file path early so probes/readers behave consistently.
-    if [ -n "${INM_ENV_FILE:-}" ]; then
+    if [ -n "${INM_PATH_APP_ENV_FILE:-}" ]; then
         local env_file_resolved
-        env_file_resolved="$(expand_path_vars "$INM_ENV_FILE")"
+        env_file_resolved="$(expand_path_vars "$INM_PATH_APP_ENV_FILE")"
         if [ -n "$env_file_resolved" ]; then
-            INM_ENV_FILE="$env_file_resolved"
+            INM_PATH_APP_ENV_FILE="$env_file_resolved"
         fi
     fi
     # shellcheck disable=SC2034
@@ -150,13 +150,13 @@ run_preflight() {
     if [[ -n "$notify_format_raw" ]]; then
         notify_format="$notify_format_raw"
     else
-        notify_format="${INM_NOTIFY_HEARTBEAT_FORMAT:-}"
+        notify_format="${INM_NOTIFY_HEARTBEAT_FORMAT_MODE:-}"
     fi
     notify_format="${notify_format,,}"
     if [[ -z "$notify_format" ]]; then
-        local legacy_detail="${INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL:-auto}"
-        legacy_detail="${legacy_detail^^}"
-        case "$legacy_detail" in
+        local detail_mode="${INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL_MODE:-auto}"
+        detail_mode="${detail_mode^^}"
+        case "$detail_mode" in
             OK|INFO|ALL) notify_format="full" ;;
             WARN|ERR) notify_format="failed" ;;
             AUTO|"") notify_format="failed" ;;
@@ -170,22 +170,10 @@ run_preflight() {
     # Heartbeat runs can narrow/expand checks using stored include/exclude lists.
     if [[ "$notify_heartbeat" == true ]]; then
         local hb_include="${INM_NOTIFY_HEARTBEAT_CHECK_INCLUDE:-}"
-        local hb_include_legacy="${INM_NOTIFY_HEARTBEAT_INCLUDE:-}"
-        if [[ -z "$hb_include" && -n "$hb_include_legacy" ]]; then
-            hb_include="$hb_include_legacy"
-        fi
         if [[ -n "$hb_include" && -z "$checks_filter" ]]; then
             checks_filter="$hb_include"
         fi
         local hb_exclude="${INM_NOTIFY_HEARTBEAT_CHECK_EXCLUDE:-}"
-        local hb_exclude_legacy="${INM_NOTIFY_HEARTBEAT_EXCLUDE:-}"
-        if [[ -n "$hb_exclude_legacy" ]]; then
-            if [[ -z "$hb_exclude" ]]; then
-                hb_exclude="$hb_exclude_legacy"
-            else
-                hb_exclude="${hb_exclude},${hb_exclude_legacy}"
-            fi
-        fi
         if [[ -n "$hb_exclude" ]]; then
             if [[ -z "$exclude_filter" ]]; then
                 exclude_filter="$hb_exclude"
@@ -294,11 +282,11 @@ run_preflight() {
         if [ -n "${INM_SELF_ENV_FILE:-}" ] && [ -f "${INM_SELF_ENV_FILE:-}" ]; then
             app_cfg_hint="CLI config: ${INM_SELF_ENV_FILE}"
         fi
-        if [ -n "${INM_ENV_FILE:-}" ] && [ -f "${INM_ENV_FILE:-}" ]; then
+        if [ -n "${INM_PATH_APP_ENV_FILE:-}" ] && [ -f "${INM_PATH_APP_ENV_FILE:-}" ]; then
             if [ -n "$app_cfg_hint" ]; then
-                app_cfg_hint+=" | App env: ${INM_ENV_FILE}"
+                app_cfg_hint+=" | App env: ${INM_PATH_APP_ENV_FILE}"
             else
-                app_cfg_hint="App env: ${INM_ENV_FILE}"
+                app_cfg_hint="App env: ${INM_PATH_APP_ENV_FILE}"
             fi
         fi
         if [ -n "${INM_INSTALLATION_PATH:-}" ] && [ -d "${INM_INSTALLATION_PATH%/}" ]; then

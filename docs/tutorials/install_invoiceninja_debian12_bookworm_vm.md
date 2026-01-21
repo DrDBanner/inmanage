@@ -643,17 +643,17 @@ MAIL_ENCRYPTION=tls
 MAIL_FROM_ADDRESS=ops@example.com
 MAIL_FROM_NAME=Billing
 
-INM_NOTIFY_ENABLED=true
-INM_NOTIFY_TARGETS=email
-INM_NOTIFY_EMAIL_TO=ops@example.com
-INM_NOTIFY_HEARTBEAT_ENABLED=true
+INM_NOTIFY_ENABLE=true
+INM_NOTIFY_TARGETS_LIST=email
+INM_NOTIFY_EMAIL_TO_LIST=ops@example.com
+INM_NOTIFY_HEARTBEAT_ENABLE=true
 INM_NOTIFY_HEARTBEAT_LEVEL=WARN
 INM_NOTIFY_HEARTBEAT_TIME=06:00
 ```
 
 If your MariaDB root user uses socket auth, set `DB_ELEVATED_PASSWORD=auth_socket` instead of a password and run the install with sudo.
 
-When you include valid `MAIL_*` SMTP settings and the minimum notification keys (`INM_NOTIFY_ENABLED`, `INM_NOTIFY_TARGETS`, `INM_NOTIFY_HEARTBEAT_ENABLED`, `INM_NOTIFY_HEARTBEAT_LEVEL`), the installer auto-installs the heartbeat cron job and sends a test mail. Otherwise, it installs only the essential cron jobs (artisan + backup).
+When you include valid `MAIL_*` SMTP settings and the minimum notification keys (`INM_NOTIFY_ENABLE`, `INM_NOTIFY_TARGETS_LIST`, `INM_NOTIFY_HEARTBEAT_ENABLE`, `INM_NOTIFY_HEARTBEAT_LEVEL`), the installer auto-installs the heartbeat cron job and sends a test mail. Otherwise, it installs only the essential cron jobs (artisan + backup).
 
 <a href="https://github.com/user-attachments/assets/999051b4-ad27-46f6-b75d-10975c56d3ba" target="_blank">
   <img src="https://github.com/user-attachments/assets/dcaa1fc8-727b-4cae-b13f-3818763a76e2" alt="Install IN" width="100%">
@@ -674,7 +674,7 @@ sudo -u www-data nano /var/www/billing.debian12vm.local/.inmanage/.env.provision
 If you chose the wrong enforced user during first run, fix it like this:
 
 ```bash
-sudo inm env set cli INM_ENFORCED_USER="www-data"
+sudo inm env set cli INM_EXEC_USER="www-data"
 sudo inm core health --fix-permissions --override-enforced-user
 ```
 

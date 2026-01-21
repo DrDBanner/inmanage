@@ -5,7 +5,7 @@
 __HELPER_UPDATE_NOTICE_LOADED=1
 
 update_notice_dir() {
-    local base="${INM_BASE_DIRECTORY:-}"
+    local base="${INM_PATH_BASE_DIR:-}"
     [[ -n "$base" ]] || return 1
     local dir="${base%/}/.inmanage"
     [[ -d "$dir" ]] || return 1
@@ -51,7 +51,7 @@ update_notice_mark_checked() {
     now="$(date +%s 2>/dev/null || true)"
     [[ -n "$now" ]] || return 0
     printf "%s\n" "$now" > "$file" 2>/dev/null || return 0
-    chmod "${INM_FILE_MODE:-644}" "$file" 2>/dev/null || true
+    chmod "${INM_PERM_FILE_MODE:-644}" "$file" 2>/dev/null || true
     return 0
 }
 
@@ -88,7 +88,7 @@ update_notice_set() {
         return 0
     fi
     printf "%s|%s\n" "${level,,}" "$message" > "$file" 2>/dev/null || return 0
-    chmod "${INM_FILE_MODE:-644}" "$file" 2>/dev/null || true
+    chmod "${INM_PERM_FILE_MODE:-644}" "$file" 2>/dev/null || true
     return 0
 }
 

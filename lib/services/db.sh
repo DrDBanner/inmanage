@@ -37,7 +37,7 @@ detect_mysql_collation() {
 # Resolve app .env path for DB operations.
 # ---------------------------------------------------------------------
 _db_env_file() {
-    local env_file="${INM_ENV_FILE:-}"
+    local env_file="${INM_PATH_APP_ENV_FILE:-}"
     if [ -z "$env_file" ] && [ -n "${INM_INSTALLATION_PATH:-}" ]; then
         env_file="${INM_INSTALLATION_PATH%/}/.env"
     fi
@@ -71,7 +71,7 @@ _db_env_read_state() {
 # ---------------------------------------------------------------------
 # db_emit_preflight()
 # Emit database connectivity and schema info for preflight output.
-# Consumes: args: add_fn, db_tag, app_tag; env: DB_*, INM_ENV_FILE/INM_INSTALLATION_PATH; deps: load_env_file_raw/select_db_client/expand_path_vars.
+# Consumes: args: add_fn, db_tag, app_tag; env: DB_*, INM_PATH_APP_ENV_FILE/INM_INSTALLATION_PATH; deps: load_env_file_raw/select_db_client/expand_path_vars.
 # Computes: connection status, server settings, language table info.
 # Returns: 0 after emitting.
 # ---------------------------------------------------------------------
@@ -104,7 +104,7 @@ db_emit_preflight() {
     }
 
     # Try to hydrate DB vars from app env if missing
-    local env_file="${INM_ENV_FILE:-}"
+    local env_file="${INM_PATH_APP_ENV_FILE:-}"
     if [ -z "$env_file" ] && [ -n "${INM_INSTALLATION_PATH:-}" ]; then
         env_file="${INM_INSTALLATION_PATH%/}/.env"
     fi
@@ -197,7 +197,7 @@ db_emit_preflight() {
             db_emit ERR "$db_tag" "$hint"
         fi
     else
-        local db_env_file="${INM_ENV_FILE:-}"
+        local db_env_file="${INM_PATH_APP_ENV_FILE:-}"
         if [ -z "$db_env_file" ] && [ -n "${INM_INSTALLATION_PATH:-}" ]; then
             db_env_file="${INM_INSTALLATION_PATH%/}/.env"
         fi
@@ -270,7 +270,7 @@ import_database() {
     if [[ -z "${DB_HOST:-}" ]]; then
         DB_HOST=$(prompt_var "MYSQL_HOST" "localhost" "MySQL/MariaDB host:" false 60) || return 1
     fi
-    if [[ -z "${DB_PASSWORD:-}" && "${INM_FORCE_READ_DB_PW^^}" == "Y" ]]; then
+    if [[ -z "${DB_PASSWORD:-}" && "${INM_DB_FORCE_READ_PW_ENABLE^^}" == "Y" ]]; then
         DB_PASSWORD=$(prompt_var "MYSQL_PASS" "" "Password for ${DB_USERNAME}:" true 60) || return 1
     fi
 
@@ -327,7 +327,7 @@ import_database() {
 
     # Always attempt a pre-backup unless explicitly skipped
     if [[ "$prebackup" != false ]]; then
-        local backup_dir="${INM_BACKUP_DIRECTORY:-./_backups}"
+        local backup_dir="${INM_BACKUP_DIR:-./_backups}"
         mkdir -p "$backup_dir" 2>/dev/null || log warn "[import_db] Could not ensure backup dir $backup_dir"
         if [[ -d "$backup_dir" ]]; then
             local shadow_dump
@@ -432,7 +432,7 @@ purge_database() {
     if [[ -z "${DB_HOST:-}" ]]; then
         DB_HOST=$(prompt_var "MYSQL_HOST" "localhost" "MySQL/MariaDB host:" false 60) || return 1
     fi
-    if [[ -z "${DB_PASSWORD:-}" && "${INM_FORCE_READ_DB_PW^^}" == "Y" ]]; then
+    if [[ -z "${DB_PASSWORD:-}" && "${INM_DB_FORCE_READ_PW_ENABLE^^}" == "Y" ]]; then
         DB_PASSWORD=$(prompt_var "MYSQL_PASS" "" "Password for ${DB_USERNAME}:" true 60) || return 1
     fi
 
@@ -641,24 +641,24 @@ dump_database() {
     fi
 
     local dump_cmd=("$db_dump")
-    if [[ -n "$INM_DUMP_OPTIONS" ]]; then
-        read -r -a tmp_opts <<< "$INM_DUMP_OPTIONS"
+    if [[ -n "$INM_DB_DUMP_OPTIONS" ]]; then
+        read -r -a tmp_opts <<< "$INM_DB_DUMP_OPTIONS"
         dump_cmd+=("${tmp_opts[@]}")
     fi
 
     dump_cmd+=("-u$DB_USERNAME" "-h$DB_HOST" "$DB_DATABASE")
     log debug "[dump_db] Command: ${dump_cmd[*]/$DB_PASSWORD/******}"
 
-    if [[ "${INM_FORCE_READ_DB_PW^^}" == "Y" ]]; then
+    if [[ "${INM_DB_FORCE_READ_PW_ENABLE^^}" == "Y" ]]; then
         if [[ -z "${DB_PASSWORD:-}" ]]; then
             if [[ "$env_state" = "exists_unreadable" || "$env_state" = "permission" ]]; then
-                log err "[dump_db] INM_FORCE_READ_DB_PW=Y but app .env is not readable at ${env_file}; cannot proceed without prompting."
+                log err "[dump_db] INM_DB_FORCE_READ_PW_ENABLE=Y but app .env is not readable at ${env_file}; cannot proceed without prompting."
             else
-                log err "[dump_db] INM_FORCE_READ_DB_PW=Y but DB_PASSWORD is empty; cannot proceed without prompting."
+                log err "[dump_db] INM_DB_FORCE_READ_PW_ENABLE=Y but DB_PASSWORD is empty; cannot proceed without prompting."
             fi
             return 1
         fi
-        log debug "[dump_db] INM_FORCE_READ_DB_PW=Y → Using .env password (no prompt)"
+        log debug "[dump_db] INM_DB_FORCE_READ_PW_ENABLE=Y → Using .env password (no prompt)"
         dump_cmd+=("-p$DB_PASSWORD")
         if [[ "${DEBUG:-false}" == true || "${NAMED_ARGS[debug]:-false}" == true ]]; then
             if ! "${dump_cmd[@]}" > "$target_file"; then
@@ -678,7 +678,7 @@ dump_database() {
             rm -f "$dump_err"
         fi
     else
-        log debug "[dump_db] INM_FORCE_READ_DB_PW≠Y → Attempt .my.cnf"
+        log debug "[dump_db] INM_DB_FORCE_READ_PW_ENABLE≠Y → Attempt .my.cnf"
         local dump_err=""
         dump_err="$(mktemp /tmp/.inm_dump_err_XXXXXX 2>/dev/null || printf "/tmp/.inm_dump_err_%s" "$$")"
         if ! "${dump_cmd[@]}" > "$target_file" 2>"$dump_err"; then
