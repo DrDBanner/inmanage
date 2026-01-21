@@ -28,51 +28,51 @@ declare -A default_settings=(
     ["INM_EXEC_SHELL_BIN"]="$(command -v bash)"
     ["INM_SELF_PROGRAM_NAME"]="InvoiceNinja"
     ["INM_SELF_COMPAT_VERSION"]="5+"
-    ["INM_SELF_CLI_COMPAT_MODE"]="ultron" # Missing => treat as legacy install.
+    ["INM_SELF_CLI_COMPAT_MODE"]="ultron"
     ["INM_BACKUP_DIR"]="./.backup"
-    ["INM_BACKUP_DIR_PERM_MODE"]="" # Optional override for backup dir mode (empty=use INM_PERM_DIR_MODE).
+    ["INM_BACKUP_DIR_PERM_MODE"]=""
     ["INM_BACKUP_RETENTION"]="2"
     ["INM_DB_DUMP_OPTIONS"]="--default-character-set=utf8mb4 --no-tablespaces --skip-add-drop-table --quick --single-transaction"
     ["INM_DB_FORCE_READ_PW_ENABLE"]="N"
-    ["INM_BACKUP_MIGRATION_SOURCE"]="" # Use LATEST or path to run restore after provision.
+    ["INM_BACKUP_MIGRATION_SOURCE"]=""
     ["INM_CACHE_LOCAL_DIR"]="./.cache"
     ["INM_CACHE_GLOBAL_DIR"]="\${HOME}/.inmanage/cache"
-    ["INM_CACHE_GLOBAL_RETENTION"]="3" # Keep last N cached releases.
-    ["INM_CACHE_GLOBAL_DIR_PERM_MODE"]="" # Empty = auto (775 if group set, else 750).
-    ["INM_CACHE_GLOBAL_FILE_PERM_MODE"]="" # Empty = auto (664 if group set, else 640).
-    ["INM_CACHE_SUDO_PROMPT_MODE"]="never" # ask|never to enable sudo prompt for cache dir.
+    ["INM_CACHE_GLOBAL_RETENTION"]="3"
+    ["INM_CACHE_GLOBAL_DIR_PERM_MODE"]=""
+    ["INM_CACHE_GLOBAL_FILE_PERM_MODE"]=""
+    ["INM_CACHE_SUDO_PROMPT_MODE"]="never"
     ["INM_LOG_OPS_FILE"]="\${INM_PATH_BASE_DIR}/.inmanage/history.log"
     ["INM_LOG_OPS_MAX_SIZE"]="512K"
     ["INM_LOG_OPS_ROTATE_COUNT"]="5"
     ["INM_EXEC_USER"]="www-data"
-    ["INM_EXEC_GROUP"]="" # Optional group override (defaults to user's primary group).
-    ["INM_PERM_DIR_MODE"]="2750" # Default directory mode for app dirs when fixing perms.
-    ["INM_PERM_FILE_MODE"]="644" # Default file mode for app files when fixing perms.
-    ["INM_PERM_APP_ENV_MODE"]="600" # Strict mode for app .env when fixing perms.
-    ["INM_PERM_CLI_ENV_MODE"]="600" # Strict mode for CLI config when fixing perms.
-    ["INM_UPDATE_CHECK_ENABLE"]="true" # Show startup update notice for app + CLI (uses last health check results).
-    ["INM_HEALTH_CHECK_INCLUDE"]="" # Optional include filter for health checks.
-    ["INM_HEALTH_CHECK_EXCLUDE"]="" # Optional exclude filter for health checks.
-    ["INM_GH_API_CREDENTIALS"]="" # Format username:password or token:x-oauth.
-    ["INM_NOTIFY_ENABLE"]="false" # Enable notifications for non-interactive failures.
-    ["INM_NOTIFY_TARGETS_LIST"]="email,webhook" # Comma list: email,webhook.
-    ["INM_NOTIFY_EMAIL_TO_LIST"]="" # Comma-separated recipients.
-    ["INM_NOTIFY_EMAIL_FROM_ADDRESS"]="" # Override sender address (defaults to app MAIL_FROM_ADDRESS).
-    ["INM_NOTIFY_EMAIL_FROM_NAME"]="Heartbeat | Invoice Ninja" # Override sender name (defaults to app MAIL_FROM_NAME).
-    ["INM_NOTIFY_LEVEL"]="ERR" # Minimum severity: ERR|WARN|INFO|OK|ALL.
-    ["INM_NOTIFY_NONINTERACTIVE_ONLY_ENABLE"]="true" # Only send when no TTY is attached.
-    ["INM_NOTIFY_SMTP_TIMEOUT_SECONDS"]="10" # SMTP connect timeout (seconds).
-    ["INM_NOTIFY_HOOKS_ENABLE"]="true" # Enable hook notifications.
-    ["INM_NOTIFY_HOOKS_FAILURE_ENABLE"]="true" # Notify when hooks fail.
-    ["INM_NOTIFY_HOOKS_SUCCESS_ENABLE"]="false" # Notify when hooks succeed.
-    ["INM_NOTIFY_HEARTBEAT_ENABLE"]="true" # Enable daily health heartbeat (requires heartbeat cron job).
-    ["INM_NOTIFY_HEARTBEAT_TIME"]="06:00" # Heartbeat cron time (HH:MM).
-    ["INM_NOTIFY_HEARTBEAT_LEVEL"]="ERR" # Minimum heartbeat severity (ERR|WARN|INFO|OK|ALL).
-    ["INM_NOTIFY_HEARTBEAT_FORMAT_MODE"]="compact" # Heartbeat summary format (compact|full|failed).
-    ["INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL_MODE"]="auto" # Legacy heartbeat detail fallback (auto=use INM_NOTIFY_HEARTBEAT_LEVEL).
-    ["INM_NOTIFY_HEARTBEAT_CHECK_INCLUDE"]="" # Optional include filter for heartbeat checks.
-    ["INM_NOTIFY_HEARTBEAT_CHECK_EXCLUDE"]="" # Optional exclude filter for heartbeat checks.
-    ["INM_NOTIFY_WEBHOOK_URL"]="" # Webhook target URL.
+    ["INM_EXEC_GROUP"]=""
+    ["INM_PERM_DIR_MODE"]="2750"
+    ["INM_PERM_FILE_MODE"]="644"
+    ["INM_PERM_APP_ENV_MODE"]="600"
+    ["INM_PERM_CLI_ENV_MODE"]="600"
+    ["INM_UPDATE_CHECK_ENABLE"]="true"
+    ["INM_HEALTH_CHECK_INCLUDE"]=""
+    ["INM_HEALTH_CHECK_EXCLUDE"]=""
+    ["INM_GH_API_CREDENTIALS"]=""
+    ["INM_NOTIFY_ENABLE"]="false"
+    ["INM_NOTIFY_TARGETS_LIST"]="email,webhook"
+    ["INM_NOTIFY_EMAIL_TO_LIST"]=""
+    ["INM_NOTIFY_EMAIL_FROM_ADDRESS"]=""
+    ["INM_NOTIFY_EMAIL_FROM_NAME"]="Heartbeat | Invoice Ninja"
+    ["INM_NOTIFY_LEVEL"]="ERR"
+    ["INM_NOTIFY_NONINTERACTIVE_ONLY_ENABLE"]="true"
+    ["INM_NOTIFY_SMTP_TIMEOUT_SECONDS"]="10"
+    ["INM_NOTIFY_HOOKS_ENABLE"]="true"
+    ["INM_NOTIFY_HOOKS_FAILURE_ENABLE"]="true"
+    ["INM_NOTIFY_HOOKS_SUCCESS_ENABLE"]="false"
+    ["INM_NOTIFY_HEARTBEAT_ENABLE"]="true"
+    ["INM_NOTIFY_HEARTBEAT_TIME"]="06:00"
+    ["INM_NOTIFY_HEARTBEAT_LEVEL"]="ERR"
+    ["INM_NOTIFY_HEARTBEAT_FORMAT_MODE"]="compact"
+    ["INM_NOTIFY_HEARTBEAT_DETAIL_LEVEL_MODE"]="auto"
+    ["INM_NOTIFY_HEARTBEAT_CHECK_INCLUDE"]=""
+    ["INM_NOTIFY_HEARTBEAT_CHECK_EXCLUDE"]=""
+    ["INM_NOTIFY_WEBHOOK_URL"]=""
 )
 
 # shellcheck disable=SC2034
