@@ -159,15 +159,44 @@ cron_prompt_heartbeat_config() {
     if [[ "$need_email" == true && -z "${INM_NOTIFY_EMAIL_TO_LIST:-}" ]]; then
         local email_to=""
         email_to="$(prompt_var "CRON_NOTIFY_EMAIL_TO" "" \
-            "[CRON] Email recipients (comma-separated):" false 120)" || return 1
-        env_set cli "INM_NOTIFY_EMAIL_TO_LIST=${email_to}" >/dev/null 2>&1 || true
+            "[CRON] Email recipients (comma-separated, blank disables email):" false 120)" || return 1
+        if [[ -n "$email_to" ]]; then
+            env_set cli "INM_NOTIFY_EMAIL_TO_LIST=${email_to}" >/dev/null 2>&1 || true
+        else
+            need_email=false
+        fi
     fi
 
     if [[ "$need_webhook" == true && -z "${INM_NOTIFY_WEBHOOK_URL:-}" ]]; then
         local webhook_url=""
         webhook_url="$(prompt_var "CRON_NOTIFY_WEBHOOK_URL" "" \
-            "[CRON] Webhook URL:" false 120)" || return 1
-        env_set cli "INM_NOTIFY_WEBHOOK_URL=${webhook_url}" >/dev/null 2>&1 || true
+            "[CRON] Webhook URL (blank disables webhook):" false 120)" || return 1
+        if [[ -n "$webhook_url" ]]; then
+            env_set cli "INM_NOTIFY_WEBHOOK_URL=${webhook_url}" >/dev/null 2>&1 || true
+        else
+            need_webhook=false
+        fi
+    fi
+
+    local targets_new=()
+    if [[ "$need_email" == true ]]; then
+        targets_new+=("email")
+    fi
+    if [[ "$need_webhook" == true ]]; then
+        targets_new+=("webhook")
+    fi
+    if (( ${#targets_new[@]} == 0 )); then
+        env_set cli "INM_NOTIFY_TARGETS_LIST=" >/dev/null 2>&1 || true
+        return 1
+    fi
+    local new_targets_str=""
+    if (( ${#targets_new[@]} > 0 )); then
+        local IFS=,
+        new_targets_str="${targets_new[*]}"
+    fi
+    if [[ "$new_targets_str" != "$targets" ]]; then
+        env_set cli "INM_NOTIFY_TARGETS_LIST=${new_targets_str}" >/dev/null 2>&1 || true
+        targets="$new_targets_str"
     fi
 
     if [[ -n "${INM_SELF_ENV_FILE:-}" && -f "${INM_SELF_ENV_FILE}" ]] && declare -F load_env_file_raw >/dev/null 2>&1; then
