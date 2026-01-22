@@ -84,7 +84,7 @@ Short list below; each item is explained in the extended docs.
 - **Install** repeatable full installs via config file (provisioned), designed for staging/production.
 - **Update** safe updates with instant rollback, verified download integrity, and automatic pre‑update DB backups.
 - **Migrate** easy flow to migrate Invoice Ninja from one host to another.
-- **Backup** backups with checksums (SHA‑256) and restore (bundle or DB‑only).
+- **Backup** backups with checksums (SHA‑256) and restore (bundle or DB‑only) and optional offsite backup sync.
 - **Health** checks for server readiness and ongoing integrity (system, app, PHP, DB, filesystem, cron, network, PDF/Snappdf).
 - **Heartbeat** notifications (email/webhook) for non‑interactive failures.
 - **Cron** automatic essential jobs on provisioned installs (artisan + backup); heartbeat optional. Includes per‑instance cron blocks.
