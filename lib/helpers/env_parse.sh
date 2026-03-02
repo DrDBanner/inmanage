@@ -248,7 +248,7 @@ load_env_file_raw() {
             key="${BASH_REMATCH[2]}"
             raw="${BASH_REMATCH[3]}"
             # filter relevant prefixes only
-            if [[ ! "$key" =~ ^(APP_|DB_|ELEVATED_|MAIL_|NINJA_|PDF_|INM_)[A-Z_]*$ ]]; then
+            if [[ ! "$key" =~ ^(APP_|DB_|ELEVATED_|MAIL_|NINJA_|PDF_|SNAPPDF_|INM_)[A-Z_]*$ ]]; then
                 continue
             fi
             local sensitive=false

@@ -5,6 +5,124 @@
 __SERVICE_PDF_LOADED=1
 
 # ---------------------------------------------------------------------
+# snappdf_read_setting()
+# Resolve a Snappdf/App setting from process env first, then app .env.
+# Consumes: args: key; env: INM_PATH_APP_ENV_FILE; deps: read_env_value/read_env_value_safe (optional).
+# Returns: value on stdout (empty when unset).
+# ---------------------------------------------------------------------
+snappdf_read_setting() {
+    local key="$1"
+    local value="${!key:-}"
+    if [[ -n "$value" ]]; then
+        printf "%s" "$value"
+        return 0
+    fi
+
+    local env_file="${INM_PATH_APP_ENV_FILE:-}"
+    if [[ -n "$env_file" && -f "$env_file" ]]; then
+        if declare -F read_env_value >/dev/null 2>&1; then
+            value="$(read_env_value "$env_file" "$key" 2>/dev/null || true)"
+        elif declare -F read_env_value_safe >/dev/null 2>&1; then
+            value="$(read_env_value_safe "$env_file" "$key" 2>/dev/null || true)"
+        else
+            value="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=" "$env_file" 2>/dev/null | tail -n1 | cut -d= -f2-)"
+        fi
+    fi
+
+    printf "%s" "$value"
+}
+
+# ---------------------------------------------------------------------
+# snappdf_expand_path()
+# Expand HOME placeholders and leading ~ for path-like values.
+# Consumes: args: value; deps: expand_path_vars (optional).
+# Returns: expanded value on stdout.
+# ---------------------------------------------------------------------
+snappdf_expand_path() {
+    local value="$1"
+    if [[ -z "$value" ]]; then
+        return 0
+    fi
+
+    if declare -F expand_path_vars >/dev/null 2>&1; then
+        value="$(expand_path_vars "$value")"
+    else
+        local home_base="${INM_ORIGINAL_HOME:-${HOME:-}}"
+        value="${value/#\~/$home_base}"
+        value="${value//\$\{HOME\}/$home_base}"
+        value="${value//\$HOME/$home_base}"
+    fi
+
+    printf "%s" "$value"
+}
+
+# ---------------------------------------------------------------------
+# snappdf_is_true()
+# Parse truthy env values.
+# Consumes: args: value.
+# Returns: 0 if value is truthy, 1 otherwise.
+# ---------------------------------------------------------------------
+snappdf_is_true() {
+    local value="${1:-}"
+    case "${value,,}" in
+        1|true|yes|on) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# ---------------------------------------------------------------------
+# snappdf_find_chromium_in_dir()
+# Find a bundled Chromium/Chrome executable in a directory tree.
+# Consumes: args: dir; tools: find.
+# Returns: first matching executable path on stdout.
+# ---------------------------------------------------------------------
+snappdf_find_chromium_in_dir() {
+    local dir="$1"
+    if [[ -z "$dir" || ! -d "$dir" ]]; then
+        return 1
+    fi
+    find "$dir" -type f \( -name "chrome" -o -name "chromium" -o -name "Chromium" -o -name "google-chrome" -o -name "google-chrome-stable" \) -perm -111 2>/dev/null | head -n1
+}
+
+# ---------------------------------------------------------------------
+# snappdf_find_system_chromium()
+# Probe common command names and install paths for Chromium/Chrome.
+# Consumes: env: INM_ORIGINAL_HOME/HOME.
+# Returns: executable path on stdout (empty when none found).
+# ---------------------------------------------------------------------
+snappdf_find_system_chromium() {
+    local bin=""
+    for bin in chrome chromium Chromium google-chrome google-chrome-stable chromium-browser; do
+        if command -v "$bin" >/dev/null 2>&1; then
+            local resolved=""
+            resolved="$(command -v "$bin" 2>/dev/null | head -n1)"
+            if [[ -n "$resolved" && -x "$resolved" ]]; then
+                printf "%s" "$resolved"
+                return 0
+            fi
+        fi
+    done
+
+    local home_base="${INM_ORIGINAL_HOME:-${HOME:-}}"
+    local -a candidates=(
+        "/usr/local/bin/chrome"
+        "/usr/local/bin/chromium"
+        "/usr/local/bin/Chromium"
+        "${home_base%/}/.local/bin/chrome"
+        "${home_base%/}/.local/bin/chromium"
+        "${home_base%/}/.local/bin/Chromium"
+    )
+    local path=""
+    for path in "${candidates[@]}"; do
+        if [[ -n "$path" && -x "$path" ]]; then
+            printf "%s" "$path"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# ---------------------------------------------------------------------
 # do_snappdf()
 # Ensure Snappdf Chromium is available when PDF_GENERATOR=snappdf.
 # Consumes: env: PDF_GENERATOR, INM_PATH_APP_ENV_FILE, INM_INSTALLATION_PATH, INM_CACHE_*; deps: spinner_run_mode/expand_path_vars.
@@ -13,8 +131,8 @@ __SERVICE_PDF_LOADED=1
 # ---------------------------------------------------------------------
 do_snappdf() {
     local pdf_gen="${PDF_GENERATOR:-}"
-    if [ -z "$pdf_gen" ] && [ -f "${INM_PATH_APP_ENV_FILE:-}" ]; then
-        pdf_gen=$(grep -E '^PDF_GENERATOR=' "$INM_PATH_APP_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
+    if [ -z "$pdf_gen" ]; then
+        pdf_gen="$(snappdf_read_setting "PDF_GENERATOR")"
     fi
     if [[ "${pdf_gen,,}" != "snappdf" ]]; then
         local gen_label="${pdf_gen:-unset}"
@@ -28,14 +146,6 @@ do_snappdf() {
     local snappdf_versions="${snappdf_dir%/}/versions"
     local snappdf_cli="${INM_INSTALLATION_PATH%/}/vendor/bin/snappdf"
     local skip_download=false
-
-    find_snappdf_chromium() {
-        local dir="$1"
-        if [[ -z "$dir" || ! -d "$dir" ]]; then
-            return 1
-        fi
-        find "$dir" -type f \( -name "chrome" -o -name "chromium" -o -name "Chromium" \) -perm -111 2>/dev/null | head -n1
-    }
 
     resolve_snappdf_cache_dir() {
         local base dir parent
@@ -58,28 +168,59 @@ do_snappdf() {
     }
 
     local snappdf_bin=""
-    snappdf_bin="$(find_snappdf_chromium "$snappdf_versions")"
+    snappdf_bin="$(snappdf_find_chromium_in_dir "$snappdf_versions")"
     if [ -n "$snappdf_bin" ] && [ -x "$snappdf_bin" ]; then
         log debug "[SNAP] Snappdf already present."
         return 0
     fi
 
-    if [ -n "${SNAPPDF_EXECUTABLE_PATH:-}" ]; then
-        if [ -x "$SNAPPDF_EXECUTABLE_PATH" ]; then
-            log info "[SNAP] SNAPPDF_EXECUTABLE_PATH set to '$SNAPPDF_EXECUTABLE_PATH'; skipping Chromium download (SNAPPDF_SKIP_DOWNLOAD=true)."
+    local snappdf_exec_cfg=""
+    local snappdf_chromium_cfg=""
+    local snappdf_skip_cfg=""
+    snappdf_exec_cfg="$(snappdf_expand_path "$(snappdf_read_setting "SNAPPDF_EXECUTABLE_PATH")")"
+    snappdf_chromium_cfg="$(snappdf_expand_path "$(snappdf_read_setting "SNAPPDF_CHROMIUM_PATH")")"
+    snappdf_skip_cfg="$(snappdf_read_setting "SNAPPDF_SKIP_DOWNLOAD")"
+
+    if [[ -n "$snappdf_exec_cfg" ]]; then
+        export SNAPPDF_EXECUTABLE_PATH="$snappdf_exec_cfg"
+    fi
+    if [[ -n "$snappdf_chromium_cfg" ]]; then
+        export SNAPPDF_CHROMIUM_PATH="$snappdf_chromium_cfg"
+    fi
+
+    if [ -n "$snappdf_exec_cfg" ]; then
+        if [ -x "$snappdf_exec_cfg" ]; then
+            log info "[SNAP] SNAPPDF_EXECUTABLE_PATH set to '$snappdf_exec_cfg'; skipping Chromium download (SNAPPDF_SKIP_DOWNLOAD=true)."
             export SNAPPDF_SKIP_DOWNLOAD=true
             skip_download=true
         else
-            log warn "[SNAP] SNAPPDF_EXECUTABLE_PATH set but not executable: $SNAPPDF_EXECUTABLE_PATH"
+            log warn "[SNAP] SNAPPDF_EXECUTABLE_PATH set but not executable: $snappdf_exec_cfg"
         fi
-    elif [ -n "${SNAPPDF_CHROMIUM_PATH:-}" ]; then
-        if [ -x "$SNAPPDF_CHROMIUM_PATH" ]; then
-            log info "[SNAP] SNAPPDF_CHROMIUM_PATH set to '$SNAPPDF_CHROMIUM_PATH'; skipping Chromium download (SNAPPDF_SKIP_DOWNLOAD=true)."
+    elif [ -n "$snappdf_chromium_cfg" ]; then
+        if [ -x "$snappdf_chromium_cfg" ]; then
+            log info "[SNAP] SNAPPDF_CHROMIUM_PATH set to '$snappdf_chromium_cfg'; skipping Chromium download (SNAPPDF_SKIP_DOWNLOAD=true)."
             export SNAPPDF_SKIP_DOWNLOAD=true
             skip_download=true
         else
-            log warn "[SNAP] SNAPPDF_CHROMIUM_PATH set but not executable: $SNAPPDF_CHROMIUM_PATH"
+            log warn "[SNAP] SNAPPDF_CHROMIUM_PATH set but not executable: $snappdf_chromium_cfg"
         fi
+    fi
+
+    if [[ "$skip_download" != true ]]; then
+        local autodetected_chromium=""
+        autodetected_chromium="$(snappdf_find_system_chromium 2>/dev/null || true)"
+        if [[ -n "$autodetected_chromium" && -x "$autodetected_chromium" ]]; then
+            export SNAPPDF_CHROMIUM_PATH="$autodetected_chromium"
+            export SNAPPDF_SKIP_DOWNLOAD=true
+            skip_download=true
+            log info "[SNAP] Auto-detected Chromium/Chrome at '$autodetected_chromium'; skipping download (SNAPPDF_SKIP_DOWNLOAD=true)."
+        fi
+    fi
+
+    if snappdf_is_true "$snappdf_skip_cfg"; then
+        export SNAPPDF_SKIP_DOWNLOAD=true
+        skip_download=true
+        log info "[SNAP] SNAPPDF_SKIP_DOWNLOAD=true"
     fi
 
     if [ ! -x "$snappdf_cli" ]; then
@@ -90,7 +231,7 @@ do_snappdf() {
     chmod +x "$snappdf_cli" 2>/dev/null || true
 
     local existing_bin=""
-    existing_bin="$(find_snappdf_chromium "$snappdf_versions")"
+    existing_bin="$(snappdf_find_chromium_in_dir "$snappdf_versions")"
     if [[ -n "$existing_bin" ]]; then
         log debug "[SNAP] Chromium already present at $existing_bin"
     else
@@ -103,7 +244,14 @@ do_snappdf() {
         if [[ -n "$cache_versions" && -d "$cache_versions" ]]; then
             log debug "[SNAP] Restoring Chromium from cache: $cache_versions"
             safe_move_or_copy_and_clean "$cache_versions" "$snappdf_versions" copy || log warn "[SNAP] Failed to restore cached Chromium."
-            existing_bin="$(find_snappdf_chromium "$snappdf_versions")"
+            existing_bin="$(snappdf_find_chromium_in_dir "$snappdf_versions")"
+        fi
+    fi
+
+    if [[ -z "$existing_bin" && "$skip_download" == true ]]; then
+        local resolved_chromium_path="${SNAPPDF_EXECUTABLE_PATH:-${SNAPPDF_CHROMIUM_PATH:-}}"
+        if [[ -z "$resolved_chromium_path" || ! -x "$resolved_chromium_path" ]]; then
+            log warn "[SNAP] Download skipped but no executable Chromium/Chrome path is configured."
         fi
     fi
 
@@ -257,8 +405,8 @@ snappdf_emit_preflight() {
     fi
 
     local pdf_gen="${PDF_GENERATOR:-}"
-    if [ -z "$pdf_gen" ] && [ -f "${INM_PATH_APP_ENV_FILE:-}" ]; then
-        pdf_gen=$(grep -E '^PDF_GENERATOR=' "$INM_PATH_APP_ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
+    if [ -z "$pdf_gen" ]; then
+        pdf_gen="$(snappdf_read_setting "PDF_GENERATOR")"
     fi
     if [[ "${pdf_gen,,}" != "snappdf" ]]; then
         "$add_fn" INFO "SNAPPDF" "PDF_GENERATOR not 'snappdf' (current: ${pdf_gen:-unset}); check skipped"
@@ -280,28 +428,45 @@ snappdf_emit_preflight() {
     fi
 
     local chromium_path=""
-    if [ -n "${SNAPPDF_EXECUTABLE_PATH:-}" ]; then
-        chromium_path="$SNAPPDF_EXECUTABLE_PATH"
+    local snappdf_exec_cfg=""
+    local snappdf_chromium_cfg=""
+    snappdf_exec_cfg="$(snappdf_expand_path "$(snappdf_read_setting "SNAPPDF_EXECUTABLE_PATH")")"
+    snappdf_chromium_cfg="$(snappdf_expand_path "$(snappdf_read_setting "SNAPPDF_CHROMIUM_PATH")")"
+    if [[ -n "$snappdf_exec_cfg" ]]; then
+        export SNAPPDF_EXECUTABLE_PATH="$snappdf_exec_cfg"
+    fi
+    if [[ -n "$snappdf_chromium_cfg" ]]; then
+        export SNAPPDF_CHROMIUM_PATH="$snappdf_chromium_cfg"
+    fi
+    if [ -n "$snappdf_exec_cfg" ]; then
+        chromium_path="$snappdf_exec_cfg"
         if [ ! -x "$chromium_path" ]; then
             "$add_fn" WARN "SNAPPDF" "SNAPPDF_EXECUTABLE_PATH not executable: $chromium_path"
         else
             "$add_fn" INFO "SNAPPDF" "Chromium path: $chromium_path (SNAPPDF_EXECUTABLE_PATH)"
         fi
-    elif [ -n "${SNAPPDF_CHROMIUM_PATH:-}" ]; then
-        chromium_path="$SNAPPDF_CHROMIUM_PATH"
+    elif [ -n "$snappdf_chromium_cfg" ]; then
+        chromium_path="$snappdf_chromium_cfg"
         if [ ! -x "$chromium_path" ]; then
             "$add_fn" WARN "SNAPPDF" "SNAPPDF_CHROMIUM_PATH not executable: $chromium_path"
         else
             "$add_fn" INFO "SNAPPDF" "Chromium path: $chromium_path (SNAPPDF_CHROMIUM_PATH)"
         fi
     else
-        chromium_path="$(find "$snap_dir/versions" -type f -perm -u+x '(' -name Chromium -o -name chrome -o -name chromium ')' 2>/dev/null | head -n1)"
+        chromium_path="$(snappdf_find_chromium_in_dir "$snap_dir/versions")"
         if [ -n "$chromium_path" ]; then
             "$add_fn" INFO "SNAPPDF" "Chromium path: $chromium_path"
+        else
+            chromium_path="$(snappdf_find_system_chromium 2>/dev/null || true)"
+            if [ -n "$chromium_path" ]; then
+                export SNAPPDF_CHROMIUM_PATH="$chromium_path"
+                "$add_fn" INFO "SNAPPDF" "Chromium path: $chromium_path (auto-detected)"
+            fi
         fi
     fi
 
-    if [[ "${SNAPPDF_SKIP_DOWNLOAD:-}" == "true" || "${SNAPPDF_SKIP_DOWNLOAD:-}" == "1" ]]; then
+    if snappdf_is_true "$(snappdf_read_setting "SNAPPDF_SKIP_DOWNLOAD")"; then
+        export SNAPPDF_SKIP_DOWNLOAD=true
         "$add_fn" INFO "SNAPPDF" "SNAPPDF_SKIP_DOWNLOAD=true"
     fi
 
