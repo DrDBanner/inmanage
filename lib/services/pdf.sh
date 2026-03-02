@@ -186,6 +186,9 @@ do_snappdf() {
     fi
     if [[ -n "$snappdf_chromium_cfg" ]]; then
         export SNAPPDF_CHROMIUM_PATH="$snappdf_chromium_cfg"
+        if [[ -z "${SNAPPDF_EXECUTABLE_PATH:-}" ]]; then
+            export SNAPPDF_EXECUTABLE_PATH="$snappdf_chromium_cfg"
+        fi
     fi
 
     if [ -n "$snappdf_exec_cfg" ]; then
@@ -211,6 +214,7 @@ do_snappdf() {
         autodetected_chromium="$(snappdf_find_system_chromium 2>/dev/null || true)"
         if [[ -n "$autodetected_chromium" && -x "$autodetected_chromium" ]]; then
             export SNAPPDF_CHROMIUM_PATH="$autodetected_chromium"
+            export SNAPPDF_EXECUTABLE_PATH="$autodetected_chromium"
             export SNAPPDF_SKIP_DOWNLOAD=true
             skip_download=true
             log info "[SNAP] Auto-detected Chromium/Chrome at '$autodetected_chromium'; skipping download (SNAPPDF_SKIP_DOWNLOAD=true)."
@@ -306,6 +310,17 @@ require '${INM_INSTALLATION_PATH%/}/vendor/autoload.php';
 if (class_exists('Beganovich\\Snappdf\\Snappdf')) {
     try {
         \$pdf = new Beganovich\\Snappdf\\Snappdf;
+        \$chromiumPath = getenv('SNAPPDF_EXECUTABLE_PATH');
+        if (!is_string(\$chromiumPath) || \$chromiumPath === '') {
+            \$chromiumPath = getenv('SNAPPDF_CHROMIUM_PATH');
+        }
+        if (is_string(\$chromiumPath) && \$chromiumPath !== '') {
+            if (method_exists(\$pdf, 'setChromiumPath')) {
+                \$pdf->setChromiumPath(\$chromiumPath);
+            } elseif (method_exists(\$pdf, 'setExecutablePath')) {
+                \$pdf->setExecutablePath(\$chromiumPath);
+            }
+        }
         if (method_exists(\$pdf, 'setHtml')) {
             \$pdf->setHtml('<h1>probe</h1>');
         }
@@ -437,6 +452,9 @@ snappdf_emit_preflight() {
     fi
     if [[ -n "$snappdf_chromium_cfg" ]]; then
         export SNAPPDF_CHROMIUM_PATH="$snappdf_chromium_cfg"
+        if [[ -z "${SNAPPDF_EXECUTABLE_PATH:-}" ]]; then
+            export SNAPPDF_EXECUTABLE_PATH="$snappdf_chromium_cfg"
+        fi
     fi
     if [ -n "$snappdf_exec_cfg" ]; then
         chromium_path="$snappdf_exec_cfg"
@@ -460,6 +478,7 @@ snappdf_emit_preflight() {
             chromium_path="$(snappdf_find_system_chromium 2>/dev/null || true)"
             if [ -n "$chromium_path" ]; then
                 export SNAPPDF_CHROMIUM_PATH="$chromium_path"
+                export SNAPPDF_EXECUTABLE_PATH="$chromium_path"
                 "$add_fn" INFO "SNAPPDF" "Chromium path: $chromium_path (auto-detected)"
             fi
         fi
@@ -498,6 +517,17 @@ require '${INM_INSTALLATION_PATH%/}/vendor/autoload.php';
 if (class_exists('Beganovich\\Snappdf\\Snappdf')) {
     try {
         \$pdf = new Beganovich\\Snappdf\\Snappdf;
+        \$chromiumPath = getenv('SNAPPDF_EXECUTABLE_PATH');
+        if (!is_string(\$chromiumPath) || \$chromiumPath === '') {
+            \$chromiumPath = getenv('SNAPPDF_CHROMIUM_PATH');
+        }
+        if (is_string(\$chromiumPath) && \$chromiumPath !== '') {
+            if (method_exists(\$pdf, 'setChromiumPath')) {
+                \$pdf->setChromiumPath(\$chromiumPath);
+            } elseif (method_exists(\$pdf, 'setExecutablePath')) {
+                \$pdf->setExecutablePath(\$chromiumPath);
+            }
+        }
         if (method_exists(\$pdf, 'setHtml')) {
             \$pdf->setHtml('<h1>probe</h1>');
         }
