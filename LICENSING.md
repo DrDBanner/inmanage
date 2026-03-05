@@ -54,13 +54,18 @@ One-off or recurring contributions are both acceptable.
 
 ## How to Support the Project
 
-Support the project via the official checkout page:
+For details, please send an email to **in-on-gh@private.r-system.de**.  
+You will receive an invoice afterward.
 
-➡ [https://example.com/support](https://example.com/support)
+    PLANNED FOR DEVELOPMENT
 
-After checkout, you will receive:
-- An invoice
-- Confirmation of your Commercial Support License
+    Support the project via the official checkout page:
+
+    ➡ [https://example.com/support](https://example.com/support)
+
+    After checkout, you will receive:
+    - An invoice
+    - Confirmation of your Commercial Support License
   
 ## Time savings and value
 

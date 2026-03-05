@@ -1408,6 +1408,8 @@ Mandatory settings to review (common):
 | `DB_ELEVATED_USERNAME` | Only needed if the script should create the DB/user. |
 | `DB_ELEVATED_PASSWORD` | Only needed if the script should create the DB/user. Use `auth_socket` for local socket auth. |
 | `PDF_GENERATOR` | Set to `snappdf` if you use Snappdf. |
+| `SNAPPDF_CHROMIUM_PATH` | Optional explicit browser path for Snappdf (for example `/usr/local/bin/chrome` on some FreeBSD hosts). |
+| `SNAPPDF_EXECUTABLE_PATH` | Optional alias to set the browser path for Snappdf. |
 | `MAIL_*` | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_ENCRYPTION`, `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`. |
 
 Quick set via CLI:
@@ -1416,7 +1418,12 @@ Quick set via CLI:
 inm env set app APP_URL="https://example.test"
 inm env set app DB_PASSWORD="<your-db-password>"
 inm env set app PDF_GENERATOR="snappdf"
+inm env set app SNAPPDF_CHROMIUM_PATH="/usr/local/bin/chrome"
+inm env set app SNAPPDF_SKIP_DOWNLOAD="true"
 ```
+
+When no explicit Snappdf browser path is set, INmanage also checks common binaries/paths
+like `chrome`, `chromium`, `/usr/local/bin`, and `~/.local/bin`.
 
 Optional: set any other Invoice Ninja `.env` keys you need. Official env reference:
 <https://invoiceninja.github.io/en/self-host-installation/#configure-environment>

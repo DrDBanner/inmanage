@@ -374,6 +374,7 @@ if [ "$(dpkg --print-architecture)" = "amd64" ]; then
 elif [ "$(dpkg --print-architecture)" = "arm64" ]; then
   export SNAPPDF_CHROMIUM_PATH=/usr/bin/chromium
 fi
+export SNAPPDF_EXECUTABLE_PATH="${SNAPPDF_EXECUTABLE_PATH:-$SNAPPDF_CHROMIUM_PATH}"
 exec "$@"
 EOF
 RUN chmod 0755 /usr/local/bin/init.sh
@@ -393,6 +394,10 @@ COPY supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 ENTRYPOINT ["/usr/local/bin/init.sh"]
 CMD ["supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
 ```
+
+Notes:
+- `SNAPPDF_CHROMIUM_PATH` and `SNAPPDF_EXECUTABLE_PATH` are both supported.
+- On some FreeBSD hosts the browser binary is `chrome` at `/usr/local/bin/chrome`.
 
 Create `docker-compose.custom.yml`:
 
