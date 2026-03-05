@@ -7,6 +7,8 @@
 /.inmanage
 /tests/_output
 /testing_ground/
+/testing_ground
+testing_ground/
 /scripts/selftest.sh
 Homestead.json
 Homestead.yaml
