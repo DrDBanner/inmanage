@@ -104,4 +104,4 @@ If you use INmanage as part of a **paid or commercial service**, supporting
 the project with a Commercial Support License is voluntary, appreciated, and
 considered professional best practice.
 
-Details: see [LICENSING.md](./licensing.md)
+Details: see [LICENSING.md](./LICENSING.md)
