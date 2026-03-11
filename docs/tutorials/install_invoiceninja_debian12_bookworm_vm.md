@@ -707,4 +707,4 @@ Open your local browser at <https://billing.debian12vm.local> to access the appl
 
 **Password:** admin
 
-Have fun. Don't forget to star and bookmark the [INmanage repo](../..).
+Have fun. Don't forget to star and bookmark the [INmanage repo](https://github.com/DrDBanner/inmanage/).
