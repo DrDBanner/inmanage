@@ -7,10 +7,42 @@
 # Computes: placeholder-expanded string.
 # Returns: string on stdout.
 # ---------------------------------------------------------------------
+_fs_lookup_user_home() {
+    local user="$1"
+    [[ -z "$user" ]] && return 1
+
+    local candidate=""
+    if command -v getent >/dev/null 2>&1; then
+        candidate="$(getent passwd "$user" 2>/dev/null | cut -d: -f6)"
+    elif command -v pw >/dev/null 2>&1; then
+        candidate="$(pw usershow "$user" 2>/dev/null | awk -F: '{print $9}')"
+    fi
+
+    if [[ -n "$candidate" && -d "$candidate" ]]; then
+        printf "%s\n" "$candidate"
+        return 0
+    fi
+    return 1
+}
+
 resolve_home_base() {
     if [[ -n "${INM_HOME_RESOLVED_BASE:-}" ]]; then
         return 0
     fi
+
+    local current_user=""
+    current_user="$(whoami 2>/dev/null || true)"
+    if [[ -n "${INM_EXEC_USER:-}" && "${INM_EXEC_USER}" != "root" && -n "$current_user" && "$current_user" == "${INM_EXEC_USER}" ]]; then
+        local effective_home=""
+        effective_home="$(_fs_lookup_user_home "$current_user" 2>/dev/null || true)"
+        if [[ -n "$effective_home" ]]; then
+            INM_HOME_RESOLVED_BASE="$effective_home"
+            export INM_HOME_RESOLVED_BASE
+            log debug "[FS] Resolved HOME for effective user ${current_user}: $INM_HOME_RESOLVED_BASE"
+            return 0
+        fi
+    fi
+
     if [[ -n "${INM_ORIGINAL_HOME:-}" ]]; then
         INM_HOME_RESOLVED_BASE="$INM_ORIGINAL_HOME"
         export INM_HOME_RESOLVED_BASE
@@ -25,11 +57,7 @@ resolve_home_base() {
         user="$SUDO_USER"
     fi
     if [[ -n "$user" ]]; then
-        if command -v getent >/dev/null 2>&1; then
-            candidate="$(getent passwd "$user" 2>/dev/null | cut -d: -f6)"
-        elif command -v pw >/dev/null 2>&1; then
-            candidate="$(pw usershow "$user" 2>/dev/null | awk -F: '{print $9}')"
-        fi
+        candidate="$(_fs_lookup_user_home "$user" 2>/dev/null || true)"
         if [[ -n "$candidate" && -d "$candidate" ]]; then
             INM_HOME_RESOLVED_BASE="$candidate"
             export INM_HOME_RESOLVED_BASE

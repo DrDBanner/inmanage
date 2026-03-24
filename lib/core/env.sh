@@ -27,8 +27,22 @@ setup_environment() {
     local original_path="$PATH"
     local clean_path="${PATH:-}"
 
-    # Preserve original home for defaults before any user switching
-    export INM_ORIGINAL_HOME="${INM_ORIGINAL_HOME:-${HOME:-}}"
+    # Preserve the invoking user's home before any user switching.
+    if [[ -z "${INM_ORIGINAL_HOME:-}" ]]; then
+        local original_home="${HOME:-}"
+        if [[ ${EUID:-$(id -u)} -eq 0 && -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+            local sudo_home=""
+            if command -v getent >/dev/null 2>&1; then
+                sudo_home="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)"
+            elif command -v pw >/dev/null 2>&1; then
+                sudo_home="$(pw usershow "$SUDO_USER" 2>/dev/null | awk -F: '{print $9}')"
+            fi
+            if [[ -n "$sudo_home" && -d "$sudo_home" ]]; then
+                original_home="$sudo_home"
+            fi
+        fi
+        export INM_ORIGINAL_HOME="$original_home"
+    fi
 
     local default_paths=(
         /usr/local/sbin
