@@ -1,141 +1,56 @@
 #!/usr/bin/env bash
 
 # ---------------------------------------------------------------------
-# tar_normalize_path()
-# Normalize an archive-internal path without allowing traversal above root.
+# tar_strip_archive_prefix()
+# Strip harmless archive prefixes like "./" and trailing "/".
 # Consumes: args: path.
-# Computes: canonical relative path inside archive.
-# Returns: normalized path on stdout, 0 on success, 1 on invalid path.
+# Computes: trimmed archive-relative path.
+# Returns: path on stdout.
 # ---------------------------------------------------------------------
-tar_normalize_path() {
-    local raw="$1"
-    local path="${raw%/}"
+tar_strip_archive_prefix() {
+    local path="$1"
+    while [[ "$path" == ./* ]]; do
+        path="${path#./}"
+    done
+    path="${path%/}"
+    printf "%s\n" "$path"
+}
 
-    if [[ -z "$path" || "$path" == "." ]]; then
-        printf ".\n"
-        return 0
+# ---------------------------------------------------------------------
+# tar_path_is_safe()
+# Validate an archive entry or hardlink target with cheap path checks.
+# Consumes: args: path.
+# Computes: trimmed archive-relative path.
+# Returns: trimmed path on stdout, 0 if safe, 1 otherwise.
+# ---------------------------------------------------------------------
+tar_path_is_safe() {
+    local path="$1"
+    if [[ -z "$path" ]]; then
+        return 1
     fi
     if [[ "$path" == /* || "$path" =~ ^[A-Za-z]:/ ]]; then
         return 1
     fi
 
-    local old_ifs="$IFS"
-    local -a parts=()
-    local -a normalized=()
-    IFS='/'
-    read -r -a parts <<< "$path"
-    IFS="$old_ifs"
-
-    local part
-    for part in "${parts[@]}"; do
-        case "$part" in
-            ""|".")
-                continue
-                ;;
-            "..")
-                if [[ ${#normalized[@]} -eq 0 ]]; then
-                    return 1
-                fi
-                unset 'normalized[${#normalized[@]}-1]'
-                ;;
-            *)
-                normalized+=("$part")
-                ;;
-        esac
-    done
-
-    if [[ ${#normalized[@]} -eq 0 ]]; then
+    local stripped=""
+    stripped="$(tar_strip_archive_prefix "$path")"
+    if [[ -z "$stripped" || "$stripped" == "." ]]; then
         printf ".\n"
         return 0
     fi
 
-    local joined=""
-    for part in "${normalized[@]}"; do
-        joined+="${joined:+/}${part}"
-    done
-    printf "%s\n" "$joined"
-}
-
-# ---------------------------------------------------------------------
-# tar_path_is_safe()
-# Validate an archive entry path or hardlink target.
-# Consumes: args: path.
-# Computes: canonical form inside archive root.
-# Returns: normalized path on stdout, 0 if safe, 1 otherwise.
-# ---------------------------------------------------------------------
-tar_path_is_safe() {
-    local path="$1"
-    local normalized=""
-
-    if [[ -z "$path" ]]; then
-        return 1
-    fi
-    normalized="$(tar_normalize_path "$path")" || return 1
-    printf "%s\n" "$normalized"
-}
-
-# ---------------------------------------------------------------------
-# tar_resolve_link_target()
-# Resolve a symlink target against its parent path within the archive.
-# Consumes: args: link_path, target.
-# Computes: normalized target path inside archive root.
-# Returns: normalized path on stdout, 0 if safe, 1 otherwise.
-# ---------------------------------------------------------------------
-tar_resolve_link_target() {
-    local link_path="$1"
-    local target="$2"
-
-    [[ -z "$link_path" || -z "$target" ]] && return 1
-    if [[ "$target" == /* || "$target" =~ ^[A-Za-z]:/ ]]; then
+    if [[ "/$stripped/" == *"/../"* ]]; then
         return 1
     fi
 
-    local base_dir=""
-    if [[ "$link_path" == */* ]]; then
-        base_dir="${link_path%/*}"
-    fi
-
-    local combined="$target"
-    if [[ -n "$base_dir" ]]; then
-        combined="${base_dir%/}/${target}"
-    fi
-
-    tar_normalize_path "$combined"
-}
-
-# ---------------------------------------------------------------------
-# tar_find_entry_from_verbose_prefix()
-# Match a verbose tar listing prefix back to a known archive entry.
-# Consumes: args: prefix, entries...
-# Computes: longest suffix match for the entry name.
-# Returns: entry path on stdout, 0 if matched, 1 otherwise.
-# ---------------------------------------------------------------------
-tar_find_entry_from_verbose_prefix() {
-    local prefix="$1"
-    shift || true
-
-    local candidate=""
-    local best=""
-    local best_len=0
-    for candidate in "$@"; do
-        [[ -z "$candidate" ]] && continue
-        if [[ "$prefix" == *"$candidate" ]]; then
-            if (( ${#candidate} > best_len )); then
-                best="$candidate"
-                best_len=${#candidate}
-            fi
-        fi
-    done
-
-    [[ -n "$best" ]] || return 1
-    printf "%s\n" "$best"
+    printf "%s\n" "$stripped"
 }
 
 # ---------------------------------------------------------------------
 # tar_validate_archive()
-# Validate a tar.gz for unsafe paths and link handling.
+# Validate a tar.gz for unsafe entry paths.
 # Consumes: args: archive; tools: tar.
-# Computes: scans entries for absolute paths, traversal, and unsafe links.
+# Computes: scans entries for absolute paths and traversal.
 # Returns: 0 if safe, 1 if invalid/unreadable.
 # ---------------------------------------------------------------------
 tar_validate_archive() {
@@ -149,13 +64,11 @@ tar_validate_archive() {
         return 1
     fi
 
-    local -a entries=()
-    local -a normalized_entries=()
     local entry=""
-    local normalized_entry=""
+    local safe_entry=""
     while IFS= read -r entry; do
         [[ -z "$entry" ]] && continue
-        normalized_entry="$(tar_path_is_safe "$entry")" || {
+        safe_entry="$(tar_path_is_safe "$entry")" || {
             if [[ "$entry" == /* || "$entry" =~ ^[A-Za-z]:/ ]]; then
                 log err "[TAR] Archive contains absolute path: $entry"
             else
@@ -163,78 +76,7 @@ tar_validate_archive() {
             fi
             return 1
         }
-        [[ "$normalized_entry" == "." ]] && continue
-        entries+=("$entry")
-        normalized_entries+=("$normalized_entry")
     done < <(tar -tzf "$archive")
-
-    local -A link_paths=()
-    local line=""
-    local type=""
-    local delimiter=""
-    local prefix=""
-    local link_target=""
-    local link_path=""
-    local resolved_target=""
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        type="${line:0:1}"
-        [[ "$type" == "l" || "$type" == "h" ]] || continue
-
-        delimiter=""
-        if [[ "$type" == "l" && "$line" == *" -> "* ]]; then
-            delimiter=" -> "
-        elif [[ "$type" == "h" && "$line" == *" link to "* ]]; then
-            delimiter=" link to "
-        elif [[ "$line" == *" -> "* ]]; then
-            delimiter=" -> "
-        elif [[ "$line" == *" link to "* ]]; then
-            delimiter=" link to "
-        fi
-
-        if [[ -z "$delimiter" ]]; then
-            log err "[TAR] Could not parse archive link entry: $line"
-            return 1
-        fi
-
-        prefix="${line%"$delimiter"*}"
-        link_target="${line##*"$delimiter"}"
-        link_path="$(tar_find_entry_from_verbose_prefix "$prefix" "${entries[@]}")" || {
-            log err "[TAR] Could not resolve archive link path: $line"
-            return 1
-        }
-        link_path="$(tar_path_is_safe "$link_path")" || {
-            log err "[TAR] Archive contains unsafe link path: $line"
-            return 1
-        }
-
-        if [[ "$type" == "l" || "$delimiter" == " -> " ]]; then
-            resolved_target="$(tar_resolve_link_target "$link_path" "$link_target")" || {
-                log err "[TAR] Archive contains unsafe symlink target: $line"
-                return 1
-            }
-        else
-            resolved_target="$(tar_path_is_safe "$link_target")" || {
-                log err "[TAR] Archive contains unsafe hardlink target: $line"
-                return 1
-            }
-        fi
-
-        link_paths["$link_path"]="$resolved_target"
-    done < <(tar -tvzf "$archive")
-
-    local link_prefix=""
-    local candidate_path=""
-    local link_path_key=""
-    for link_path_key in "${!link_paths[@]}"; do
-        link_prefix="${link_path_key%/}/"
-        for candidate_path in "${normalized_entries[@]}"; do
-            if [[ "$candidate_path" != "$link_path_key" && "$candidate_path" == "$link_prefix"* ]]; then
-                log err "[TAR] Archive contains path below link entry: ${candidate_path} (link: ${link_path_key})"
-                return 1
-            fi
-        done
-    done
 
     return 0
 }

@@ -38,7 +38,6 @@ resolve_home_base() {
         if [[ -n "$effective_home" ]]; then
             INM_HOME_RESOLVED_BASE="$effective_home"
             export INM_HOME_RESOLVED_BASE
-            log debug "[FS] Resolved HOME for effective user ${current_user}: $INM_HOME_RESOLVED_BASE"
             return 0
         fi
     fi
@@ -46,7 +45,6 @@ resolve_home_base() {
     if [[ -n "${INM_ORIGINAL_HOME:-}" ]]; then
         INM_HOME_RESOLVED_BASE="$INM_ORIGINAL_HOME"
         export INM_HOME_RESOLVED_BASE
-        log debug "[FS] Using INM_ORIGINAL_HOME: $INM_HOME_RESOLVED_BASE"
         return 0
     fi
     local candidate=""
@@ -61,13 +59,11 @@ resolve_home_base() {
         if [[ -n "$candidate" && -d "$candidate" ]]; then
             INM_HOME_RESOLVED_BASE="$candidate"
             export INM_HOME_RESOLVED_BASE
-            log debug "[FS] Resolved HOME via user lookup: $INM_HOME_RESOLVED_BASE"
             return 0
         fi
     fi
     INM_HOME_RESOLVED_BASE="${HOME:-}"
     export INM_HOME_RESOLVED_BASE
-    log debug "[FS] Falling back to current HOME: ${INM_HOME_RESOLVED_BASE}"
     return 0
 }
 
