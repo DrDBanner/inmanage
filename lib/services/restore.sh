@@ -246,12 +246,11 @@ run_restore() {
                 log info "[DRY-RUN] Would download and install a fresh app because backup lacks app files."
             else
                 log warn "[RESTORE] No application directory found in backup. Attempting fresh install (autofill app)."
-                local -A saved_named=()
-                args_named_snapshot saved_named
+                local saved_named=("${NAMED_ARGS[@]}")
                 # shellcheck disable=SC2154
                 NAMED_ARGS[clean]=true
                 call_with_named_args run_installation ""
-                args_named_restore saved_named
+                NAMED_ARGS=("${saved_named[@]}")
             fi
         else
             log warn "[RESTORE] No application directory in backup and autofill-app disabled; app files will be missing."

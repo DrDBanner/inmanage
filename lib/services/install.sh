@@ -264,8 +264,8 @@ run_installation() {
         if [ "$mode" = "Provisioned" ]; then
             local env_target="${install_parent}/${install_name}_temp/.env"
             local sed_script='/^# INMANAGE_PROVISION_BEGIN$/,/^# INMANAGE_PROVISION_END$/d;/^[[:space:]]*(export[[:space:]]+)?INM_[A-Za-z0-9_]*[[:space:]]*=/d'
-            if ! sed -E -i '' -e "$sed_script" "$env_target" 2>/dev/null; then
-                sed -E -i -e "$sed_script" "$env_target" 2>/dev/null || true
+            if ! sed -i '' -e "$sed_script" "$env_target" 2>/dev/null; then
+                sed -i -e "$sed_script" "$env_target" 2>/dev/null || true
             fi
         fi
         chmod 600 "${install_parent}/${install_name}_temp/.env" || \
@@ -341,8 +341,7 @@ run_installation() {
             fi
             if [ -n "$backup_path" ]; then
                 log debug "[PROV] Restoring migration backup: $backup_path"
-                local -A saved_named=()
-                args_named_snapshot saved_named
+                local saved_named=("${NAMED_ARGS[@]}")
                 NAMED_ARGS[file]="$backup_path"
                 # shellcheck disable=SC2154
                 NAMED_ARGS[include_app]=true
@@ -350,7 +349,7 @@ run_installation() {
                 # shellcheck disable=SC2154
                 NAMED_ARGS[purge]=true
                 call_with_named_args run_restore || log warn "[PROV] Migration restore failed; continuing with fresh setup."
-                args_named_restore saved_named
+                NAMED_ARGS=("${saved_named[@]}")
             else
                 log warn "[PROV] No backup found for migration hint (${INM_BACKUP_MIGRATION_SOURCE}); continuing with fresh setup."
             fi
