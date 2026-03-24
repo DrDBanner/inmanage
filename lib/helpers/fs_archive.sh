@@ -1,52 +1,6 @@
 #!/usr/bin/env bash
 
 # ---------------------------------------------------------------------
-# tar_strip_archive_prefix()
-# Strip harmless archive prefixes like "./" and trailing "/".
-# Consumes: args: path.
-# Computes: trimmed archive-relative path.
-# Returns: path on stdout.
-# ---------------------------------------------------------------------
-tar_strip_archive_prefix() {
-    local path="$1"
-    while [[ "$path" == ./* ]]; do
-        path="${path#./}"
-    done
-    path="${path%/}"
-    printf "%s\n" "$path"
-}
-
-# ---------------------------------------------------------------------
-# tar_path_is_safe()
-# Validate an archive entry or hardlink target with cheap path checks.
-# Consumes: args: path.
-# Computes: trimmed archive-relative path.
-# Returns: trimmed path on stdout, 0 if safe, 1 otherwise.
-# ---------------------------------------------------------------------
-tar_path_is_safe() {
-    local path="$1"
-    if [[ -z "$path" ]]; then
-        return 1
-    fi
-    if [[ "$path" == /* || "$path" =~ ^[A-Za-z]:/ ]]; then
-        return 1
-    fi
-
-    local stripped=""
-    stripped="$(tar_strip_archive_prefix "$path")"
-    if [[ -z "$stripped" || "$stripped" == "." ]]; then
-        printf ".\n"
-        return 0
-    fi
-
-    if [[ "/$stripped/" == *"/../"* ]]; then
-        return 1
-    fi
-
-    printf "%s\n" "$stripped"
-}
-
-# ---------------------------------------------------------------------
 # tar_validate_archive()
 # Validate a tar.gz for unsafe entry paths.
 # Consumes: args: archive; tools: tar.
@@ -65,17 +19,26 @@ tar_validate_archive() {
     fi
 
     local entry=""
-    local safe_entry=""
+    local path=""
     while IFS= read -r entry; do
         [[ -z "$entry" ]] && continue
-        safe_entry="$(tar_path_is_safe "$entry")" || {
-            if [[ "$entry" == /* || "$entry" =~ ^[A-Za-z]:/ ]]; then
-                log err "[TAR] Archive contains absolute path: $entry"
-            else
-                log err "[TAR] Archive contains path traversal: $entry"
-            fi
+
+        path="$entry"
+        while [[ "$path" == ./* ]]; do
+            path="${path#./}"
+        done
+        path="${path%/}"
+        [[ -z "$path" || "$path" == "." ]] && continue
+
+        if [[ "$path" == /* || "$path" =~ ^[A-Za-z]:/ ]]; then
+            log err "[TAR] Archive contains absolute path: $entry"
             return 1
-        }
+        fi
+
+        if [[ "$path" == ".." || "$path" == ../* || "$path" == */.. || "$path" == *"/../"* ]]; then
+            log err "[TAR] Archive contains path traversal: $entry"
+            return 1
+        fi
     done < <(tar -tzf "$archive")
 
     return 0
