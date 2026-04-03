@@ -332,7 +332,7 @@ persist_derived_config() {
         fi
     fi
     if ! grep -q "^INM_SELF_CLI_COMPAT_MODE=" "$INM_SELF_ENV_FILE"; then
-        echo "INM_SELF_CLI_COMPAT_MODE=\"ultron\"" >> "$INM_SELF_ENV_FILE"
+        echo "INM_SELF_CLI_COMPAT_MODE=\"\"" >> "$INM_SELF_ENV_FILE"
     fi
 
     if declare -F config_sort_cli_env >/dev/null 2>&1; then
@@ -568,7 +568,7 @@ create_own_config() {
         fi
     fi
     if ! grep -q "^INM_SELF_CLI_COMPAT_MODE=" "$tmp_file"; then
-        echo "INM_SELF_CLI_COMPAT_MODE=\"ultron\"" >> "$tmp_file"
+        echo "INM_SELF_CLI_COMPAT_MODE=\"\"" >> "$tmp_file"
     fi
 
     if [[ "$use_sudo" == true ]]; then
@@ -735,7 +735,7 @@ spawn_cli_config() {
         fi
     fi
     if ! grep -q "^INM_SELF_CLI_COMPAT_MODE=" "$INM_SELF_ENV_FILE"; then
-        echo "INM_SELF_CLI_COMPAT_MODE=\"ultron\"" >> "$INM_SELF_ENV_FILE"
+        echo "INM_SELF_CLI_COMPAT_MODE=\"\"" >> "$INM_SELF_ENV_FILE"
     fi
 
     for key in "${!extra_values[@]}"; do

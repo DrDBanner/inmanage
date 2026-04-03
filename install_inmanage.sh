@@ -5,7 +5,7 @@ set -euo pipefail
 # Intended to be fetched via curl|bash or run from a checked-out repo.
 
 REPO_URL="https://github.com/DrDBanner/inmanage.git"
-INSTALLER_BRANCH="${INSTALLER_BRANCH:-development}"
+INSTALLER_BRANCH="${INSTALLER_BRANCH:-main}"
 BRANCH="${BRANCH:-$INSTALLER_BRANCH}"
 
 MODE="${MODE:-}"

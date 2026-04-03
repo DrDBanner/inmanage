@@ -903,7 +903,7 @@ maybe_migrate_legacy_cli() {
     return 0
   fi
   local legacy_mode="${NAMED_ARGS[legacy_migration]:-${NAMED_ARGS[legacy-migration]:-${INM_LEGACY_MIGRATION:-}}}"
-  if [[ "$compat" == "new" || "$compat" == "ultron" ]]; then
+  if [[ "$compat" == "new" || "$compat" == "ultron" || "$compat" == "ultron-main" ]]; then
     return 0
   fi
   if [[ "$compat" == "legacy" || "$compat" == "old" ]] && [[ ! "${legacy_mode,,}" =~ ^(force|yes|y)$ ]]; then
@@ -989,10 +989,10 @@ maybe_migrate_legacy_cli() {
   fi
 
   if [ -f "${INM_SELF_ENV_FILE:-}" ]; then
-    env_set cli "INM_SELF_CLI_COMPAT_MODE=ultron" >/dev/null 2>&1 || true
+    env_set cli "INM_SELF_CLI_COMPAT_MODE=ultron-main" >/dev/null 2>&1 || true
   fi
-  export INM_SELF_CLI_COMPAT_MODE="ultron"
-  export INM_SELF_CLI_COMPAT_MODE="ultron"
+  export INM_SELF_CLI_COMPAT_MODE="ultron-main"
+  export INM_SELF_CLI_COMPAT_MODE="ultron-main"
   legacy_warn_shell_alias
 
   log ok "[SELF] Migration complete. Re-launching..."

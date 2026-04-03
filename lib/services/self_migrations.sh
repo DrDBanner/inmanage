@@ -14,6 +14,7 @@ __SERVICE_SELF_MIGRATIONS_LOADED=1
 SELF_MIGRATIONS_KEY="INM_SELF_CLI_COMPAT_MODE"
 SELF_MIGRATIONS_PLAN=(
     "ultron|001_main_branch_keys.sh|migration_001_main_branch_keys"
+    "ultron-main|002_checkout_main_branch.sh|migration_002_checkout_main_branch"
 )
 
 _self_migrations_read_value() {
