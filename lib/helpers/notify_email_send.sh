@@ -146,6 +146,18 @@ $toList = array_filter(array_map("trim", explode(",", $toRaw)));
 if (function_exists("mb_encode_mimeheader") && $fromName) {
     $fromName = mb_encode_mimeheader($fromName, "UTF-8");
 }
+$normalizeSmtpData = function($message) {
+    $message = str_replace(["\r\n", "\r"], "\n", $message);
+    $message = rtrim($message, "\n");
+    $lines = explode("\n", $message);
+    foreach ($lines as &$line) {
+        if ($line !== "" && $line[0] === ".") {
+            $line = "." . $line;
+        }
+    }
+    unset($line);
+    return implode("\r\n", $lines) . "\r\n";
+};
 $fromHeader = $from;
 if ($fromName) {
     $fromHeader = "\"" . str_replace("\"", "\\\"", $fromName) . "\" <" . $from . ">";
@@ -170,7 +182,7 @@ if ($bodyHtml !== false && $bodyHtml !== "") {
     $msg .= "--" . $boundary . "\r\n";
     $msg .= "Content-Type: text/html; charset=UTF-8\r\n";
     $msg .= "Content-Transfer-Encoding: base64\r\n\r\n";
-    $msg .= chunk_split(base64_encode($bodyHtml)) . "\r\n";
+    $msg .= chunk_split(base64_encode($bodyHtml), 76, "\r\n") . "\r\n";
     $msg .= "--" . $boundary . "--\r\n";
 } else {
     $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
@@ -184,7 +196,7 @@ foreach ($toList as $rcpt) {
 }
 $resp = $send("DATA");
 $expect($resp, "354");
-fwrite($fp, $msg . "\r\n.\r\n");
+fwrite($fp, $normalizeSmtpData($msg) . ".\r\n");
 $resp = $read();
 $expect($resp, "250");
 $send("QUIT");
