@@ -612,11 +612,15 @@ run_backup() {
 
         if [[ "$include_app" == "true" ]]; then
             local app_target="$stage/$app_dir_name"
+            local -a app_rsync_args=(--delete --exclude "$(basename "$backup_dir")" --exclude ".cache")
+            if [[ "$create_migration_export" == "true" ]]; then
+                app_rsync_args+=(--exclude ".env")
+            fi
             if [[ "$simulate" == true ]]; then
                 log info "[DRY-RUN] Would copy app -> $app_target (exclude $(basename "$backup_dir"), .cache)"
             else
                 if ! fs_sync_dir "app files" "$install_root" "$app_target" "$simulate" normal "BACKUP" \
-                    --delete --exclude "$(basename "$backup_dir")" --exclude ".cache"; then
+                    "${app_rsync_args[@]}"; then
                     log err "[BACKUP] Failed to stage application directory."
                     fs_cleanup_stage "$stage" "$simulate"
                     return 1
@@ -747,15 +751,29 @@ run_backup() {
             log info "[BACKUP] Creating app archive ($compress) -> $app_target"
             case "$compress" in
                 tar.gz)
-                    spinner_run_mode normal "Archiving app..." tar -czf "$app_target" -C "$(dirname "$install_root")" --exclude "$(basename "$backup_dir")" --exclude ".cache" "$(basename "$install_root")" || log warn "[BACKUP] Archiving app failed."
+                    local -a app_tar_args=(--exclude "$(basename "$backup_dir")" --exclude ".cache")
+                    if [[ "$create_migration_export" == "true" ]]; then
+                        app_tar_args+=(--exclude "$(basename "$install_root")/.env")
+                    fi
+                    spinner_run_mode normal "Archiving app..." tar -czf "$app_target" -C "$(dirname "$install_root")" "${app_tar_args[@]}" "$(basename "$install_root")" || log warn "[BACKUP] Archiving app failed."
                     ;;
                 zip)
-                    spinner_run_mode normal "Archiving app..." bash -c "cd \"$(dirname "$install_root")\" && zip -r \"$app_target\" \"$(basename "$install_root")\" -x \"$(basename "$backup_dir")/*\" \".cache/*\" >/dev/null" || log warn "[BACKUP] Archiving app failed."
+                    local -a app_zip_excludes=("$(basename "$backup_dir")/*" ".cache/*")
+                    if [[ "$create_migration_export" == "true" ]]; then
+                        app_zip_excludes+=("$(basename "$install_root")/.env")
+                    fi
+                    (
+                        cd "$(dirname "$install_root")" && zip -r "$app_target" "$(basename "$install_root")" -x "${app_zip_excludes[@]}" >/dev/null
+                    ) || log warn "[BACKUP] Archiving app failed."
                     ;;
                 false)
                     safe_rm_rf "$app_target" "$backup_dir"
+                    local -a app_copy_args=(--exclude "$(basename "$backup_dir")" --exclude ".cache")
+                    if [[ "$create_migration_export" == "true" ]]; then
+                        app_copy_args+=(--exclude ".env")
+                    fi
                     fs_sync_dir "app files" "$install_root" "$app_target" "$simulate" normal "BACKUP" \
-                        --exclude "$(basename "$backup_dir")" --exclude ".cache" || log warn "[BACKUP] Copying app failed."
+                        "${app_copy_args[@]}" || log warn "[BACKUP] Copying app failed."
                     ;;
             esac
         fi
