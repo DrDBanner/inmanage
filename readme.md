@@ -69,6 +69,18 @@ inm version
 inm core versions
 ```
 
+## LLM-Friendly CLI
+
+INmanage is designed so that an LLM with shell access can look up the system comfortably without a separate MCP server. The CLI help is structured around stable contexts (`core`, `db`, `files`, `self`, `spawn`, `env`), explicit actions, and predictable `--key=value` options. For most tasks, an LLM can discover the safe next command by running:
+
+```bash
+inm -h
+inm <context> -h
+inm <context> <action> -h
+```
+
+An MCP server is therefore not required for normal operation: the CLI is already the operational interface, and its help text is the source of truth for available commands, flags, health-check tags, dry-run/debug modes, and links back to the full documentation. A capable LLM should first inspect the relevant help output, then use `--dry-run`, `inm core health`, and the docs below before changing a live Invoice Ninja instance.
+
 ## Extended Docs
 
 > [!TIP]
