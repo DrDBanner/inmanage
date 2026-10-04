@@ -1,4 +1,4 @@
-# INmanage – Invoice Ninja CLI
+# Invoice Ninja Backup, Update, Install & Migration | INmanage CLI
 
 INmanage (inm) – CLI for Invoice Ninja
 
