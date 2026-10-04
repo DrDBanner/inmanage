@@ -32,7 +32,9 @@ It removes the repetitive ops load and makes ongoing maintenance something you c
   - [Install Invoice Ninja](#install-invoice-ninja)
   - [Update Invoice Ninja](#update-invoice-ninja)
   - [Backup Invoice Ninja](#backup-invoice-ninja)
-    - [Offsite backups](#offsite-backups)
+    - [Standard installations](#standard-installations)
+      - [Offsite backups](#offsite-backups)
+    - [Docker installations](#docker-installations)
   - [Restore Invoice Ninja](#restore-invoice-ninja)
   - [Migrate Invoice Ninja](#migrate-invoice-ninja)
   - [Rollback cheatsheet (INmanage)](#rollback-cheatsheet-inmanage)
@@ -1530,26 +1532,67 @@ Rollback swaps the current app with the selected rollback directory and reuses t
 
 ## Backup Invoice Ninja
 
-Full bundle by default; narrow the scope with flags when needed.
+Full bundle by default: database, app `.env`, application files (including `public/`), `storage/`, and `public/uploads/`. Narrow the scope with flags when needed.
 
-Full bundle (db + storage + uploads; optional app + extras):
+### Standard installations
+
+#### Create a backup
 
 ```bash
-inm core backup --name=your_optional_label --compress=tar.gz --include-app=true --extra-paths=custom1,custom2
+inm core backup
 ```
+
+This creates a `.tar.gz` archive and a `.sha256` checksum file in `INM_BACKUP_DIR` (default `.backup/`). It includes the database, app `.env`, application files, and all of `storage/` and `public/`.
+
+To add a label or additional paths:
+
+```bash
+inm core backup --name=pre_migration --extra-paths=custom1,custom2
+```
+
+To back up only the database or files:
+
+```bash
+inm db backup
+inm files backup
+```
+
+`db backup` forces DB-only. `files backup` includes app files, storage, and uploads with the DB disabled. With `--include-app=false`, only `storage/` and `public/uploads/` are included; add `--extra-paths=public` if you need the entire public directory.
+
+#### Automated backups
+
+For unattended authentication, use [`.my.cnf`](#mysql-client-config-mycnf-inmanage), or allow INmanage to read the password from the app `.env`:
+
+```bash
+inm env set cli INM_DB_FORCE_READ_PW_ENABLE="Y"
+```
+
+Set retention, run a backup once, then schedule daily backups at 02:00:
+
+```bash
+inm env set cli INM_BACKUP_RETENTION="7"
+inm core backup
+inm core cron install --jobs=backup --backup-time=02:00
+```
+
+Retention counts backups per type, not days. The default is `2`; the example keeps the newest seven entries per type. Older entries are pruned after backups unless you use `--no-prune`. See [cron options](#cron-jobs-inmanage) for other schedules and jobs.
+
+Copy completed archives and checksum files [offsite](#offsite-backups) after the local backup finishes. To recover, follow [Restore Invoice Ninja](#restore-invoice-ninja).
+
+#### Backup options
 
 Backup switches (`inm core backup`):
 
 | Switch | Default | Description |
 | --- | --- | --- |
 | `--compress=tar.gz / zip / false` | `tar.gz` | Bundle format; `false` creates a directory. |
-| `--name=label` | unset | Label in filename; timestamp is appended if the label has no date. |
+| `--name=label` | unset | Label in filename, e.g. `--name=pre_migration` or `--name="Pre Migration"`. Quote labels containing spaces. A timestamp is appended if the label has no date. |
 | `--include-app=true/false` | `true` | Include application code in the bundle. |
 | `--bundle=true/false` | `true` | `true` = single bundle; `false` = multi-part outputs. |
 | `--db=true/false` | `true` | Include DB dump. |
 | `--storage=true/false` | `true` | Include `storage/`. |
 | `--uploads=true/false` | `true` | Include `public/uploads/`. |
-| `--fullbackup=true/false` | `true` | Force full bundle (db+storage+uploads). |
+| `--fullbackup=true/false` | `true` (core) | `core backup` forces DB + storage + uploads + bundle; include app unless explicitly disabled. Use `db backup` or `files backup` for a narrower scope. |
 | `--extra-paths=a,b` | unset | Add extra paths (comma‑separated). Relative paths resolve from app dir; absolute paths are allowed. Alias: `--extra`. |
 | `--create-migration-export` | `false` | Prompt for APP_URL + DB_* and write them into the backup `.env` (APP_KEY preserved); optionally add extra keys. |
 | `--skip-staging` | `false` | Skip staging and build the tar.gz bundle directly from live paths (faster, less consistent). |
@@ -1557,46 +1600,23 @@ Backup switches (`inm core backup`):
 
 Hooks: `pre-backup` and `post-backup` are supported. See [Hooks (CLI pre/post)](#hooks-cli-prepost).
 
-DB-only and files-only backups:
+For `files backup`, the format, label, app, bundle, storage, uploads, extra-paths, staging, and pruning options use the defaults above.
 
-```bash
-inm db backup --name=label
-inm files backup --name=label
-```
+#### Offsite backups
 
-These commands accept the same switches as above, but the defaults are scoped:
-- `db backup` forces DB-only.
-- `files backup` defaults to app + storage + uploads (DB off). Use `--include-app=false` to exclude the app files.
+Keep a copy on a separate machine or storage service. Choose **remote pull** to fetch backups from another machine, or **push** to upload them from the app server.
 
-Files backup switches (`inm files backup`):
+##### Remote pull
 
-| Switch | Default | Description |
-| --- | --- | --- |
-| `--compress=tar.gz / zip / false` | `tar.gz` | Bundle format; `false` creates a directory. |
-| `--name=label` | unset | Label in filename; timestamp is appended if the label has no date. |
-| `--include-app=true/false` | `true` | Include application code in the backup. |
-| `--bundle=true/false` | `true` | `true` = single bundle; `false` = multi-part outputs. |
-| `--storage=true/false` | `true` | Include `storage/`. |
-| `--uploads=true/false` | `true` | Include `public/uploads/`. |
-| `--extra-paths=a,b` | unset | Add extra paths (comma‑separated). Relative paths resolve from app dir; absolute paths are allowed. Alias: `--extra`. |
-| `--skip-staging` | `false` | Skip staging and build the tar.gz bundle directly from live paths (faster, less consistent). |
-| `--no-prune` | `false` | Skip post-backup pruning (default keeps `INM_BACKUP_RETENTION`). |
+Run [`backup_remote_job.sh`](../templates/backup_remote_job.sh) on the backup host to pull completed backups from the app server.
 
-### Offsite backups
+The script uses SCP for files and rsync for directories, with compression and transfer of changed data. Set up passwordless SSH first. The [script header](../templates/backup_remote_job.sh) explains pre/post hooks, bandwidth limits and delete-sync (`RSYNC_OPTS`), detailed rsync output (`RSYNC_LOG_FULL`), and timestamp/duration logging.
 
-Two common patterns: **remote pull** (backup host connects to the app host) or **push** (app host uploads to storage).
-
-#### Remote pull
-
-INmanage ships a ready-to-use script for offsite backups. Use this when a separate machine should pull bundles from the app host.
-
-Script highlights: pulls multiple files via SCP and folders via rsync. It uses delta transfers (only changes are sent) with compression by default, supports pre/post hooks (DB dumps), bandwidth limiting and delete‑sync via `RSYNC_OPTS`, optional full rsync output via `RSYNC_LOG_FULL`, and prints start/end timestamps with a duration summary. It expects passwordless SSH (see the script header).
-
-##### Ensure backups exist
+**Ensure backups exist**
 
 Run `inm core backup` so bundles exist in `.backup/` (or let your cron job create them).
 
-##### Download the script
+**Download the script**
 
 On your **backup host** (local machine, NAS, appliance, or any server), download:
 
@@ -1604,9 +1624,8 @@ On your **backup host** (local machine, NAS, appliance, or any server), download
 curl -fsSL https://raw.githubusercontent.com/DrDBanner/inmanage/main/templates/backup_remote_job.sh -o backup_remote_job.sh
 chmod +x backup_remote_job.sh
 ```
-Script reference: [`templates/backup_remote_job.sh`](../templates/backup_remote_job.sh).
 
-##### Configure the script
+**Configure the script**
 
 Edit the file itself and set the config section like this:
 
@@ -1617,11 +1636,10 @@ LOCAL_BASE="$HOME/Remote-Backups/Job_Name"  # Destination on backup host
 SSH_KEY="$HOME/.ssh/inmanage_backup"        # Optional: non-default key
 REMOTE_PATHS=(                              # Pull these paths from the app host
   "/var/www/billing.invoiceninja.local/.backup/"
-  "/any/other/path/with/access/to"
 )
 ```
 
-##### Run once
+**Run once**
 
 Verify it works:
 
@@ -1629,15 +1647,15 @@ Verify it works:
 ./backup_remote_job.sh
 ```
 
-##### Schedule it
+**Schedule it**
 
-Copy and paste this (adjust the path) to add the job to your crontab:
+After the manual run succeeds, adjust the paths and add this to the backup host’s crontab. Choose a time after local backup completion:
 
 ```bash
 (crontab -l 2>/dev/null; echo "30 3 * * * /path/to/backup_remote_job.sh >> /path/to/remote_backup.log 2>&1") | crontab -
 ```
 
-#### Rclone push
+##### Rclone push
 
 The app host uploads bundles to storage.
 
@@ -1648,6 +1666,10 @@ The app host uploads bundles to storage.
    rclone copy /path/to/.backup remote:bucket/path
    ```
 4. Keep app host credentials and rclone credentials separate.
+
+### Docker installations
+
+Follow [Invoice Ninja backups in Docker](./tutorials/docker_inmanage.md#backups-in-docker) for backups from the app container or a sidecar. The Docker guide covers access to the live app files and `.env`, database tools, persistent backup volumes, host cron scheduling, offsite transfer, and restore commands.
 
 ## Restore Invoice Ninja
 
@@ -1802,7 +1824,7 @@ Pick one path:
 3) **Custom image**: full control (advanced).
 
 Copy/paste steps for all three paths:
-[./tutorials/docker_inmanage.md](./tutorials/docker_inmanage.md)
+[Invoice Ninja Docker setup with INmanage](./tutorials/docker_inmanage.md)
 
 ### VM/LXC (Proxmox)
 
@@ -1832,15 +1854,15 @@ Ansible hint:
 
 Example (full environment, Debian/Ubuntu) playbook snippets:
 
-- Snippet A (base stack) and Snippet B (INmanage + provisioned install): [./tutorials/ansible_full_environment.md](./tutorials/ansible_full_environment.md)
+- Snippet A (base stack) and Snippet B (INmanage + provisioned install): [Invoice Ninja installation with Ansible](./tutorials/ansible_full_environment.md)
 - Use Snippet A alone if you already manage INmanage separately. Use both for a full install.
 
 
 ## Recipes & Tutorials (Environments)
 
-- **Debian 12 (Bookworm) VM, full stack**: [./tutorials/install_invoiceninja_debian12_bookworm_vm.md](./tutorials/install_invoiceninja_debian12_bookworm_vm.md)
-- **Ansible full environment (Debian/Ubuntu)**: [./tutorials/ansible_full_environment.md](./tutorials/ansible_full_environment.md)
-- **Docker + INmanage (3 paths)**: [./tutorials/docker_inmanage.md](./tutorials/docker_inmanage.md)
+- **Debian 12 (Bookworm) VM, full stack**: [Invoice Ninja installation on a Debian 12 VM](./tutorials/install_invoiceninja_debian12_bookworm_vm.md)
+- **Ansible full environment (Debian/Ubuntu)**: [Invoice Ninja installation with Ansible](./tutorials/ansible_full_environment.md)
+- **Docker + INmanage (3 paths)**: [Invoice Ninja Docker setup with INmanage](./tutorials/docker_inmanage.md)
 
 ## Licensing
 

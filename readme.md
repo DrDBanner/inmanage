@@ -7,7 +7,7 @@ INmanage (inm) – CLI for Invoice Ninja
 INmanage is the CLI for self-hosted Invoice Ninja. Focus: **save time**, **less stress**, **certainty**, **convenience**. Installation takes 2–3 minutes per host and will save you many hours of manual work maintaining your Invoice Ninja instances.
 
 > [!TIP]
-> - **Full documentation**: [docs/index.md](docs/index.md)
+> - **Full documentation**: [INmanage documentation for Invoice Ninja](docs/index.md)
 > - Cheat sheet: [cheatsheet.md](./cheatsheet.md)
 
 ## Things You Need
@@ -85,7 +85,7 @@ An MCP server is therefore not required for normal operation: the CLI is already
 
 > [!TIP]
 > Docs:
-> - Full documentation: [docs/index.md](docs/index.md)
+> - Full documentation: [INmanage documentation for Invoice Ninja](docs/index.md)
 > - Cheat sheet: [cheatsheet.md](./cheatsheet.md)
 > - Containers/VMs: [docs/index.md#containers--vms-onboarding-invoice-ninja-and-inmanage](docs/index.md#containers--vms-onboarding-invoice-ninja-and-inmanage)
 
@@ -96,7 +96,7 @@ Short list below; each item is explained in the extended docs.
 - **Install** repeatable full installs via config file (provisioned), designed for staging/production.
 - **Update** safe updates with instant rollback, verified download integrity, and automatic pre‑update DB backups.
 - **Migrate** easy flow to migrate Invoice Ninja from one host to another.
-- **Backup** backups with checksums (SHA‑256) and restore (bundle or DB‑only) and optional offsite backup sync.
+- **Backup** database + app `.env` + application files (including public/storage) in a compressed bundle, with checksums (SHA‑256), restore, count-based retention, and optional offsite backup sync. See [Invoice Ninja backup instructions](docs/index.md#backup-invoice-ninja).
 - **Health** checks for server readiness and ongoing integrity (system, app, PHP, DB, filesystem, cron, network, PDF/Snappdf).
 - **Heartbeat** notifications (email/webhook) for non‑interactive failures.
 - **Cron** automatic essential jobs on provisioned installs (artisan + backup); heartbeat optional. Includes per‑instance cron blocks.

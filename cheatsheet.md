@@ -6,7 +6,7 @@ README: [readme.md](./readme.md)
 
 Docs:
 - [docs/index.md](docs/index.md)
-- [docs/index.md#containers--vms-onboarding](docs/index.md#containers--vms-onboarding)
+- [Invoice Ninja and INmanage in containers and VMs](docs/index.md#containers--vms-onboarding-invoice-ninja-and-inmanage)
 
 ## Install the CLI
 

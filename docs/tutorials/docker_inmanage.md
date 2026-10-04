@@ -1,4 +1,4 @@
-# Docker + INmanage (3 paths)
+# Invoice Ninja with Docker and INmanage (3 paths)
 
 UNTESTED
 
@@ -54,7 +54,7 @@ Skip it if you are happy with manual updates/backups and do not need health repo
 
 ## Table of contents
 
-- [Docker + INmanage (3 paths)](#docker--inmanage-3-paths)
+- [Invoice Ninja with Docker and INmanage (3 paths)](#invoice-ninja-with-docker-and-inmanage-3-paths)
   - [Is INmanage worth it in Docker?](#is-inmanage-worth-it-in-docker)
   - [Table of contents](#table-of-contents)
   - [Shared basics (all paths)](#shared-basics-all-paths)
@@ -63,6 +63,7 @@ Skip it if you are happy with manual updates/backups and do not need health repo
   - [Path 3: Custom image (advanced)](#path-3-custom-image-advanced)
   - [Install Invoice Ninja (all paths)](#install-invoice-ninja-all-paths)
   - [After install (updates + health)](#after-install-updates--health)
+  - [Backups in Docker](#backups-in-docker)
   - [Operational notes](#operational-notes)
 
 ## Shared basics (all paths)
@@ -506,6 +507,50 @@ docker compose exec --user www-data app bash -lc 'cd /var/www && inm core health
 Do you need extra parameters? Usually **no**.
 - `inm core health` works with defaults.
 - If you want email notifications, set `INM_NOTIFY_*` in `.env.provision` (or in `.env.inmanage`) and install the heartbeat cron (host or sidecar).
+
+## Backups in Docker
+
+Use the container that has INmanage installed and access to the live Invoice Ninja files. The examples below use `app` (Paths 1/3); use `inmanage` for Path 2 only after ensuring it sees the live app `.env` and all files to be backed up.
+
+The sidecar mounts shown in Path 2 share `public/` and `storage/`, but do not share the app container's full application tree or `.env`. For a full backup from a sidecar, share the live application tree and `.env` at the configured paths as well. Files present only in the sidecar image are not a backup of the app container. Alternatively, run the backup in an INmanage-enabled app container.
+
+Before scheduling, ensure:
+
+- The enforced user can read the live app `.env`, `storage/`, and all of `public/`.
+- `mysqldump` or `mariadb-dump` is installed in the execution container and can reach the database on the Compose network.
+- The `app_backup` volume is writable by the enforced user and has space for staging and the archive. It persists backups across container replacement.
+- Unattended authentication uses `.my.cnf` or `INM_DB_FORCE_READ_PW_ENABLE=Y` (already set in the CLI config above).
+
+Create a full backup and configure retention:
+
+```bash
+docker compose exec --user www-data app bash -lc 'cd /var/www && inm env set cli INM_BACKUP_RETENTION="7"'
+docker compose exec --user www-data app bash -lc 'cd /var/www && inm core backup'
+```
+
+This includes the database, app `.env`, application files, `storage/`, and the full `public/` directory in a compressed bundle, with a SHA-256 sidecar. Retention keeps seven entries per backup type, rather than seven days. Check the command's exit status and log for errors or skipped paths before relying on the job.
+
+### Schedule from the Docker host
+
+A host cron job can invoke INmanage in the running container. In the host user's crontab, add the following after replacing the Compose project directory, Docker executable path, and log path. That user needs Docker access and permission to write the log:
+
+```cron
+0 2 * * * cd /absolute/path/to/your-docker && /usr/bin/docker compose exec -T --user www-data app bash -lc 'cd /var/www && inm core backup' >> /absolute/path/to/inmanage-backup.log 2>&1
+```
+
+`-T` disables TTY allocation for unattended runs. The schedule uses the host cron timezone. Use one scheduler for the backup job; when using host cron, omit the container backup cron job during provisioning with `--no-backup-cron`. Installing cron entries inside a container requires an active cron daemon there.
+
+### Copy backups offsite and restore
+
+Make the backup volume available to the transfer process. For host SSH/rsync access, you can replace `app_backup:/var/www/.backup` with a bind mount such as `./backups:/var/www/.backup` in each service that uses the backup directory. Ensure the directory is writable by the container's enforced user and readable by the host transfer user. Use its absolute host path in the [remote-pull template](../index.md#offsite-backups), and transfer bundles together with their `.sha256` files after the backup finishes.
+
+For recovery, place an INmanage bundle in the backup mount, verify the target configuration and database, and restore from the container with access to the target files:
+
+```bash
+docker compose exec --user www-data app bash -lc 'cd /var/www && inm core restore --file=/var/www/.backup/your-bundle.tar.gz --force'
+```
+
+Restore overwrites selected files and imports the database. See [restore options](../index.md#restore-invoice-ninja) for scope and rollback. These Docker examples retain this tutorial's **UNTESTED** status; validate them in your stack before relying on scheduled backups.
 
 ## Operational notes
 
