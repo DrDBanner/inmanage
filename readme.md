@@ -97,6 +97,7 @@ Short list below; each item is explained in the extended docs.
 - **Update** safe updates with instant rollback, verified download integrity, and automatic pre‑update DB backups.
 - **Migrate** easy flow to migrate Invoice Ninja from one host to another.
 - **Backup** database + app `.env` + application files (including public/storage) in a compressed bundle, with checksums (SHA‑256), restore, count-based retention, and optional offsite backup sync. See [Invoice Ninja backup instructions](docs/index.md#backup-invoice-ninja).
+- **Backup Automation** Backup Jobs run via cron runner automatically including archive retention and cleanup.
 - **Health** checks for server readiness and ongoing integrity (system, app, PHP, DB, filesystem, cron, network, PDF/Snappdf).
 - **Heartbeat** notifications (email/webhook) for non‑interactive failures.
 - **Cron** automatic essential jobs on provisioned installs (artisan + backup); heartbeat optional. Includes per‑instance cron blocks.
